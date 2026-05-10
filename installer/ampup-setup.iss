@@ -11,6 +11,7 @@
 AppId={{E7B3F2A1-9C4D-4E8F-B6A2-1D3F5E7A9B0C}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+UninstallDisplayVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
@@ -28,6 +29,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\ampup.ico
 SetupIconFile=..\Assets\ampup.ico
+VersionInfoVersion={#MyAppFileVersion}
+VersionInfoTextVersion={#MyAppVersion}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

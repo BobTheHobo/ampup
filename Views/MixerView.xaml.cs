@@ -715,10 +715,10 @@ public partial class MixerView : UserControl
             // called from LoadConfig once we know which integrations are enabled.
 
             targetPicker.AddCategory("Apps");
+            targetPicker.AddItem("App Group", "apps",     "▣", _clrTeal);
             targetPicker.AddItem("Discord",   "discord",  "◉", Color.FromRgb(0x58, 0x65, 0xF2));
             targetPicker.AddItem("Spotify",   "spotify",  "♪", Color.FromRgb(0x1D, 0xB9, 0x54));
             targetPicker.AddItem("Chrome",    "chrome",   "◆", Color.FromRgb(0x42, 0x85, 0xF4));
-            targetPicker.AddItem("App Group", "apps",     "▣", _clrTeal);
 
             targetPicker.SelectionChanged += (_, _) =>
             {
@@ -1035,10 +1035,10 @@ public partial class MixerView : UserControl
         }
 
         picker.AddCategory("Apps");
+        picker.AddItem("App Group", "apps",     "▣", clrTeal);
         picker.AddItem("Discord",   "discord",  "◉", Color.FromRgb(0x58, 0x65, 0xF2));
         picker.AddItem("Spotify",   "spotify",  "♪", Color.FromRgb(0x1D, 0xB9, 0x54));
         picker.AddItem("Chrome",    "chrome",   "◆", Color.FromRgb(0x42, 0x85, 0xF4));
-        picker.AddItem("App Group", "apps",     "▣", clrTeal);
 
         if (includeN3Nav)
         {
@@ -2666,41 +2666,39 @@ public partial class MixerView : UserControl
         if (_config == null) return;
         var accent = ((SolidColorBrush)FindResource("AccentBrush")).Color;
 
-        var pillRow = new WrapPanel
+        void AddRowLabel(WrapPanel row, string text)
         {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(40, 2, 8, 8),
-        };
+            row.Children.Add(new TextBlock
+            {
+                Text = text,
+                FontSize = 8,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x8A, 0x8A)),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0),
+            });
+        }
 
-        pillRow.Children.Add(new TextBlock
+        Border MakeActionPill(string text, bool isActive, Thickness margin, Action onClick, string tooltip)
         {
-            Text = "ASSIGN TO", FontSize = 8, FontWeight = FontWeights.Bold,
-            Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x8A, 0x8A)),
-            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0),
-        });
-
-        for (int i = 0; i < 5; i++)
-        {
-            int knobIdx = i;
-            var knob = _config.Knobs.FirstOrDefault(k => k.Idx == knobIdx);
-            string knobLabel = knob != null && !string.IsNullOrWhiteSpace(knob.Label) ? knob.Label : $"Knob {knobIdx + 1}";
-
-            bool isCurrent = knob?.Target?.Equals(processName, StringComparison.OrdinalIgnoreCase) == true
-                || (knob?.Target == "apps" && knob.Apps.Any(a => a.Equals(processName, StringComparison.OrdinalIgnoreCase)));
-
             var pill = new Border
             {
-                BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
-                Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 4, 0),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(10, 4, 10, 4),
+                Margin = margin,
                 Cursor = System.Windows.Input.Cursors.Hand,
+                ToolTip = tooltip,
                 Child = new TextBlock
                 {
-                    Text = knobLabel, FontSize = 10,
-                    FontWeight = isCurrent ? FontWeights.SemiBold : FontWeights.Normal,
-                    Foreground = isCurrent ? new SolidColorBrush(accent) : new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA)),
+                    Text = text,
+                    FontSize = 10,
+                    FontWeight = isActive ? FontWeights.SemiBold : FontWeights.Normal,
+                    Foreground = isActive ? new SolidColorBrush(accent) : new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA)),
                 }
             };
-            if (isCurrent)
+
+            if (isActive)
             {
                 pill.Background = new SolidColorBrush(Color.FromArgb(0x30, accent.R, accent.G, accent.B));
                 pill.BorderBrush = new SolidColorBrush(Color.FromArgb(0x80, accent.R, accent.G, accent.B));
@@ -2711,11 +2709,14 @@ public partial class MixerView : UserControl
                 pill.SetResourceReference(Border.BorderBrushProperty, "InputBorderBrush");
             }
 
-            bool captured = isCurrent;
-            pill.MouseEnter += (_, _) => { pill.Background = new SolidColorBrush(Color.FromArgb(0x30, accent.R, accent.G, accent.B)); pill.BorderBrush = new SolidColorBrush(accent); };
+            pill.MouseEnter += (_, _) =>
+            {
+                pill.Background = new SolidColorBrush(Color.FromArgb(0x30, accent.R, accent.G, accent.B));
+                pill.BorderBrush = new SolidColorBrush(accent);
+            };
             pill.MouseLeave += (_, _) =>
             {
-                if (captured)
+                if (isActive)
                 {
                     pill.Background = new SolidColorBrush(Color.FromArgb(0x30, accent.R, accent.G, accent.B));
                     pill.BorderBrush = new SolidColorBrush(Color.FromArgb(0x80, accent.R, accent.G, accent.B));
@@ -2729,14 +2730,91 @@ public partial class MixerView : UserControl
             pill.MouseLeftButtonDown += (_, ev) =>
             {
                 ev.Handled = true;
-                var k = _config.Knobs.FirstOrDefault(x => x.Idx == knobIdx);
-                if (k == null) return;
-                if (captured) { k.Target = "none"; k.Apps.Clear(); }
-                else { k.Target = processName.ToLowerInvariant(); k.Apps.Clear(); }
-                _onSave?.Invoke(_config);
-                RefreshSessionList();
+                onClick();
             };
-            pillRow.Children.Add(pill);
+
+            return pill;
+        }
+
+        void SaveAndRebuildPanel()
+        {
+            _onSave?.Invoke(_config);
+            panel.Children.Clear();
+            BuildAssignPills(panel, processName);
+        }
+
+        var assignRow = new WrapPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(40, 2, 8, 4),
+        };
+
+        AddRowLabel(assignRow, "ASSIGN TO");
+
+        for (int i = 0; i < 5; i++)
+        {
+            int knobIdx = i;
+            var knob = _config.Knobs.FirstOrDefault(k => k.Idx == knobIdx);
+            string knobLabel = knob != null && !string.IsNullOrWhiteSpace(knob.Label) ? knob.Label : $"Knob {knobIdx + 1}";
+
+            bool isCurrent = knob?.Target?.Equals(processName, StringComparison.OrdinalIgnoreCase) == true;
+
+            var pill = MakeActionPill(
+                knobLabel,
+                isCurrent,
+                new Thickness(0, 0, 4, 0),
+                () =>
+                {
+                    var k = _config.Knobs.FirstOrDefault(x => x.Idx == knobIdx);
+                    if (k == null) return;
+                    if (isCurrent)
+                    {
+                        k.Target = "none";
+                        k.Apps.Clear();
+                        k.DeviceId = "";
+                    }
+                    else
+                    {
+                        k.Target = processName.ToLowerInvariant();
+                        k.Apps.Clear();
+                        k.DeviceId = "";
+                    }
+                    SaveAndRebuildPanel();
+                },
+                isCurrent ? $"Remove direct assignment from {knobLabel}" : $"Assign {processName} directly to {knobLabel}");
+            assignRow.Children.Add(pill);
+        }
+
+        panel.Children.Add(assignRow);
+
+        var groupRow = new WrapPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(40, 0, 8, 8),
+        };
+
+        AddRowLabel(groupRow, "ADD TO GROUP");
+
+        for (int i = 0; i < 5; i++)
+        {
+            int knobIdx = i;
+            var knob = _config.Knobs.FirstOrDefault(k => k.Idx == knobIdx);
+            string knobLabel = knob != null && !string.IsNullOrWhiteSpace(knob.Label) ? knob.Label : $"Knob {knobIdx + 1}";
+            bool isCurrent = IsAppGroupMember(knob, processName);
+
+            var pill = MakeActionPill(
+                knobLabel,
+                isCurrent,
+                new Thickness(0, 0, 4, 0),
+                () =>
+                {
+                    var k = _config.Knobs.FirstOrDefault(x => x.Idx == knobIdx);
+                    if (k == null) return;
+                    ToggleAppGroupMembership(k, processName);
+                    SaveAndRebuildPanel();
+                },
+                isCurrent ? $"Remove {processName} from {knobLabel} app group" : $"Add {processName} to {knobLabel} app group");
+            groupRow.Children.Add(pill);
         }
 
         // Hide pill
@@ -2768,9 +2846,69 @@ public partial class MixerView : UserControl
             _expandedAssignPanel = null;
             RefreshSessionList();
         };
-        pillRow.Children.Add(hidePill);
+        groupRow.Children.Add(hidePill);
 
-        panel.Children.Add(pillRow);
+        panel.Children.Add(groupRow);
+    }
+
+    private static bool IsAppGroupMember(KnobConfig? knob, string processName)
+    {
+        return knob?.Target == "apps"
+            && knob.Apps.Any(a => a.Equals(processName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void ToggleAppGroupMembership(KnobConfig knob, string processName)
+    {
+        string app = processName.ToLowerInvariant();
+
+        if (knob.Target == "apps")
+        {
+            if (knob.Apps.Any(a => a.Equals(app, StringComparison.OrdinalIgnoreCase)))
+            {
+                knob.Apps.RemoveAll(a => a.Equals(app, StringComparison.OrdinalIgnoreCase));
+            }
+            else
+            {
+                AddAppToGroup(knob, app);
+            }
+            knob.DeviceId = "";
+            return;
+        }
+
+        string previousTarget = knob.Target ?? "";
+        knob.Target = "apps";
+        knob.DeviceId = "";
+        knob.Apps.Clear();
+
+        if (IsConvertibleAppTarget(previousTarget))
+            AddAppToGroup(knob, previousTarget.ToLowerInvariant());
+
+        AddAppToGroup(knob, app);
+    }
+
+    private static void AddAppToGroup(KnobConfig knob, string app)
+    {
+        if (!knob.Apps.Any(a => a.Equals(app, StringComparison.OrdinalIgnoreCase)))
+            knob.Apps.Add(app);
+    }
+
+    private static bool IsConvertibleAppTarget(string? target)
+    {
+        if (string.IsNullOrWhiteSpace(target)) return false;
+        if (target.Contains(':')) return false;
+
+        var reserved = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "none", "master", "mic", "system", "any", "active_window",
+            "output_device", "input_device", "monitor", "led_brightness",
+            "room_lights", "govee", "corsair_pump_fan", "corsair_case_fan",
+            "sc_space_cycle", "sc_page_cycle"
+        };
+        if (reserved.Contains(target)) return false;
+
+        return !target.StartsWith("ha_", StringComparison.OrdinalIgnoreCase)
+            && !target.StartsWith("vm_", StringComparison.OrdinalIgnoreCase)
+            && !target.StartsWith("sc_", StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class SuggestedLayout

@@ -21,7 +21,7 @@ public static class Logger
             if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 1_048_576)
                 File.Delete(LogPath);
 
-            var version = typeof(Logger).Assembly
+            var version = (Assembly.GetEntryAssembly() ?? typeof(Logger).Assembly)
                 .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
                 ?.InformationalVersion?.Split('+')[0] ?? "0.0.0";
             var line = $"=== AmpUp {version} started {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===";

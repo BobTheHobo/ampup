@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.1-beta] - 2026-05-10
+
+### Changed
+- Improved App Group discoverability in the Mixer target picker by showing overflow scrolling and moving App Group to the top of the Apps section.
+- Added app-group controls to the Mixer Audio Sessions list so running apps can be added to or removed from knob app groups directly from the session rows.
+
+---
+
 ## [1.0.0-beta] — 2026-05-03
 
 This is the big one: Amp Up graduates into a 1.0 beta for Windows with a polished Turn Up mixer experience, native beta support for the TreasLin / VSDinside N3 stream controller, and a serious pass on performance, reliability, lighting, release packaging, and everyday feel.
@@ -79,4 +87,5 @@ This is the big one: Amp Up graduates into a 1.0 beta for Windows with a polishe
 
 ---
 
+[1.0.1-beta]: https://github.com/audioslayer/ampup/releases/tag/v1.0.1-beta
 [1.0.0-beta]: https://github.com/audioslayer/ampup/releases/tag/v1.0.0-beta

@@ -133,7 +133,7 @@ public class GridPicker : Border
         _categoriesPanel = new StackPanel();
         _scrollViewer = new ScrollViewer
         {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             MaxHeight = 420,
             Content = _categoriesPanel

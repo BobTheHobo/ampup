@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0--beta-00BFEF" alt="Version" />
+  <img src="https://img.shields.io/badge/version-1.0.1--beta-00BFEF" alt="Version" />
   <img src="https://img.shields.io/badge/Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows" />
   <img src="https://img.shields.io/badge/macOS%20alpha-000000?logo=apple&logoColor=white" alt="macOS" />
   <img src="https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white" alt=".NET 8" />
@@ -31,7 +31,7 @@ The 1.0 beta also adds native support for the **TreasLin / VSDinside N3** stream
 
 ### 🪟 Windows
 
-1. Download **`AmpUp-Setup-1.0.0-beta.exe`** from [Releases](https://github.com/audioslayer/ampup/releases).
+1. Download **`AmpUp-Setup-1.0.1-beta.exe`** from [Releases](https://github.com/audioslayer/ampup/releases).
 2. Run the installer.
 3. Launch Amp Up, then connect your Turn Up mixer or N3 controller.
 
@@ -163,6 +163,7 @@ The Windows app is a .NET 8 WPF application using WPF-UI, NAudio, Newtonsoft.Jso
 
 | Version | Highlights |
 |-|-|
+| **v1.0.1-beta** | App-group discoverability fixes in the Mixer target picker and Audio Sessions list. |
 | **v1.0.0-beta** 🚀 | Production-readiness beta with N3 stream-controller support, major Room tab upgrades, Govee/Corsair/iCUE sync fixes, tray mixer polish, lower idle CPU/RAM pressure, release workflow, safer updates, and many crash fixes. |
 | **v0.9.8** 🎨 | Animated effect previews, Phosphor icon polish, card layout pass, and refined visual hierarchy. |
 | **v0.9.7** 🏠 | Room Effect redesign, Favorites, gradient palettes, VU Fill modes, Music Reactive sensitivity, and many lighting fixes. |
