@@ -10,9 +10,9 @@ echo.
 set APP_VERSION=
 set APP_ASSEMBLY_VERSION=
 set APP_FILE_VERSION=
-for /f "tokens=2 delims=<>" %%v in ('findstr /c:"<Version>" "%~dp0AmpUp.csproj"') do set APP_VERSION=%%v
-for /f "tokens=2 delims=<>" %%v in ('findstr /c:"<AssemblyVersion>" "%~dp0AmpUp.csproj"') do set APP_ASSEMBLY_VERSION=%%v
-for /f "tokens=2 delims=<>" %%v in ('findstr /c:"<FileVersion>" "%~dp0AmpUp.csproj"') do set APP_FILE_VERSION=%%v
+for /f "tokens=3 delims=<>" %%v in ('findstr /c:"<Version>" "%~dp0AmpUp.csproj"') do set APP_VERSION=%%v
+for /f "tokens=3 delims=<>" %%v in ('findstr /c:"<AssemblyVersion>" "%~dp0AmpUp.csproj"') do set APP_ASSEMBLY_VERSION=%%v
+for /f "tokens=3 delims=<>" %%v in ('findstr /c:"<FileVersion>" "%~dp0AmpUp.csproj"') do set APP_FILE_VERSION=%%v
 if "%APP_VERSION%"=="" (
     echo ERROR: Could not extract version from AmpUp.csproj!
     echo        Make sure AmpUp.csproj has a ^<Version^> tag.
