@@ -3584,21 +3584,25 @@ public partial class App : Application
 
             try
             {
-                _cachedMaster ??= _pollEnumerator.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.Role.Multimedia);
-                _rgb.SetMasterMuted(_cachedMaster.AudioEndpointVolume.Mute);
+                using var currentDefault = _pollEnumerator.GetDefaultAudioEndpoint(
+                    NAudio.CoreAudioApi.DataFlow.Render,
+                    NAudio.CoreAudioApi.Role.Multimedia);
 
                 // Notify RgbController when the default output device changes (for DeviceSelect effect)
-                string currentId = _cachedMaster.ID;
+                string currentId = currentDefault.ID;
                 if (currentId != _lastDefaultOutputDeviceId)
                 {
                     _lastDefaultOutputDeviceId = currentId;
                     _rgb.SetDefaultOutputDevice(currentId);
                     // Default device changed — clear master cache so next poll fetches the new default
-                    _cachedMaster.Dispose();
+                    _cachedMaster?.Dispose();
                     _cachedMaster = null;
                     // Re-subscribe to the new default device for instant mute notifications
                     SubscribeMuteNotifications();
                 }
+
+                _cachedMaster ??= _pollEnumerator.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.Role.Multimedia);
+                _rgb.SetMasterMuted(_cachedMaster.AudioEndpointVolume.Mute);
             }
             catch
             {
