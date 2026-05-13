@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.2-beta] - 2026-05-12
+
+### Added
+- Added **Dev+Pos** / `DevicePositionFill` lighting mode, combining active default output-device colors with Turn Up knob position fill.
+
+### Fixed
+- Fixed position-fill lighting briefly showing 100% on startup when a saved knob position is zero.
+
+---
+
 ## [1.0.1-beta] - 2026-05-10
 
 ### Changed
@@ -87,5 +97,6 @@ This is the big one: Amp Up graduates into a 1.0 beta for Windows with a polishe
 
 ---
 
+[1.0.2-beta]: https://github.com/audioslayer/ampup/releases/tag/v1.0.2-beta
 [1.0.1-beta]: https://github.com/audioslayer/ampup/releases/tag/v1.0.1-beta
 [1.0.0-beta]: https://github.com/audioslayer/ampup/releases/tag/v1.0.0-beta
