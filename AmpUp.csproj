@@ -11,9 +11,9 @@
     <RootNamespace>AmpUp</RootNamespace>
     <ApplicationManifest>Assets\app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\ampup.ico</ApplicationIcon>
-    <Version>1.0.1-beta</Version>
-    <AssemblyVersion>1.0.1.0</AssemblyVersion>
-    <FileVersion>1.0.1.0</FileVersion>
+    <Version>1.0.2-beta</Version>
+    <AssemblyVersion>1.0.2.0</AssemblyVersion>
+    <FileVersion>1.0.2.0</FileVersion>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
     <!-- Trimming flags are passed via build-installer.bat, not here -->
