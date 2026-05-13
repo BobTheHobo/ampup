@@ -159,7 +159,7 @@ public partial class LightsView : UserControl
     private static readonly LightEffect[] EffectsNeedingProgramName =
         { LightEffect.ProgramMute };
     private static readonly LightEffect[] EffectsNeedingDeviceSelect =
-        { LightEffect.DeviceSelect };
+        { LightEffect.DeviceSelect, LightEffect.DevicePositionFill };
 
     public LightsView()
     {
@@ -2185,7 +2185,7 @@ public partial class LightsView : UserControl
         bool needsSpeed = EffectsNeedingSpeed.Contains(effect);
         bool isReactive = effect == LightEffect.AudioReactive;
         bool needsProgramName = EffectsNeedingProgramName.Contains(effect);
-        bool needsDeviceSelect = effect == LightEffect.DeviceSelect;
+        bool needsDeviceSelect = EffectsNeedingDeviceSelect.Contains(effect);
 
         // Hide entire color section for pure rainbow/HSV effects
         if (_colorSections[idx] != null)
@@ -2421,9 +2421,9 @@ public partial class LightsView : UserControl
             if (_programNameBoxes[i] != null)
                 light.ProgramName = _programNameBoxes[i].Text.Trim();
 
-            // Save DeviceSelect mappings — only overwrite when the effect is DeviceSelect
+            // Save DeviceSelect mappings only for effects that use device colors
             // and the pickers are initialized, otherwise preserve existing config
-            if (light.Effect == LightEffect.DeviceSelect && _dsDevicePickers[i] != null)
+            if (EffectsNeedingDeviceSelect.Contains(light.Effect) && _dsDevicePickers[i] != null)
             {
                 light.DeviceColors = new List<DeviceColorEntry>();
                 for (int row = 0; row < _dsDevicePickers[i].Length; row++)

@@ -289,7 +289,7 @@ public enum LightEffect
     Breathing, Fire, Comet, Sparkle, GradientFill,
     PositionBlend, PositionBlendMute,
     PingPong, Stack, Wave, Candle, Wheel, RainbowWheel,
-    ProgramMute, AppGroupMute, DeviceSelect,
+    ProgramMute, AppGroupMute, DeviceSelect, DevicePositionFill,
     Scanner, MeteorRain, ColorWave, Segments, TheaterChase,
     RainbowScanner, SparkleRain, BreathingSync, FireWall,
     DualRacer, Lightning, Fillup, Ocean, Collision, DNA, Rainfall, PoliceLights,

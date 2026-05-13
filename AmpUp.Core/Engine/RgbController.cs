@@ -773,6 +773,10 @@ public class RgbController : IDisposable
                 EffectDeviceSelect(k, light);
                 break;
 
+            case LightEffect.DevicePositionFill:
+                EffectDevicePositionFill(k, light, rawPos);
+                break;
+
             case LightEffect.Heartbeat:
                 EffectHeartbeat(k, light);
                 break;
@@ -841,6 +845,9 @@ public class RgbController : IDisposable
     /// Matches Turn Up source: LED 0 fades 0-33%, LED 1 fades 33-66%, LED 2 fades 66-100%.
     /// </summary>
     private void EffectPositionFill(int k, LightConfig light, float pos)
+        => EffectPositionFillColor(k, light.R, light.G, light.B, pos);
+
+    private void EffectPositionFillColor(int k, int baseR, int baseG, int baseB, float pos)
     {
         float pct = pos * 100f;
 
@@ -851,9 +858,9 @@ public class RgbController : IDisposable
         // LED 2: off until 66%, fades in 66-100%
         float led2 = pct > 66f ? (pct - 66f) / 34f : 0f;
 
-        SetColor(k, 0, (int)(light.R * led0), (int)(light.G * led0), (int)(light.B * led0));
-        SetColor(k, 1, (int)(light.R * led1), (int)(light.G * led1), (int)(light.B * led1));
-        SetColor(k, 2, (int)(light.R * led2), (int)(light.G * led2), (int)(light.B * led2));
+        SetColor(k, 0, (int)(baseR * led0), (int)(baseG * led0), (int)(baseB * led0));
+        SetColor(k, 1, (int)(baseR * led1), (int)(baseG * led1), (int)(baseB * led1));
+        SetColor(k, 2, (int)(baseR * led2), (int)(baseG * led2), (int)(baseB * led2));
     }
 
     /// <summary>
@@ -1664,6 +1671,12 @@ public class RgbController : IDisposable
     /// </summary>
     private void EffectDeviceSelect(int k, LightConfig light)
     {
+        var (r, g, b) = GetDeviceSelectColor(light);
+        SetColor(k, r, g, b);
+    }
+
+    private (int R, int G, int B) GetDeviceSelectColor(LightConfig light)
+    {
         if (light.DeviceColors != null)
         {
             foreach (var entry in light.DeviceColors)
@@ -1671,13 +1684,21 @@ public class RgbController : IDisposable
                 if (!string.IsNullOrEmpty(entry.DeviceId) &&
                     entry.DeviceId.Equals(_defaultOutputDeviceId, StringComparison.OrdinalIgnoreCase))
                 {
-                    SetColor(k, entry.R, entry.G, entry.B);
-                    return;
+                    return (entry.R, entry.G, entry.B);
                 }
             }
         }
-        // Fallback: color1
-        SetColor(k, light.R, light.G, light.B);
+        return (light.R, light.G, light.B);
+    }
+
+    /// <summary>
+    /// DeviceSelect color plus position fill: the active default output device chooses
+    /// the color, and the linked knob position controls the 3-LED fill amount.
+    /// </summary>
+    private void EffectDevicePositionFill(int k, LightConfig light, float pos)
+    {
+        var (r, g, b) = GetDeviceSelectColor(light);
+        EffectPositionFillColor(k, r, g, b, pos);
     }
 
     // --- Global-spanning effects (all 15 LEDs as one strip) ---

@@ -1951,11 +1951,14 @@ public partial class App : Application
         {
             _connectedAt = DateTime.UtcNow;
 
-            // Initialize RGB knob positions — default to 1.0 (full brightness LEDs)
-            // The batch frame from the device will update these to actual hardware positions,
-            // and the live timer will track real audio volumes once running.
+            // Seed position effects from saved hardware positions until the device
+            // reports fresh positions.
             for (int i = 0; i < 5; i++)
-                _rgb.SetKnobPosition(i, 1f);
+            {
+                var knob = _config.Knobs.FirstOrDefault(k => k.Idx == i);
+                float pos = knob?.LastRawValue >= 0 ? knob.LastRawValue / 1023f : 1f;
+                _rgb.SetKnobPosition(i, pos);
+            }
 
             _rgb.SetBrightness(_config.LedBrightness);
             _rgb.SetOutput(
@@ -3630,7 +3633,8 @@ public partial class App : Application
     {
         if (_config == null) return true;
         static bool NeedsPolling(LightEffect effect) =>
-            effect is LightEffect.ProgramMute or LightEffect.AppGroupMute or LightEffect.DeviceSelect;
+            effect is LightEffect.ProgramMute or LightEffect.AppGroupMute
+                or LightEffect.DeviceSelect or LightEffect.DevicePositionFill;
 
         if (_config.Lights.Any(l => NeedsPolling(l.Effect)))
             return true;

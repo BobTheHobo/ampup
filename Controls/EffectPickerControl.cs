@@ -200,6 +200,7 @@ namespace AmpUp.Controls
             { LightEffect.ProgramMute,   Color.FromRgb(0xFF, 0x8A, 0x65) }, // deep orange
             { LightEffect.AppGroupMute,  Color.FromRgb(0xAB, 0x47, 0xBC) }, // purple
             { LightEffect.DeviceSelect,  Color.FromRgb(0x4D, 0xD0, 0xE1) }, // cyan
+            { LightEffect.DevicePositionFill, Color.FromRgb(0x26, 0xC6, 0xDA) }, // cyan
 
             // Global-spanning effects
             { LightEffect.Scanner,       Color.FromRgb(0xEF, 0x53, 0x50) }, // red
@@ -331,6 +332,7 @@ namespace AmpUp.Controls
                 (LightEffect.ProgramMute,   "⊗",   "App Mute", false),
                 (LightEffect.AppGroupMute,  "⊞",   "Group",    false),
                 (LightEffect.DeviceSelect,  "⬡",   "Device",   false),
+                (LightEffect.DevicePositionFill, "⬡▂", "Dev+Pos", false),
             });
 
             if (_showGlobal)

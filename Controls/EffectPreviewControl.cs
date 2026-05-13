@@ -253,6 +253,7 @@ namespace AmpUp.Controls
                 case LightEffect.ProgramMute:     RenderProgramMute(c);     break;
                 case LightEffect.AppGroupMute:    RenderAppGroupMute(c);    break;
                 case LightEffect.DeviceSelect:    RenderDeviceSelect(c);    break;
+                case LightEffect.DevicePositionFill: RenderDevicePositionFill(c); break;
 
                 // GLOBAL SPAN — group A
                 case LightEffect.Scanner:         RenderScanner(c);         break;

@@ -127,5 +127,21 @@ namespace AmpUp.Controls
                 Dot(c.Dc, sp * (i + 1), c.Cy, dotR, cols[i], pulse);
             }
         }
+
+        private void RenderDevicePositionFill(Ctx c)
+        {
+            double fillPct = Sin01(c.T * 1.2);
+            double fillW = Math.Max(1, fillPct * c.W);
+            double deviceT = Saw(c.T * 0.25);
+            var mid = Lerp(c.Color, c.Color2, 0.5);
+            Color[] cols = { c.Color, mid, c.Color2 };
+            var selected = cols[Math.Min(2, (int)(deviceT * 3))];
+
+            Rect(c.Dc, 0, 0, c.W, c.H, Colors.Black, 0.3, 3);
+            var bar = new LinearGradientBrush(
+                selected,
+                Color.FromArgb(128, selected.R, selected.G, selected.B), 0);
+            c.Dc.DrawRoundedRectangle(bar, null, new Rect(0, 0, fillW, c.H), 2, 2);
+        }
     }
 }
