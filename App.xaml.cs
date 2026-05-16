@@ -349,14 +349,15 @@ public partial class App : Application
         // Start audio mixer
         _mixer.Start();
 
-        // Restore last known knob positions from config (device doesn't report on connect)
+        // Restore last known knob positions for UI/LED state only. Do not apply
+        // them to Windows/app volume on launch; the real device batch below is
+        // also a position report, not an intentional user volume change.
         foreach (var knob in _config.Knobs)
         {
             if (knob.Idx >= 0 && knob.Idx < 5 && knob.LastRawValue >= 0)
             {
                 KnobPositions[knob.Idx] = knob.LastRawValue / 1023f;
-                // Apply the saved volume to WASAPI
-                HandleKnob(new KnobEvent { Idx = knob.Idx, Value = knob.LastRawValue });
+                HandleKnob(new KnobEvent { Idx = knob.Idx, Value = knob.LastRawValue, IsBatch = true });
             }
         }
         foreach (var knob in _config.N3.Knobs)
@@ -364,7 +365,7 @@ public partial class App : Application
             if (knob.Idx >= 0 && knob.Idx < 3 && knob.LastRawValue >= 0)
             {
                 StreamControllerKnobPositions[knob.Idx] = knob.LastRawValue / 1023f;
-                ApplyKnobConfig(knob, knob.LastRawValue, N3KnobStateBase + knob.Idx, false);
+                ApplyKnobConfig(knob, knob.LastRawValue, N3KnobStateBase + knob.Idx, true);
             }
         }
 
@@ -1222,9 +1223,15 @@ public partial class App : Application
         var knob = _config.Knobs.FirstOrDefault(k => k.Idx == e.Idx);
         if (knob != null)
         {
-            // Persist last raw position for startup restore
+            // Persist/report position, but never treat a startup/connect batch as
+            // an intentional control change. That keeps fresh app launch from
+            // moving Windows master/app volumes to the physical knob position.
             knob.LastRawValue = e.Value;
-            if (knob.Target.StartsWith("ha_", StringComparison.OrdinalIgnoreCase))
+            if (e.IsBatch)
+            {
+                _lastOsdValue[e.Idx] = e.Value;
+            }
+            else if (knob.Target.StartsWith("ha_", StringComparison.OrdinalIgnoreCase))
             {
                 // Route to Home Assistant (throttled — HA can't handle rapid-fire HTTP calls)
                 // Skip during startup and reconnect to avoid changing HA entity state
@@ -1429,7 +1436,11 @@ public partial class App : Application
     {
         knob.LastRawValue = rawValue;
 
-        if (knob.Target.StartsWith("ha_", StringComparison.OrdinalIgnoreCase))
+        if (isBatch)
+        {
+            _lastOsdValue[stateIdx] = rawValue;
+        }
+        else if (knob.Target.StartsWith("ha_", StringComparison.OrdinalIgnoreCase))
         {
             if (_ha != null && _ha.IsAvailable
                 && Environment.TickCount64 - _startupTick >= 8000
