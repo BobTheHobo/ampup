@@ -75,6 +75,7 @@ public partial class App : Application
     private const int HardwareInputSampleLogMs = 5000;
     private const int HardwareInputSlowLogMs = 1000;
     private long _lastHardwareInputLogTick;
+    private long _lastHardwareActivityTick = Environment.TickCount64;
     private DateTime _lastN3ReconnectAttemptUtc = DateTime.MinValue;
     private int _n3ReconnectInFlight;
     private volatile bool _n3InitialProbeComplete;
@@ -718,6 +719,7 @@ public partial class App : Application
             // Session is restored — rebuild subscriptions and reseed state
             _sessionLocked = false;
             Logger.Log("Session unlocked — re-subscribing mute notifications");
+            try { _mixer?.RefreshNow(); } catch { }
             try { SubscribeMuteNotifications(); } catch { }
         }
     }
@@ -743,6 +745,17 @@ public partial class App : Application
             }
             else if (e.Mode == PowerModes.Resume)
             {
+                try
+                {
+                    _mixer?.InvalidatePeakDevice();
+                    _mixer?.RefreshNow();
+                    SubscribeMuteNotifications();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Power resume audio refresh error: {ex.Message}");
+                }
+
                 if (_n3 != null && _isN3Connected)
                 {
                     _n3.Wake();
@@ -1164,6 +1177,8 @@ public partial class App : Application
     private void QueueHardwareInput(string source, Action action)
     {
         long now = Environment.TickCount64;
+        Interlocked.Exchange(ref _lastHardwareActivityTick, now);
+
         long lastLog = Interlocked.Read(ref _lastHardwareInputLogTick);
         if (now - lastLog >= HardwareInputSampleLogMs
             && Interlocked.CompareExchange(ref _lastHardwareInputLogTick, now, lastLog) == lastLog)
@@ -1367,7 +1382,7 @@ public partial class App : Application
             }
             else
             {
-                _mixer.SetVolume(knob, e.Value);
+                _mixer.SetVolume(knob, e.Value, e.Idx);
             }
 
             // Show OSD overlay when volume OSD is enabled (skip unassigned knobs)
@@ -1567,7 +1582,7 @@ public partial class App : Application
         }
         else
         {
-            _mixer.SetVolume(knob, rawValue);
+            _mixer.SetVolume(knob, rawValue, stateIdx);
         }
 
         long osdNow = Environment.TickCount64;
@@ -2301,15 +2316,19 @@ public partial class App : Application
             if (_n3 != null && _isN3Connected)
             {
                 int thresholdSec = Math.Max(0, _config.N3.IdleSleepSeconds);
-                uint idleMs = NativeMethods.GetIdleMilliseconds();
-                bool idleTriggered = thresholdSec > 0 && idleMs >= (uint)thresholdSec * 1000u;
+                uint osIdleMs = NativeMethods.GetIdleMilliseconds();
+                long hardwareIdleMs = Math.Max(0, Environment.TickCount64 - Interlocked.Read(ref _lastHardwareActivityTick));
+                long effectiveIdleMs = Math.Min(osIdleMs, hardwareIdleMs);
+                bool idleTriggered = thresholdSec > 0 && effectiveIdleMs >= (long)thresholdSec * 1000L;
                 bool shouldSleep = _forceN3Sleep || idleTriggered;
 
                 // Only log state transitions — the raw every-tick output
                 // was 1 line/sec, 24/7.
                 if (shouldSleep != _n3AsleepFromIdle)
                 {
-                    Logger.Log($"N3 idle: {(shouldSleep ? "sleeping" : "waking")} (idleMs={idleMs}, threshold={thresholdSec}s, forced={_forceN3Sleep})");
+                    Logger.Log(
+                        $"N3 idle: {(shouldSleep ? "sleeping" : "waking")} " +
+                        $"(idleMs={effectiveIdleMs}, osIdleMs={osIdleMs}, hardwareIdleMs={hardwareIdleMs}, threshold={thresholdSec}s, forced={_forceN3Sleep})");
                 }
 
                 if (shouldSleep && !_n3AsleepFromIdle)
@@ -2327,7 +2346,7 @@ public partial class App : Application
 
                 // A forced sleep is consumed once input arrives, so the next
                 // keypress wakes the screens just like a timeout-sleep would.
-                if (_forceN3Sleep && idleMs < 500) _forceN3Sleep = false;
+                if (_forceN3Sleep && effectiveIdleMs < 500) _forceN3Sleep = false;
             }
 
             if (_config.N3?.DisplayKeys == null) return;

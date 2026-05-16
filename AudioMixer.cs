@@ -11,6 +11,7 @@ public class AudioMixer : IDisposable
     private readonly Dictionary<int, int> _lastValues = new();
     private readonly object _lock = new();      // guards _sessions / _sessionsByPid dict access
     private readonly object _enumLock = new();  // guards _enumerator — accessed from multiple threads
+    private readonly object _lastValuesLock = new();
     private System.Threading.Timer? _pollTimer;
     private volatile bool _disposed;
 
@@ -32,6 +33,8 @@ public class AudioMixer : IDisposable
         RefreshSessions();
         _pollTimer = new System.Threading.Timer(_ => RefreshSessions(), null, 2000, 2000);
     }
+
+    public void RefreshNow() => RefreshSessions();
 
     private MMDevice? _renderDevice; // kept alive so session COM objects remain valid
     private MMDevice? _masterPeakDevice; // dedicated persistent device for master peak metering
@@ -117,14 +120,18 @@ public class AudioMixer : IDisposable
     private static float ComputeVolume(int rawValue, KnobConfig knob)
         => VolumePipeline.ComputeVolume(rawValue, knob);
 
-    public void SetVolume(KnobConfig knob, int rawValue)
+    public void SetVolume(KnobConfig knob, int rawValue, int? debounceKeyOverride = null)
     {
         // Debounce — skip if change < 5
-        if (_lastValues.TryGetValue(knob.Idx, out int last) && Math.Abs(rawValue - last) < 5)
+        int debounceKey = debounceKeyOverride ?? knob.Idx;
+        lock (_lastValuesLock)
         {
-            return;
+            if (_lastValues.TryGetValue(debounceKey, out int last) && Math.Abs(rawValue - last) < 5)
+            {
+                return;
+            }
+            _lastValues[debounceKey] = rawValue;
         }
-        _lastValues[knob.Idx] = rawValue;
 
         float vol = ComputeVolume(rawValue, knob);
 
