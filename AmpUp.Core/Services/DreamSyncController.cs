@@ -176,7 +176,7 @@ public class DreamSyncController : IDisposable
                 }
                 else
                 {
-                    // Mac fallback: use legacy 1D capture
+                    // Fallback: use legacy 1D capture
                     zones = _capture.CaptureZones(cfg.MonitorIndex, cfg.ZoneCount, cfg.CropBlackBars);
                 }
 

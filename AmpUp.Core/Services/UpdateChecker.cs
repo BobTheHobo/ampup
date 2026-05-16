@@ -28,7 +28,7 @@ public static class UpdateChecker
 
     /// <summary>
     /// Checks GitHub for a newer release. Returns (tagName, downloadUrl) or null if up to date.
-    /// Pass preferredExtension (e.g. ".dmg" on Mac, ".exe" on Windows) to find the right asset.
+    /// Pass preferredExtension (for example ".exe") to find the right release asset.
     /// </summary>
     public static async Task<(string Tag, string DownloadUrl)?> CheckForUpdateAsync(string preferredExtension = ".exe")
     {

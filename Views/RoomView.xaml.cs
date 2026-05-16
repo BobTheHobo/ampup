@@ -153,20 +153,13 @@ public partial class RoomView : UserControl
 
         // Restore active room effect on startup (deferred so sync/dreamSync are wired up first).
         // Skip if screen sync is enabled — it has exclusive control of room lights.
+        // Refresh actual Govee power state first so stale PoweredOn values do not wake lights.
         if (!string.IsNullOrEmpty(config.Ambience.RoomEffect)
             && HasRoomEffectTarget(config)
             && !config.Ambience.ScreenSync.Enabled)
         {
             Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
-            {
-                if (_config != null
-                    && HasRoomEffectTarget(_config)
-                    && !string.IsNullOrEmpty(_config.Ambience.RoomEffect)
-                    && !_config.Ambience.ScreenSync.Enabled)
-                {
-                    StartRoomPattern(_config.Ambience.RoomEffect);
-                }
-            });
+                _ = ResumePersistedRoomEffectOnStartupAsync());
         }
 
         // Initialize cloud API if enabled and key is configured
@@ -5009,6 +5002,121 @@ public partial class RoomView : UserControl
             || config.Ambience.SyncRoomToTurnUp;
     }
 
+    private static bool HasActiveRoomEffectTarget(AppConfig config)
+    {
+        if (config.Corsair.Enabled || config.HomeAssistant.Enabled || config.Ambience.SyncRoomToTurnUp)
+            return true;
+
+        return (config.Ambience.GoveeEnabled || config.Ambience.GoveeCloudEnabled)
+            && config.Ambience.GoveeDevices.Any(dev =>
+                dev.PoweredOn
+                && dev.SyncWithAmpUp
+                && (!string.IsNullOrWhiteSpace(dev.Ip) || !string.IsNullOrWhiteSpace(dev.DeviceId)));
+    }
+
+    private async Task ResumePersistedRoomEffectOnStartupAsync()
+    {
+        try
+        {
+            var config = _config;
+            if (config == null
+                || string.IsNullOrWhiteSpace(config.Ambience.RoomEffect)
+                || config.Ambience.ScreenSync.Enabled)
+                return;
+
+            await RefreshGoveePowerStatesBeforeStartupResumeAsync(config);
+
+            if (_config != config
+                || string.IsNullOrWhiteSpace(config.Ambience.RoomEffect)
+                || config.Ambience.ScreenSync.Enabled)
+                return;
+
+            if (!HasActiveRoomEffectTarget(config))
+            {
+                Logger.Log("[Room] Startup room effect suppressed; no active room-light targets are powered on.");
+                return;
+            }
+
+            if (_roomRgb != null
+                && string.Equals(_activePattern, config.Ambience.RoomEffect, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            StartRoomPattern(config.Ambience.RoomEffect);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[Room] Startup room effect resume failed: {ex.Message}");
+        }
+    }
+
+    private async Task RefreshGoveePowerStatesBeforeStartupResumeAsync(AppConfig config)
+    {
+        if (!config.Ambience.GoveeEnabled && !config.Ambience.GoveeCloudEnabled)
+            return;
+
+        var lanTasks = config.Ambience.GoveeDevices
+            .Where(dev => dev.SyncWithAmpUp
+                && !string.IsNullOrWhiteSpace(dev.Ip))
+            .Select(RefreshLanGoveePowerStateForStartupAsync)
+            .ToArray();
+
+        if (lanTasks.Length > 0)
+            await Task.WhenAll(lanTasks);
+
+        if (!config.Ambience.GoveeCloudEnabled || _cloudApi == null)
+            return;
+
+        foreach (var dev in config.Ambience.GoveeDevices.Where(dev =>
+            dev.SyncWithAmpUp
+            && string.IsNullOrWhiteSpace(dev.Ip)
+            && !string.IsNullOrWhiteSpace(dev.DeviceId)
+            && !string.IsNullOrWhiteSpace(dev.Sku)))
+        {
+            try
+            {
+                var state = await _cloudApi.GetDeviceStateAsync(dev.DeviceId, dev.Sku);
+                if (state != null && state.Online)
+                {
+                    dev.PoweredOn = state.On;
+                    if (state.Brightness > 0)
+                        dev.BrightnessScale = state.Brightness;
+                }
+                else
+                {
+                    dev.PoweredOn = false;
+                    Logger.Log($"[Room] Startup Govee cloud state unavailable for {dev.Name}; suppressing auto-resume for that device.");
+                }
+            }
+            catch (Exception ex)
+            {
+                dev.PoweredOn = false;
+                Logger.Log($"[Room] Startup Govee cloud state failed for {dev.Name}: {ex.Message}");
+            }
+        }
+    }
+
+    private static async Task RefreshLanGoveePowerStateForStartupAsync(GoveeDeviceConfig dev)
+    {
+        try
+        {
+            var state = await AmbienceSync.GetDeviceStatusAsync(dev.Ip);
+            if (state.HasValue)
+            {
+                dev.PoweredOn = state.Value.On;
+                if (state.Value.Brightness > 0)
+                    dev.BrightnessScale = state.Value.Brightness;
+            }
+            else
+            {
+                Logger.Log($"[Room] Startup Govee LAN state unavailable for {dev.Name}; keeping prior startup power state.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[Room] Startup Govee LAN state failed for {dev.Name}: {ex.Message}");
+        }
+    }
+
     private static string? NormalizeRoomEffectName(string effectName)
     {
         if (string.IsNullOrWhiteSpace(effectName)) return null;
@@ -5287,12 +5395,15 @@ public partial class RoomView : UserControl
             App.Rgb?.SetScreenSyncColors(frameForSync);
 
         // Send music-modulated frame to Govee (brightness pulses with beats)
-        if (!_roomPatternCorsairOnly && config.Ambience.GoveeEnabled)
+        if (!_roomPatternCorsairOnly && (config.Ambience.GoveeEnabled || config.Ambience.GoveeCloudEnabled))
         {
-            _sync?.OnRoomFrame(frameForSync, config.Ambience);
+            if (config.Ambience.GoveeEnabled)
+                _sync?.OnRoomFrame(frameForSync, config.Ambience);
 
             // Cloud-only devices (no LAN IP) — throttle to ~1/sec (Cloud API rate limit)
-            if (_cloudApi != null && (DateTime.UtcNow - _lastCloudRoomSend).TotalMilliseconds >= 1000)
+            if (config.Ambience.GoveeCloudEnabled
+                && _cloudApi != null
+                && (DateTime.UtcNow - _lastCloudRoomSend).TotalMilliseconds >= 1000)
             {
                 _lastCloudRoomSend = DateTime.UtcNow;
                 foreach (var dev in config.Ambience.GoveeDevices)

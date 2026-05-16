@@ -30,7 +30,7 @@ public static class Logger
         catch { /* ignore startup log failures */ }
     }
 
-    /// <summary>Optional callback for UI log display (e.g. Mac app log panel).</summary>
+    /// <summary>Optional callback for UI log display.</summary>
     public static event Action<string>? OnLogMessage;
 
     public static void Log(string message)

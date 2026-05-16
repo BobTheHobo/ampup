@@ -46,10 +46,6 @@
     <None Remove="AmpUp.Core\**" />
     <Content Remove="AmpUp.Core\**" />
     <EmbeddedResource Remove="AmpUp.Core\**" />
-    <Compile Remove="AmpUp.Mac\**" />
-    <None Remove="AmpUp.Mac\**" />
-    <Content Remove="AmpUp.Mac\**" />
-    <EmbeddedResource Remove="AmpUp.Mac\**" />
     <Compile Remove="Tools\**" />
     <None Remove="Tools\**" />
     <Content Remove="Tools\**" />

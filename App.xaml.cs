@@ -189,6 +189,7 @@ public partial class App : Application
 
         // Load config and create backend
         _config = ConfigManager.Load();
+        RefreshGoveeLanPowerStatesForStartup(_config.Ambience);
 
         // Apply user's accent color and card theme
         ThemeManager.SetAccentColor(_config.AccentColor);
@@ -1250,64 +1251,7 @@ public partial class App : Application
                     {
                         float norm = e.Value / 1023f;
                         int pct = (int)Math.Round(norm * 100);
-                        foreach (var dev in group.Devices)
-                        {
-                            switch (dev.Type)
-                            {
-                                case "govee":
-                                    var gc = _config.Ambience.GoveeDevices.FirstOrDefault(d => d.Ip == dev.DeviceId);
-                                    bool wasOff = gc != null && !gc.PoweredOn;
-                                    if (gc != null)
-                                    {
-                                        gc.PoweredOn = true;
-                                        gc.BrightnessScale = pct;
-                                    }
-
-                                    var ip = dev.DeviceId;
-                                    bool segmentSynced = gc != null
-                                        && AmbienceSync.GetSegmentCount(gc) > 0
-                                        && gc.UseSegmentProtocol
-                                        && gc.SyncWithAmpUp;
-                                    if (wasOff)
-                                    {
-                                        _ = Task.Run(async () =>
-                                        {
-                                            await AmbienceSync.SendTurnAsync(ip, true);
-                                            await Task.Delay(150);
-                                            if (segmentSynced)
-                                                AmbienceSync.ResumeSync(ip);
-                                            else
-                                                await AmbienceSync.SendBrightnessAsync(ip, pct);
-                                        });
-                                    }
-                                    else if (segmentSynced)
-                                        AmbienceSync.ResumeSync(ip);
-                                    else
-                                        _ = AmbienceSync.SendBrightnessAsync(ip, pct);
-                                    break;
-                                case "corsair":
-                                    if (_corsairSync?.IsAvailable == true)
-                                    {
-                                        _config.Corsair.LightBrightness = (int)(pct * 2.0);
-                                    }
-                                    break;
-                                case "ha":
-                                    if (_ha != null && _ha.IsAvailable)
-                                    {
-                                        float haVal = norm;
-                                        _haLastValues[e.Idx] = ($"ha_light:{dev.DeviceId}", haVal);
-                                        if (!_haThrottleActive[e.Idx])
-                                        {
-                                            _haThrottleActive[e.Idx] = true;
-                                            _ = SendHaThrottledAsync(e.Idx);
-                                        }
-                                    }
-                                    break;
-                                case "audio_output":
-                                    _mixer?.SetOutputDeviceVolume(dev.DeviceId, norm);
-                                    break;
-                            }
-                        }
+                        ApplyDeviceGroupBrightness(group, norm, pct, e.Idx);
                     }
                 }
             }
@@ -1507,62 +1451,7 @@ public partial class App : Application
                 {
                     float norm = rawValue / 1023f;
                     int pct = (int)Math.Round(norm * 100);
-                    foreach (var dev in group.Devices)
-                    {
-                        switch (dev.Type)
-                        {
-                            case "govee":
-                                var gc = _config.Ambience.GoveeDevices.FirstOrDefault(d => d.Ip == dev.DeviceId);
-                                bool wasOff = gc != null && !gc.PoweredOn;
-                                if (gc != null)
-                                {
-                                    gc.PoweredOn = true;
-                                    gc.BrightnessScale = pct;
-                                }
-
-                                var ip = dev.DeviceId;
-                                bool segmentSynced = gc != null
-                                    && AmbienceSync.GetSegmentCount(gc) > 0
-                                    && gc.UseSegmentProtocol
-                                    && gc.SyncWithAmpUp;
-                                if (wasOff)
-                                {
-                                    _ = Task.Run(async () =>
-                                    {
-                                        await AmbienceSync.SendTurnAsync(ip, true);
-                                        await Task.Delay(150);
-                                        if (segmentSynced)
-                                            AmbienceSync.ResumeSync(ip);
-                                        else
-                                            await AmbienceSync.SendBrightnessAsync(ip, pct);
-                                    });
-                                }
-                                else if (segmentSynced)
-                                    AmbienceSync.ResumeSync(ip);
-                                else
-                                    _ = AmbienceSync.SendBrightnessAsync(ip, pct);
-                                break;
-                            case "corsair":
-                                if (_corsairSync?.IsAvailable == true)
-                                    _config.Corsair.LightBrightness = (int)(pct * 2.0);
-                                break;
-                            case "ha":
-                                if (_ha != null && _ha.IsAvailable)
-                                {
-                                    float haVal = norm;
-                                    _haLastValues[stateIdx] = ($"ha_light:{dev.DeviceId}", haVal);
-                                    if (!_haThrottleActive[stateIdx])
-                                    {
-                                        _haThrottleActive[stateIdx] = true;
-                                        _ = SendHaThrottledAsync(stateIdx);
-                                    }
-                                }
-                                break;
-                            case "audio_output":
-                                _mixer?.SetOutputDeviceVolume(dev.DeviceId, norm);
-                                break;
-                        }
-                    }
+                    ApplyDeviceGroupBrightness(group, norm, pct, stateIdx);
                 }
             }
         }
@@ -2552,6 +2441,12 @@ public partial class App : Application
 
     private void SyncStreamControllerDisplays()
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(SyncStreamControllerDisplays);
+            return;
+        }
+
         if (_n3 == null || !_isN3Connected) return;
         if (_config.HardwareMode == HardwareMode.TurnUpOnly) return;
 
@@ -2871,6 +2766,49 @@ public partial class App : Application
         });
     }
 
+    private static void RefreshGoveeLanPowerStatesForStartup(AmbienceConfig ambience)
+    {
+        if (!ambience.GoveeEnabled || ambience.GoveeDevices.Count == 0) return;
+
+        var devices = ambience.GoveeDevices
+            .Where(dev => dev.SyncWithAmpUp && !string.IsNullOrWhiteSpace(dev.Ip))
+            .ToArray();
+        if (devices.Length == 0) return;
+
+        try
+        {
+            var tasks = devices.Select(dev => Task.Run(async () =>
+            {
+                try
+                {
+                    var status = await AmbienceSync.GetDeviceStatusAsync(dev.Ip);
+                    if (status.HasValue)
+                    {
+                        dev.PoweredOn = status.Value.On;
+                        if (status.Value.Brightness > 0)
+                            dev.BrightnessScale = status.Value.Brightness;
+                    }
+                    else
+                    {
+                        dev.PoweredOn = false;
+                        Logger.Log($"Startup Govee LAN state unavailable for {dev.Name}; suppressing auto-resume for that device.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    dev.PoweredOn = false;
+                    Logger.Log($"Startup Govee LAN state failed for {dev.Name}: {ex.Message}");
+                }
+            }));
+
+            Task.WhenAll(tasks).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Startup Govee LAN power refresh failed: {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// Set a Govee device on/off, routing through LAN UDP or the Cloud REST
     /// API depending on whether the config entry has an IP. Also flips the
@@ -2881,10 +2819,10 @@ public partial class App : Application
     private void SetGoveePower(GoveeDeviceConfig dev, bool on)
     {
         if (dev == null) return;
-        dev.PoweredOn = on;
 
         if (!string.IsNullOrWhiteSpace(dev.Ip))
         {
+            dev.PoweredOn = on;
             _ = AmbienceSync.SendTurnAsync(dev.Ip, on);
             // Power-cycling segment devices loses segment mode on the device
             // but our _segmentEnabled cache still thinks it's active, so the
@@ -2897,17 +2835,26 @@ public partial class App : Application
 
         if (string.IsNullOrWhiteSpace(dev.DeviceId) || string.IsNullOrWhiteSpace(dev.Sku)) return;
         var apiKey = _config.Ambience.GoveeApiKey;
-        if (string.IsNullOrWhiteSpace(apiKey)) return;
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            Logger.Log($"SetGoveePower skipped for {dev.Name}: missing Govee API key");
+            return;
+        }
+
+        dev.PoweredOn = on;
 
         _ = Task.Run(async () =>
         {
             try
             {
                 using var api = new GoveeCloudApi(apiKey);
-                await api.ControlDeviceAsync(dev.DeviceId, dev.Sku, GoveeCloudApi.TurnOnOff(on));
+                bool ok = await api.ControlDeviceAsync(dev.DeviceId, dev.Sku, GoveeCloudApi.TurnOnOff(on));
+                if (!ok)
+                    dev.PoweredOn = !on;
             }
             catch (Exception ex)
             {
+                dev.PoweredOn = !on;
                 Logger.Log($"SetGoveePower cloud error for {dev.Name}: {ex.Message}");
             }
         });
@@ -2917,7 +2864,176 @@ public partial class App : Application
     // rate-limited (~100 req/min) and knobs fire many times a second, so we
     // coalesce aggressively — 1.5 s between cloud calls per device.
     private readonly Dictionary<string, DateTime> _lastCloudBrightnessSend = new();
+    private readonly Dictionary<string, (GoveeDeviceConfig Dev, int Pct, bool NeedsOn)> _pendingCloudBrightness = new();
+    private readonly HashSet<string> _scheduledCloudBrightnessFlushes = new();
+    private readonly object _cloudBrightnessLock = new();
     private const int CloudBrightnessMinIntervalMs = 1500;
+
+    private GoveeDeviceConfig? ResolveGoveeGroupDevice(GroupDevice dev)
+        => _config.Ambience.GoveeDevices.FirstOrDefault(d =>
+            (!string.IsNullOrWhiteSpace(d.Ip) && d.Ip == dev.DeviceId) ||
+            (!string.IsNullOrWhiteSpace(d.DeviceId) && d.DeviceId == dev.DeviceId));
+
+    private void SendCloudBrightnessThrottled(GoveeDeviceConfig dev, int pct, bool needsOn)
+    {
+        var apiKey = _config.Ambience.GoveeApiKey;
+        if (string.IsNullOrWhiteSpace(apiKey)
+            || string.IsNullOrWhiteSpace(dev.DeviceId)
+            || string.IsNullOrWhiteSpace(dev.Sku))
+            return;
+
+        pct = Math.Clamp(pct, 0, 100);
+        var now = DateTime.UtcNow;
+        var deviceId = dev.DeviceId;
+        TimeSpan delay = TimeSpan.Zero;
+        bool sendNow = false;
+
+        lock (_cloudBrightnessLock)
+        {
+            if (!_lastCloudBrightnessSend.TryGetValue(deviceId, out var last)
+                || (now - last).TotalMilliseconds >= CloudBrightnessMinIntervalMs)
+            {
+                _lastCloudBrightnessSend[deviceId] = now;
+                _pendingCloudBrightness.Remove(deviceId);
+                _scheduledCloudBrightnessFlushes.Remove(deviceId);
+                sendNow = true;
+            }
+            else
+            {
+                bool pendingNeedsOn = needsOn
+                    || (_pendingCloudBrightness.TryGetValue(deviceId, out var existing) && existing.NeedsOn);
+                _pendingCloudBrightness[deviceId] = (dev, pct, pendingNeedsOn);
+                if (_scheduledCloudBrightnessFlushes.Add(deviceId))
+                    delay = TimeSpan.FromMilliseconds(CloudBrightnessMinIntervalMs - (now - last).TotalMilliseconds);
+            }
+        }
+
+        if (sendNow)
+        {
+            _ = SendCloudBrightnessAsync(apiKey, dev, pct, needsOn);
+            return;
+        }
+
+        if (delay > TimeSpan.Zero)
+        {
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(delay);
+                FlushPendingCloudBrightness(deviceId);
+            });
+        }
+    }
+
+    private void FlushPendingCloudBrightness(string deviceId)
+    {
+        (GoveeDeviceConfig Dev, int Pct, bool NeedsOn) pending;
+        string apiKey;
+
+        lock (_cloudBrightnessLock)
+        {
+            _scheduledCloudBrightnessFlushes.Remove(deviceId);
+            if (!_pendingCloudBrightness.TryGetValue(deviceId, out pending))
+                return;
+            _pendingCloudBrightness.Remove(deviceId);
+            _lastCloudBrightnessSend[deviceId] = DateTime.UtcNow;
+            apiKey = _config.Ambience.GoveeApiKey;
+        }
+
+        if (string.IsNullOrWhiteSpace(apiKey)) return;
+        _ = SendCloudBrightnessAsync(apiKey, pending.Dev, pending.Pct, pending.NeedsOn);
+    }
+
+    private static async Task SendCloudBrightnessAsync(string apiKey, GoveeDeviceConfig dev, int pct, bool needsOn)
+    {
+        try
+        {
+            using var api = new GoveeCloudApi(apiKey);
+            if (needsOn)
+                await api.ControlDeviceAsync(dev.DeviceId, dev.Sku, GoveeCloudApi.TurnOnOff(true));
+            await api.ControlDeviceAsync(dev.DeviceId, dev.Sku, GoveeCloudApi.SetBrightness(pct));
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Govee cloud brightness failed ({dev.Name}): {ex.Message}");
+        }
+    }
+
+    private void ApplyDeviceGroupBrightness(DeviceGroup group, float norm, int pct, int haThrottleKey)
+    {
+        foreach (var dev in group.Devices)
+        {
+            switch (dev.Type)
+            {
+                case "govee":
+                    var gc = ResolveGoveeGroupDevice(dev);
+                    if (gc == null) break;
+
+                    if (pct <= 0)
+                    {
+                        gc.BrightnessScale = 0;
+                        SetGoveePower(gc, false);
+                        break;
+                    }
+
+                    bool wasOff = !gc.PoweredOn;
+                    gc.BrightnessScale = pct;
+
+                    if (!string.IsNullOrWhiteSpace(gc.Ip))
+                    {
+                        gc.PoweredOn = true;
+                        var ip = gc.Ip;
+                        bool segmentSynced = AmbienceSync.GetSegmentCount(gc) > 0
+                            && gc.UseSegmentProtocol
+                            && gc.SyncWithAmpUp;
+
+                        if (wasOff)
+                        {
+                            SetGoveePower(gc, true);
+                            _ = Task.Run(async () =>
+                            {
+                                await Task.Delay(150);
+                                if (segmentSynced)
+                                    AmbienceSync.ResumeSync(ip);
+                                else
+                                    await AmbienceSync.SendBrightnessAsync(ip, pct);
+                            });
+                        }
+                        else if (segmentSynced)
+                            AmbienceSync.ResumeSync(ip);
+                        else
+                            _ = AmbienceSync.SendBrightnessAsync(ip, pct);
+                    }
+                    else
+                    {
+                        if (string.IsNullOrWhiteSpace(_config.Ambience.GoveeApiKey)) break;
+                        gc.PoweredOn = true;
+                        SendCloudBrightnessThrottled(gc, pct, wasOff);
+                    }
+                    break;
+
+                case "corsair":
+                    if (_corsairSync?.IsAvailable == true)
+                        _config.Corsair.LightBrightness = (int)(pct * 2.0);
+                    break;
+
+                case "ha":
+                    if (_ha != null && _ha.IsAvailable)
+                    {
+                        _haLastValues[haThrottleKey] = ($"ha_light:{dev.DeviceId}", norm);
+                        if (!_haThrottleActive[haThrottleKey])
+                        {
+                            _haThrottleActive[haThrottleKey] = true;
+                            _ = SendHaThrottledAsync(haThrottleKey);
+                        }
+                    }
+                    break;
+
+                case "audio_output":
+                    _mixer?.SetOutputDeviceVolume(dev.DeviceId, norm);
+                    break;
+            }
+        }
+    }
 
     /// <summary>
     /// Apply a room-lights brightness update to every Govee device (LAN + Cloud)
@@ -2959,31 +3075,10 @@ public partial class App : Application
                     if (!string.IsNullOrWhiteSpace(dev.Ip)) continue;
                     if (string.IsNullOrWhiteSpace(dev.DeviceId) || string.IsNullOrWhiteSpace(dev.Sku)) continue;
 
-                    var now = DateTime.UtcNow;
-                    if (_lastCloudBrightnessSend.TryGetValue(dev.DeviceId, out var last)
-                        && (now - last).TotalMilliseconds < CloudBrightnessMinIntervalMs)
-                        continue;
-                    _lastCloudBrightnessSend[dev.DeviceId] = now;
-
                     // Power-on + brightness in one background task
                     bool needsOn = !dev.PoweredOn;
                     dev.PoweredOn = true;
-                    string id = dev.DeviceId, sku = dev.Sku, name = dev.Name;
-                    int b = pctRoom;
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            using var api = new GoveeCloudApi(apiKey);
-                            if (needsOn)
-                                await api.ControlDeviceAsync(id, sku, GoveeCloudApi.TurnOnOff(true));
-                            await api.ControlDeviceAsync(id, sku, GoveeCloudApi.SetBrightness(b));
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.Log($"ApplyRoomLightsBrightness cloud error for {name}: {ex.Message}");
-                        }
-                    });
+                    SendCloudBrightnessThrottled(dev, pctRoom, needsOn);
                 }
             }
 

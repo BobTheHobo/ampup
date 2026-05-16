@@ -71,7 +71,7 @@
                            MouseLeftButtonDown="VersionLabel_Click"
                            ToolTip="Click to check for updates" />
 
-                <!-- Mac-style traffic light buttons -->
+                <!-- Traffic-light window buttons -->
                 <StackPanel Orientation="Horizontal" Margin="16,0,0,0">
                     <!-- Minimize (yellow) -->
                     <Border x:Name="BtnMinimize" Width="14" Height="14" CornerRadius="7"

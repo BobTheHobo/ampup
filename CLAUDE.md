@@ -4,7 +4,7 @@ AmpUp is a C# .NET 8 WPF app that replaces the "Turn Up" USB volume mixer app.
 It reads serial events from the Turn Up hardware and maps them to Windows per-app audio volume control.
 Uses WPF-UI (FluentWindow, Mica backdrop) with a glassmorphism dark theme, sidebar navigation, and code-behind pattern (no MVVM).
 
-**macOS port: v0.1.0-alpha released** — see [CLAUDE-MAC.md](CLAUDE-MAC.md) for Mac-specific docs, SSH access, and architecture plan.
+**macOS support discontinued:** the experimental alpha port was removed due to lack of user interest and the maintenance cost of a separate Core Audio/Avalonia app.
 **Shared library:** `AmpUp.Core/` contains platform-agnostic code (models, serial, RGB, config, integrations).
 **Official Turn Up source:** We have admin access to `JaredWF/TurnUpCustomizer` — protocol fully confirmed, see memory for analysis.
 
@@ -776,10 +776,9 @@ Both clones use the same GitHub origin (`audioslayer/ampup`). Git identity: Tyso
 - **v0.8.2-alpha** — Quick Wheel mode selector (Profile/Output Device), tray audio activity bars, fuzzy process matching.
 - **v0.8.3-alpha** — LED Calibration with per-channel gamma sliders, confirmed Turn Up sends raw RGB (gamma default 1.0).
 - **v0.8.4-alpha** — DPI-aware tray popup, vertical taskbar detection, hide OSD in fullscreen.
-- **v0.8.5-alpha** — Multiple Quick Wheels, Govee PoweredOn persistence, Mac port feature-complete, tray overhaul (EarTrumpet-inspired), framework-dependent builds.
-- **v0.1.0-alpha-mac** — First macOS release with per-app volume via Core Audio Process Taps.
+- **v0.8.5-alpha** — Multiple Quick Wheels, Govee PoweredOn persistence, tray overhaul (EarTrumpet-inspired), framework-dependent builds.
 - **v0.9.0-alpha** — Major UI overhaul: Lights tab redesign, audio sessions in Mixer, tray popup redesign, per-knob LED preview.
-- **v0.9.2-alpha** — Bug fixes: tray context menu, OSD monitor picker refresh, Mac per-app volume and quit fixes.
+- **v0.9.2-alpha** — Bug fixes: tray context menu and OSD monitor picker refresh.
 - **v0.9.3-alpha** — LED effects overhaul (6 new, 5 improved), OSD curve-applied volume, color presets, hardware hover preview.
 - **v0.9.4-alpha** — Room tab redesign (AmbienceView renamed), Corsair enhancements, Music Reactive brightness modulation.
 - **v0.9.5-alpha** — Groups global, Govee flyout sub-menus, Corsair devices moved to Settings.
@@ -823,29 +822,17 @@ Both clones use the same GitHub origin (`audioslayer/ampup`). Git identity: Tyso
 
 ### Windows
 1. `deploy.bat` — pull + Debug build + launch (for testing)
-2. Tell Howl to bump version → updates `AmpUp.csproj` + `AmpUp.Mac.csproj` + `Info.plist`
+2. Tell Howl to bump version → updates `AmpUp.csproj`
 3. `build-installer.bat` — Release publish (framework-dependent ~5-8MB) + Inno Setup installer
 4. Tell Howl → creates GitHub release + uploads `.exe`
 
-### macOS
-1. SSH to Mac: `ssh audio@192.168.189.234`
-2. `cd ~/Projects/AmpUp.Mac/AmpUp.Mac && chmod +x *.sh && ./deploy.sh` — pull + build (for testing)
-3. Double-click **AmpUp Test** on Mac desktop to launch dev build (AppleScript app, no Terminal)
-4. Double-click **AmpUp Build** on Mac desktop to pull + rebuild (alternative to SSH)
-5. `./bundle.sh` — full .app bundle + DMG for release
-6. Tell Howl → uploads `.dmg` to same GitHub release
-7. Production install: `/Applications/AmpUp.app` (auto-updater manages this)
-
-**First-time setup on new Mac binary:** Must launch from Terminal once (not SSH) to grant TCC audio permission. Each build path needs its own permission grant.
-
 ### Version bumping
-- Both platforms share the same version number
-- Files to update: `AmpUp.csproj`, `AmpUp.Mac/AmpUp.Mac.csproj`, `AmpUp.Mac/Info.plist`
-- Howl handles all three when asked
+- Windows is the only supported release target
+- Files to update: `AmpUp.csproj`
+- Howl handles the project version bump when asked
 
 ### Build types
 - **Windows:** Framework-dependent (requires .NET 8 Desktop Runtime — auto-detected by installer)
-- **Mac:** Self-contained ARM64 .app bundle in DMG (no runtime needed)
 
 ---
 
@@ -857,16 +844,6 @@ Both clones use the same GitHub origin (`audioslayer/ampup`). Git identity: Tyso
 - [x] **Plugin system** — interfaces (ITurnUpPlugin, etc.) + LED presets (12 built-in)
 - [x] **Exponential2 response curve** — steeper x^3/10000 for fine control at low volumes
 - [x] **Audio device type distinction** — separate Media vs Communications vs Both when cycling/selecting
-- [x] **Mac: editable views** — knob target picker, button action picker, light effect picker
-- [x] **Mac: proper .app bundle** — drag-to-Applications DMG install
-- [x] **Mac: menu bar tray icon** — NSStatusBarItem with quick mixer popup
-- [x] **Mac: Govee LAN/Cloud integration** — wired into App + RoomView
-- [x] **Mac: Home Assistant integration** — wired into button actions
-- [x] **Mac: DreamView screen capture** — CGWindowList implementation
-- [x] **Mac: auto-update** — GitHub releases download + install flow
-- [x] **Mac: Hardware Preview** — live 5-knob status bar
-- [x] **Mac: Audio Dashboard** — real-time session view with quick-assign
-- [x] **Mac: OSD overlay** — transparent topmost window for volume/profile/device changes
 - [x] **Tray mixer overhaul** — EarTrumpet-inspired polish, search, pin, Quick Assign, context menus
 - [x] **Framework-dependent builds** — ~5-8MB updates instead of ~55MB
 - [x] **Instant mute LED feedback** — volume notification callbacks
@@ -877,8 +854,7 @@ Both clones use the same GitHub origin (`audioslayer/ampup`). Git identity: Tyso
 - [ ] **Multi-device support** — multiple Turn Up units simultaneously, each with own profile
 - [ ] **Streamlabs integration** — source gain, mute, scene switching
 - [ ] **SteelSeries Sonar integration** — volume and mute control
-- [ ] **System theme following** — match light/dark mode on both Windows and Mac
-- [ ] **GitHub Actions CI** — auto-build Windows .exe + Mac .dmg on release
+- [ ] **System theme following** — match Windows light/dark mode
+- [ ] **GitHub Actions CI** — auto-build Windows `.exe` on release
 - [ ] **Razer Chroma integration** — RGB sync
 - [ ] **Advanced macro system** — per-key-event macros with delays (from Turn Up source)
-- [ ] ~~**Mac: Intel support**~~ — shelved (tiny audience: only 2018-2020 Intel Macs on Sonoma 14.2+)

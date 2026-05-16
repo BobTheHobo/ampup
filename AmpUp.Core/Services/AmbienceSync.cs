@@ -926,6 +926,10 @@ public class AmbienceSync : IDisposable
         {
             device.BrightnessScale = value;
             if (string.IsNullOrWhiteSpace(device.Ip) || !device.PoweredOn) continue;
+            bool segmentSynced = GetSegmentCount(device) > 0
+                && device.UseSegmentProtocol
+                && device.SyncWithAmpUp;
+            if (segmentSynced) continue;
             string ip = device.Ip;
             _ = Task.Run(() => SendGoveeBrightness(ip, value));
         }
@@ -945,6 +949,8 @@ public class AmbienceSync : IDisposable
             if (!device.PoweredOn && !string.IsNullOrWhiteSpace(device.Ip))
             {
                 device.PoweredOn = true;
+                if (GetSegmentCount(device) > 0 && device.UseSegmentProtocol)
+                    ClearAllSegmentTracking();
                 string ip = device.Ip;
                 _ = Task.Run(() => SendTurnAsync(ip, true));
             }
@@ -961,6 +967,8 @@ public class AmbienceSync : IDisposable
         if (device != null && !device.PoweredOn)
         {
             device.PoweredOn = true;
+            if (GetSegmentCount(device) > 0 && device.UseSegmentProtocol)
+                ClearAllSegmentTracking();
             _ = Task.Run(() => SendTurnAsync(ip, true));
         }
     }
@@ -977,7 +985,13 @@ public class AmbienceSync : IDisposable
 
         int value = (int)Math.Round(Math.Clamp(normalized, 0f, 1f) * 100);
         if (device != null)
+        {
             device.BrightnessScale = value;
+            bool segmentSynced = GetSegmentCount(device) > 0
+                && device.UseSegmentProtocol
+                && device.SyncWithAmpUp;
+            if (segmentSynced) return;
+        }
         _ = Task.Run(() => SendGoveeBrightness(ip, value));
     }
 

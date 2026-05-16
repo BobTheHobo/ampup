@@ -125,7 +125,7 @@
 - `EncodeForDevice` no longer zeroes the four 4x4 corner blocks. The mitigation was for rounded-corner clip artifacts that never manifest on the N3's flat rectangular LCDs — those fills showed up as visible black boxes on device
 
 ### Version
-- Bumped to `1.0.0-beta` in `AmpUp.csproj`, `AmpUp.Mac.csproj`, `AmpUp.Mac/Info.plist`, `installer/version.iss`
+- Bumped to `1.0.0-beta` in `AmpUp.csproj` and `installer/version.iss`
 
 ## Remaining / next
 - Native SC support in the OSD overlay (currently still shows the Turn Up 5-knob layout when the Active Surface is SC)

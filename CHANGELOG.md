@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## Unreleased
+
+### Changed
+- Discontinued and removed the experimental macOS alpha due to lack of user interest and the maintenance cost of keeping a separate Core Audio/Avalonia port healthy.
+- Updated public documentation to present Amp Up as a Windows 10/11 app.
+
+---
+
 ## [1.0.2-beta] - 2026-05-12
 
 ### Added
@@ -67,8 +75,7 @@ This is the big one: Amp Up graduates into a 1.0 beta for Windows with a polishe
 
 ### ⚠️ Beta Notes
 - N3 support is new and marked beta while more real-world hardware setups are tested.
-- The Windows installer is the primary 1.0 beta artifact. The macOS port remains alpha while the shared core continues to mature.
-- The 1.0 beta release page includes the carried-forward **AmpUp-0.9.8-alpha.dmg** for macOS until the Mac 1.0 build catches up.
+- The Windows installer is the supported 1.0 beta artifact.
 
 ---
 
