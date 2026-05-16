@@ -17,6 +17,7 @@ public class SerialReader : IDisposable
 
     // Jitter deadzone: only fire OnKnob if value changed by >= this many ADC counts
     private const int JitterDeadzone = 5;
+    private static readonly TimeSpan ReadStallTimeout = TimeSpan.FromSeconds(5);
     private readonly int[] _lastFiredValues = { -1, -1, -1, -1, -1 };
 
     public event Action<KnobEvent>? OnKnob;
@@ -164,11 +165,22 @@ public class SerialReader : IDisposable
     private async Task ReadLoop(CancellationToken ct)
     {
         var tmp = new byte[64];
+        var lastReadUtc = DateTime.UtcNow;
         while (_running && !ct.IsCancellationRequested && _port?.IsOpen == true)
         {
             try
             {
-                int n = await _port.BaseStream.ReadAsync(tmp, 0, tmp.Length, ct);
+                var port = _port;
+                if (port == null || !port.IsOpen)
+                    break;
+
+                // SerialPort.BaseStream.ReadAsync can hang forever on some USB/serial
+                // stalls. Use the SerialPort timeout so the connection loop can recover.
+                int n = port.Read(tmp, 0, tmp.Length);
+                if (n <= 0)
+                    continue;
+
+                lastReadUtc = DateTime.UtcNow;
                 for (int i = 0; i < n; i++) _buf.Add(tmp[i]);
 
                 // Security: prevent unbounded buffer growth from malformed data
@@ -179,6 +191,18 @@ public class SerialReader : IDisposable
                 }
 
                 ParseFrames();
+            }
+            catch (TimeoutException)
+            {
+                var idleFor = DateTime.UtcNow - lastReadUtc;
+                if (idleFor >= ReadStallTimeout)
+                {
+                    throw new System.IO.IOException(
+                        $"No Turn Up serial data for {idleFor.TotalSeconds:0.0}s on {_port?.PortName ?? _portName}; reconnecting");
+                }
+
+                try { await Task.Delay(50, ct); }
+                catch (OperationCanceledException) { break; }
             }
             catch (OperationCanceledException) { break; }
             catch { throw; }
