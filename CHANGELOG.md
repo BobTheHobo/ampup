@@ -8,9 +8,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
 
+---
+
+## [1.0.3-beta] - 2026-05-15
+
 ### Changed
 - Discontinued and removed the experimental macOS alpha due to lack of user interest and the maintenance cost of keeping a separate Core Audio/Avalonia port healthy.
 - Updated public documentation to present Amp Up as a Windows 10/11 app.
+
+### Fixed
+- Hardened Govee startup power handling so stale saved state does not wake lights unexpectedly.
+- Added Turn Up serial stall recovery when the USB serial stream stops delivering data.
+- Decoupled Turn Up and N3 hardware input handling from low-level read loops so slow actions cannot block device reads.
+- Added sampled hardware-input logging and N3 reconnect attempts after disconnected states.
 
 ---
 
@@ -104,6 +114,7 @@ This is the big one: Amp Up graduates into a 1.0 beta for Windows with a polishe
 
 ---
 
+[1.0.3-beta]: https://github.com/audioslayer/ampup/releases/tag/v1.0.3-beta
 [1.0.2-beta]: https://github.com/audioslayer/ampup/releases/tag/v1.0.2-beta
 [1.0.1-beta]: https://github.com/audioslayer/ampup/releases/tag/v1.0.1-beta
 [1.0.0-beta]: https://github.com/audioslayer/ampup/releases/tag/v1.0.0-beta
