@@ -72,6 +72,12 @@ public partial class App : Application
     private const int MutePollingIdleMs = 1000;
     private const int MutePollingDuckingMs = 500;
     private const int MutePollingQuietMs = 5000;
+    private const int HardwareInputSampleLogMs = 5000;
+    private const int HardwareInputSlowLogMs = 1000;
+    private long _lastHardwareInputLogTick;
+    private DateTime _lastN3ReconnectAttemptUtc = DateTime.MinValue;
+    private int _n3ReconnectInFlight;
+    private volatile bool _n3InitialProbeComplete;
 
     private sealed class N3AnimatedKeyState
     {
@@ -236,7 +242,7 @@ public partial class App : Application
         };
 
         _n3 = new N3Controller();
-        _n3.OnInput += HandleN3Input;
+        _n3.OnInput += e => QueueHardwareInput($"N3 {e.Describe()}", () => HandleN3Input(e));
         _n3.OnConnectionChanged += HandleN3ConnectionChanged;
 
         // Let the display renderer resolve dynamic-state sources without
@@ -389,8 +395,8 @@ public partial class App : Application
 
         // Start serial reader
         _serial = new SerialReader(_config.Serial.Port, _config.Serial.Baud);
-        _serial.OnKnob += HandleKnob;
-        _serial.OnButton += HandleButton;
+        _serial.OnKnob += e => QueueHardwareInput($"Turn Up knob {e.Idx}{(e.IsBatch ? " batch" : "")} value={e.Value}", () => HandleKnob(e));
+        _serial.OnButton += e => QueueHardwareInput($"Turn Up button {e.Idx} {(e.IsDown ? "down" : "up")}", () => HandleButton(e));
         _serial.OnConnectionChanged += HandleConnection;
         _startupTick = Environment.TickCount64; // reset just before serial starts
         _serial.Start();
@@ -1154,6 +1160,36 @@ public partial class App : Application
         }
     }
 
+    private void QueueHardwareInput(string source, Action action)
+    {
+        long now = Environment.TickCount64;
+        long lastLog = Interlocked.Read(ref _lastHardwareInputLogTick);
+        if (now - lastLog >= HardwareInputSampleLogMs
+            && Interlocked.CompareExchange(ref _lastHardwareInputLogTick, now, lastLog) == lastLog)
+        {
+            Logger.Log($"Hardware input received: {source}");
+        }
+
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Hardware input handler failed ({source}): {ex.Message}");
+            }
+            finally
+            {
+                sw.Stop();
+                if (sw.ElapsedMilliseconds >= HardwareInputSlowLogMs)
+                    Logger.Log($"Hardware input handler slow ({source}): {sw.ElapsedMilliseconds}ms");
+            }
+        });
+    }
+
     private void HandleKnob(KnobEvent e)
     {
         if (_config.HardwareMode == HardwareMode.StreamControllerOnly)
@@ -1677,6 +1713,23 @@ public partial class App : Application
         if (_config.HardwareMode == HardwareMode.TurnUpOnly) return;
         if (!_config.N3.Enabled) return;
 
+        if (_n3AsleepFromIdle && _n3 != null && _isN3Connected)
+        {
+            try
+            {
+                Logger.Log("N3 idle: waking from hardware input");
+                _forceN3Sleep = false;
+                _n3.Wake();
+                _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
+                _n3AsleepFromIdle = false;
+                SyncStreamControllerDisplays();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"N3 hardware-input wake failed: {ex.Message}");
+            }
+        }
+
         switch (e.Kind)
         {
             case N3InputKind.EncoderTwist:
@@ -2162,6 +2215,7 @@ public partial class App : Application
                 });
             }
             catch (Exception ex) { Logger.Log($"N3 TryConnect failed: {ex.Message}"); }
+            finally { _n3InitialProbeComplete = true; }
         });
 
         // Screen Sync — defer capture-thread kickoff (it grabs monitor
@@ -2211,7 +2265,7 @@ public partial class App : Application
     // "Sleep Now" button; consumed on the first tick that detects input.
     private bool _forceN3Sleep;
 
-    /// <summary>Immediately blank the N3 LCDs. Wakes on the next mouse/keyboard input.</summary>
+    /// <summary>Immediately blank the N3 LCDs. Wakes on the next mouse, keyboard, or N3 input.</summary>
     public void ForceN3Sleep()
     {
         _forceN3Sleep = true;
@@ -2223,7 +2277,11 @@ public partial class App : Application
         try
         {
             if (_config == null) return;
-            if (!_isN3Connected && !_forceN3Sleep) return;
+            if (!_isN3Connected && !_forceN3Sleep)
+            {
+                TryReconnectN3FromRefreshTick();
+                return;
+            }
 
             // ── N3 idle sleep ─────────────────────────────────────────────
             // Uses the real firmware standby command (CRT HAN) via N3Controller.Sleep —
@@ -2315,6 +2373,55 @@ public partial class App : Application
     //
     // When inside a folder (_currentN3Folder != ""), LCD keys and button
     // configs come from that folder's own lists instead of the root N3 lists.
+
+    private void TryReconnectN3FromRefreshTick()
+    {
+        if (_n3 == null || _config == null) return;
+        if (!_n3InitialProbeComplete) return;
+        if (!_config.N3.Enabled || _config.HardwareMode == HardwareMode.TurnUpOnly) return;
+
+        var now = DateTime.UtcNow;
+        if ((now - _lastN3ReconnectAttemptUtc).TotalSeconds < 5) return;
+        if (Interlocked.Exchange(ref _n3ReconnectInFlight, 1) != 0) return;
+        _lastN3ReconnectAttemptUtc = now;
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                Logger.Log("N3: reconnect attempt after disconnected state");
+                if (!_n3.TryConnect()) return;
+
+                _isN3Connected = true;
+                _n3DeviceName = _n3.DeviceName;
+                _n3AsleepFromIdle = false;
+                _forceN3Sleep = false;
+                _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
+
+                Dispatcher.BeginInvoke(() =>
+                {
+                    try
+                    {
+                        _mainWindow?.SetN3ConnectionStatus(true, _n3DeviceName);
+                        UpdateAggregateTrayStatus();
+                        SyncStreamControllerDisplays();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"N3 reconnect UI update failed: {ex.Message}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"N3 reconnect attempt failed: {ex.Message}");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _n3ReconnectInFlight, 0);
+            }
+        });
+    }
 
     private List<StreamControllerDisplayKeyConfig> GetActiveDisplayKeys()
     {
