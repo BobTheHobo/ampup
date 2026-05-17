@@ -76,6 +76,7 @@ public partial class App : Application
     private const int HardwareInputSlowLogMs = 1000;
     private long _lastHardwareInputLogTick;
     private long _lastHardwareActivityTick = Environment.TickCount64;
+    private long _lastTurnUpRgbWriteErrorTick;
     private DateTime _lastN3ReconnectAttemptUtc = DateTime.MinValue;
     private int _n3ReconnectInFlight;
     private volatile bool _n3InitialProbeComplete;
@@ -762,6 +763,22 @@ public partial class App : Application
                     _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
                     SyncStreamControllerDisplays();
                 }
+
+                if (_serial != null)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await Task.Delay(750);
+                            _serial.RequestReconnect("system resume");
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Log($"Turn Up resume reconnect failed: {ex.Message}");
+                        }
+                    });
+                }
             }
         }
         catch (Exception ex)
@@ -1133,6 +1150,7 @@ public partial class App : Application
         ConfigManager.Save(_config);
         ConfigManager.SaveProfile(_config, _config.ActiveProfile);
         ApplyRgbConfig();
+        RefreshTurnUpRgbOutput();
         UpdateAudioAnalyzer();
         ApplyStartupSetting();
         if (_ha != null)
@@ -1928,11 +1946,8 @@ public partial class App : Application
                 _rgb.SetKnobPosition(i, pos);
             }
 
-            _rgb.SetBrightness(_config.LedBrightness);
-            _rgb.SetOutput(
-                (buf, off, len) => { try { _serial.Port?.Write(buf, off, len); } catch { } },
-                () => _serial.Port?.IsOpen == true);
-            _rgb.ApplyColors(_config.Lights);
+            ApplyRgbConfig();
+            RefreshTurnUpRgbOutput("serial connected");
             UpdateAudioAnalyzer();
         }
 
@@ -4085,6 +4100,38 @@ public partial class App : Application
         _rgb.UpdateConfig(_config.Lights);
         _rgb.UpdateCustomPalettes(_config.CustomPalettes);
         _rgb.UpdateGlobalConfig(_config.GlobalLight);
+    }
+
+    private void RefreshTurnUpRgbOutput(string? reason = null)
+    {
+        if (_serial?.Port?.IsOpen != true)
+            return;
+
+        _rgb.SetOutput(WriteTurnUpRgbFrame, () => _serial?.Port?.IsOpen == true);
+        _rgb.ApplyColors(_config.Lights);
+
+        if (!string.IsNullOrWhiteSpace(reason))
+            Logger.Log($"Turn Up RGB output refreshed ({reason})");
+    }
+
+    private void WriteTurnUpRgbFrame(byte[] buffer, int offset, int length)
+    {
+        try
+        {
+            var port = _serial?.Port;
+            if (port?.IsOpen == true)
+                port.Write(buffer, offset, length);
+        }
+        catch (Exception ex)
+        {
+            long now = Environment.TickCount64;
+            long last = Interlocked.Read(ref _lastTurnUpRgbWriteErrorTick);
+            if (now - last >= 5000
+                && Interlocked.CompareExchange(ref _lastTurnUpRgbWriteErrorTick, now, last) == last)
+            {
+                Logger.Log($"Turn Up RGB write failed: {ex.Message}");
+            }
+        }
     }
 
     /// <summary>

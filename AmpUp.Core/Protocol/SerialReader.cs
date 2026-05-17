@@ -14,6 +14,8 @@ public class SerialReader : IDisposable
     private readonly List<byte> _buf = new();
     private CancellationTokenSource _cts = new();
     private bool _running;
+    private int _connectionState;
+    private int _reconnectRequested;
 
     // Jitter deadzone: only fire OnKnob if value changed by >= this many ADC counts
     private const int JitterDeadzone = 5;
@@ -42,6 +44,20 @@ public class SerialReader : IDisposable
         Task.Run(() => ConnectLoop(_cts.Token));
     }
 
+    /// <summary>
+    /// Forces the current serial handle to close so the connect loop can reopen it.
+    /// CH343 handles can survive sleep/resume while writes stop reaching the device.
+    /// </summary>
+    public void RequestReconnect(string reason)
+    {
+        if (!_running) return;
+
+        System.Threading.Interlocked.Exchange(ref _reconnectRequested, 1);
+        Logger.Log($"Serial reconnect requested: {reason}");
+        NotifyConnectionChanged(false);
+        CloseCurrentPort();
+    }
+
     private async Task ConnectLoop(CancellationToken ct)
     {
         while (_running && !ct.IsCancellationRequested)
@@ -57,30 +73,53 @@ public class SerialReader : IDisposable
                     continue;
                 }
 
-                _port = new SerialPort(portName, _baud) { ReadTimeout = 500, DtrEnable = true, RtsEnable = true };
-                _port.Open();
+                System.Threading.Interlocked.Exchange(ref _reconnectRequested, 0);
+                var port = new SerialPort(portName, _baud)
+                {
+                    ReadTimeout = 500,
+                    WriteTimeout = 500,
+                    DtrEnable = true,
+                    RtsEnable = true
+                };
+                try
+                {
+                    port.Open();
+                }
+                catch
+                {
+                    port.Dispose();
+                    throw;
+                }
+
+                _port = port;
                 Logger.Log($"Connected to {portName} @ {_baud} baud");
-                OnConnectionChanged?.Invoke(true);
+                NotifyConnectionChanged(true);
                 _buf.Clear();
 
                 // Request device info + knob positions (FE 01 FF)
-                try
-                {
-                    _port.Write(new byte[] { 0xFE, 0x01, 0xFF }, 0, 3);
-                }
-                catch { }
+                TrySendInfoRequest(port);
 
                 await ReadLoop(ct);
             }
             catch (Exception ex)
             {
-                Logger.Log($"Serial error: {ex.Message}");
-                OnConnectionChanged?.Invoke(false);
-                try { _port?.Close(); } catch { }
-                _port = null;
+                bool requested = System.Threading.Interlocked.Exchange(ref _reconnectRequested, 0) == 1;
+                Logger.Log(requested
+                    ? $"Serial reconnecting: {ex.Message}"
+                    : $"Serial error: {ex.Message}");
+                NotifyConnectionChanged(false);
+                CloseCurrentPort();
 
                 if (_running && !ct.IsCancellationRequested)
-                    await Task.Delay(5000, ct).ContinueWith(_ => { });
+                {
+                    int delayMs = requested ? 250 : 5000;
+                    await Task.Delay(delayMs, ct).ContinueWith(_ => { });
+                }
+            }
+            finally
+            {
+                if (System.Threading.Interlocked.Exchange(ref _reconnectRequested, 0) == 1)
+                    CloseCurrentPort();
             }
         }
     }
@@ -107,8 +146,15 @@ public class SerialReader : IDisposable
 
             try
             {
-                using var probe = new SerialPort(portName, _baud) { ReadTimeout = 500, DtrEnable = true, RtsEnable = true };
+                using var probe = new SerialPort(portName, _baud)
+                {
+                    ReadTimeout = 500,
+                    WriteTimeout = 500,
+                    DtrEnable = true,
+                    RtsEnable = true
+                };
                 probe.Open();
+                TrySendInfoRequest(probe);
 
                 // Listen for up to 2 seconds for a valid Turn Up frame
                 var probeBuf = new byte[64];
@@ -195,6 +241,13 @@ public class SerialReader : IDisposable
             catch (TimeoutException)
             {
                 var idleFor = DateTime.UtcNow - lastReadUtc;
+                if (idleFor >= TimeSpan.FromSeconds(2))
+                {
+                    var port = _port;
+                    if (port?.IsOpen == true)
+                        TrySendInfoRequest(port);
+                }
+
                 if (idleFor >= ReadStallTimeout)
                 {
                     throw new System.IO.IOException(
@@ -207,6 +260,30 @@ public class SerialReader : IDisposable
             catch (OperationCanceledException) { break; }
             catch { throw; }
         }
+    }
+
+    private static void TrySendInfoRequest(SerialPort port)
+    {
+        try { port.Write(new byte[] { 0xFE, 0x01, 0xFF }, 0, 3); }
+        catch { }
+    }
+
+    private void NotifyConnectionChanged(bool connected)
+    {
+        int next = connected ? 1 : 0;
+        if (System.Threading.Interlocked.Exchange(ref _connectionState, next) == next)
+            return;
+
+        OnConnectionChanged?.Invoke(connected);
+    }
+
+    private void CloseCurrentPort()
+    {
+        var port = System.Threading.Interlocked.Exchange(ref _port, null);
+        if (port == null) return;
+
+        try { port.Close(); } catch { }
+        try { port.Dispose(); } catch { }
     }
 
     // Message table (from decompiled TurnUpBox.dll):
@@ -344,6 +421,6 @@ public class SerialReader : IDisposable
         _running = false;
         _cts.Cancel();
         _cts.Dispose();
-        try { _port?.Close(); } catch { }
+        CloseCurrentPort();
     }
 }
