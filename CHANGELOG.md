@@ -10,6 +10,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.4-beta] - 2026-05-17
+
+### Fixed
+- Added a Restore Removed action for Govee devices so users can clear the hidden-device list and rescan lights they previously removed.
+- Clarified Govee scan status when discovered devices are filtered because they were removed, instead of reporting that as a LAN scan failure.
+
+---
+
 ## [1.0.3-beta] - 2026-05-15
 
 ### Changed

@@ -398,6 +398,11 @@
                                                        Appearance="Secondary" Width="32" Height="32"
                                                        Margin="6,0,0,0"
                                                        ToolTip="Not finding devices? Click for help" />
+                                            <ui:Button x:Name="BtnGoveeRestoreRemoved" Content="Restore Removed"
+                                                       Appearance="Secondary" Height="32"
+                                                       Margin="6,0,0,0"
+                                                       Visibility="Collapsed"
+                                                       ToolTip="Allow removed Govee devices to appear on scans again" />
                                             <TextBlock x:Name="TxtGoveeScanStatus" Text=""
                                                        Style="{StaticResource SecondaryText}"
                                                        VerticalAlignment="Center" Margin="10,0,0,0" />

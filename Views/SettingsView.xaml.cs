@@ -124,6 +124,7 @@ public partial class SettingsView : UserControl
         ChkGoveeEnabled.Checked += OnGoveeEnabledChanged;
         ChkGoveeEnabled.Unchecked += OnGoveeEnabledChanged;
         BtnGoveeScan.Click += OnGoveeScan;
+        BtnGoveeRestoreRemoved.Click += OnGoveeRestoreRemoved;
         BtnGoveeLanHelp.Click += (_, _) => GlassDialog.ShowInfo(
             "Enable LAN Control in the Govee Home app:\n\n" +
             "1. Open Govee Home on your phone\n" +
@@ -264,6 +265,7 @@ public partial class SettingsView : UserControl
         RefreshGoveeStatus();
         RefreshGoveeCloudStatus();
         RefreshGoveeDeviceList();
+        RefreshGoveeHiddenDevicesUi();
         RefreshGoveeAmbienceHint();
 
         BuildAccentSwatches();
@@ -1435,15 +1437,22 @@ public partial class SettingsView : UserControl
         try
         {
             var found = await _ambienceSync.ScanDevicesAsync();
+            int hiddenCloudCount = 0;
 
             // Drop anything the user has explicitly removed — otherwise deleted
             // devices (e.g. a "Test" one still registered in the Govee account)
             // silently reappear on every rescan.
-            var hidden = _config.Ambience.HiddenGoveeDeviceIds
-                ?? new List<string>();
-            found.RemoveAll(d =>
-                (!string.IsNullOrEmpty(d.Ip) && hidden.Contains(d.Ip)) ||
-                (!string.IsNullOrEmpty(d.DeviceId) && hidden.Contains(d.DeviceId)));
+            var hidden = _config.Ambience.HiddenGoveeDeviceIds ??= new List<string>();
+            var hiddenKeys = new HashSet<string>(
+                hidden.Where(key => !string.IsNullOrWhiteSpace(key)),
+                StringComparer.OrdinalIgnoreCase);
+
+            bool IsHidden(GoveeDeviceConfig d) =>
+                (!string.IsNullOrEmpty(d.Ip) && hiddenKeys.Contains(d.Ip)) ||
+                (!string.IsNullOrEmpty(d.DeviceId) && hiddenKeys.Contains(d.DeviceId));
+
+            int hiddenLanCount = found.Count(IsHidden);
+            found.RemoveAll(d => IsHidden(d));
 
             // If Cloud API is available, enrich names AND merge devices not found via LAN
             if (!string.IsNullOrEmpty(_config.Ambience.GoveeApiKey))
@@ -1459,7 +1468,11 @@ public partial class SettingsView : UserControl
                     foreach (var cloud in cloudDevices)
                     {
                         if (string.IsNullOrEmpty(cloud.Device)) continue;
-                        if (hidden.Contains(cloud.Device)) continue;
+                        if (hiddenKeys.Contains(cloud.Device))
+                        {
+                            hiddenCloudCount++;
+                            continue;
+                        }
                         bool alreadyFound = found.Any(f =>
                             !string.IsNullOrEmpty(f.DeviceId) && f.DeviceId == cloud.Device);
                         if (!alreadyFound)
@@ -1488,11 +1501,16 @@ public partial class SettingsView : UserControl
             // Check if LAN scan actually found any devices with IPs
             bool lanScanWorked = found.Any(f => !string.IsNullOrWhiteSpace(f.Ip));
             bool hadExistingLan = _config.Ambience.GoveeDevices.Any(g => !string.IsNullOrWhiteSpace(g.Ip));
+            int hiddenSkippedCount = hiddenLanCount + hiddenCloudCount;
 
             if (found.Count == 0 || (!lanScanWorked && hadExistingLan))
             {
                 // LAN scan failed or found nothing — keep existing devices, don't wipe IPs
-                TxtGoveeScanStatus.Text = lanScanWorked ? "No devices found" : "LAN scan failed — keeping existing devices";
+                TxtGoveeScanStatus.Text = hiddenSkippedCount > 0 && found.Count == 0
+                    ? "Removed device(s) hidden - use Restore Removed to scan them again"
+                    : found.Count == 0
+                        ? "No devices found"
+                        : "LAN scan failed - keeping existing devices";
                 GoveeStatusDot.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#555555"));
             }
             else
@@ -1519,6 +1537,7 @@ public partial class SettingsView : UserControl
                 _debounceTimer.Stop();
                 _debounceTimer.Start();
             }
+            RefreshGoveeHiddenDevicesUi();
         }
         catch (Exception ex)
         {
@@ -1528,6 +1547,18 @@ public partial class SettingsView : UserControl
         }
 
         BtnGoveeScan.IsEnabled = true;
+    }
+
+    private void OnGoveeRestoreRemoved(object sender, RoutedEventArgs e)
+    {
+        if (_config == null) return;
+
+        _config.Ambience.HiddenGoveeDeviceIds.Clear();
+        TxtGoveeScanStatus.Text = "Removed devices can appear on the next scan";
+        RefreshGoveeHiddenDevicesUi();
+
+        _debounceTimer.Stop();
+        _debounceTimer.Start();
     }
 
     private void OnGoveeSetupGuide(object sender, RoutedEventArgs e)
@@ -1601,7 +1632,11 @@ public partial class SettingsView : UserControl
     private void RefreshGoveeDeviceList()
     {
         GoveeDeviceList.Children.Clear();
-        if (_config == null) return;
+        if (_config == null)
+        {
+            BtnGoveeRestoreRemoved.Visibility = Visibility.Collapsed;
+            return;
+        }
 
         foreach (var dev in _config.Ambience.GoveeDevices)
         {
@@ -1680,6 +1715,7 @@ public partial class SettingsView : UserControl
                     && !_config.Ambience.HiddenGoveeDeviceIds.Contains(devRef.Ip))
                     _config.Ambience.HiddenGoveeDeviceIds.Add(devRef.Ip);
                 _config.Ambience.GoveeDevices.Remove(devRef);
+                TxtGoveeScanStatus.Text = "Device removed - use Restore Removed to scan it again";
                 RefreshGoveeDeviceList();
                 _debounceTimer.Stop();
                 _debounceTimer.Start();
@@ -1689,6 +1725,21 @@ public partial class SettingsView : UserControl
 
             GoveeDeviceList.Children.Add(row);
         }
+
+        RefreshGoveeHiddenDevicesUi();
+    }
+
+    private void RefreshGoveeHiddenDevicesUi()
+    {
+        if (_config == null)
+        {
+            BtnGoveeRestoreRemoved.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        bool hasHidden = _config.Ambience.HiddenGoveeDeviceIds
+            .Any(key => !string.IsNullOrWhiteSpace(key));
+        BtnGoveeRestoreRemoved.Visibility = hasHidden ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private async void OnCheckUpdate(object sender, RoutedEventArgs e)
