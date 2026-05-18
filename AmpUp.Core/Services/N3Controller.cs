@@ -87,7 +87,6 @@ public sealed class N3Controller : IDisposable
     private volatile bool _initialized;
     private volatile bool _asleep;
     private int _disconnectNotified = 1;
-    private int _keepAliveFailures;
 
     public event Action<N3InputEvent>? OnInput;
     public event Action<bool, string?>? OnConnectionChanged;
@@ -176,7 +175,6 @@ public sealed class N3Controller : IDisposable
                 $"(vid=0x{ConnectedVendorId:X4}, pid=0x{ConnectedProductId:X4}, in={InputReportLength}, out={OutputReportLength}, feature={FeatureReportLength}, serial={SerialNumber}, path={DevicePath})");
 
             _asleep = false;
-            Interlocked.Exchange(ref _keepAliveFailures, 0);
             if (initialize)
             {
                 TryInitialize();
@@ -289,12 +287,10 @@ public sealed class N3Controller : IDisposable
         try
         {
             WriteExtendedReport(0x00, 0x43, 0x52, 0x54, 0x00, 0x00, 0x43, 0x4F, 0x4E, 0x4E, 0x45, 0x43, 0x54);
-            Interlocked.Exchange(ref _keepAliveFailures, 0);
         }
         catch (Exception ex)
         {
             Logger.Log($"N3: keepalive failed - {ex.Message}");
-            throw;
         }
     }
 
@@ -654,11 +650,9 @@ public sealed class N3Controller : IDisposable
             if (_asleep) return;
             KeepAlive();
         }
-        catch (Exception ex)
+        catch
         {
-            int failures = Interlocked.Increment(ref _keepAliveFailures);
-            if (failures >= 2 && !_disposed)
-                HandleReadLoopDisconnected("keepalive", ex);
+            // Keepalive is best-effort during bring-up.
         }
     }
 
@@ -892,7 +886,6 @@ public sealed class N3Controller : IDisposable
         FeatureReportLength = 0;
         ConnectedVendorId = VendorId;
         ConnectedProductId = ProductId;
-        Interlocked.Exchange(ref _keepAliveFailures, 0);
 
         try
         {
