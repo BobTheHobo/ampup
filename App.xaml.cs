@@ -2318,7 +2318,6 @@ public partial class App : Application
         try
         {
             if (_config == null) return;
-
             if (!_isN3Connected && !_forceN3Sleep)
             {
                 TryReconnectN3FromRefreshTick();
@@ -2326,8 +2325,9 @@ public partial class App : Application
             }
 
             // ── N3 idle sleep ─────────────────────────────────────────────
-            // Auto idle dims to brightness 0 so HID input stays awake. Sleep Now
-            // still uses firmware standby and wake re-inits/resyncs display frames.
+            // Uses the real firmware standby command (CRT HAN) via N3Controller.Sleep —
+            // actually powers the LCDs down, not just dims to brightness 0.
+            // Wake re-inits the device and resyncs display frames.
             if (_n3 != null && _isN3Connected)
             {
                 int thresholdSec = Math.Max(0, _config.N3.IdleSleepSeconds);
@@ -2348,10 +2348,7 @@ public partial class App : Application
 
                 if (shouldSleep && !_n3AsleepFromIdle)
                 {
-                    if (_forceN3Sleep)
-                        _n3.Sleep();
-                    else
-                        _n3.SetBrightness(0);
+                    _n3.Sleep();
                     _n3AsleepFromIdle = true;
                 }
                 else if (!shouldSleep && _n3AsleepFromIdle)

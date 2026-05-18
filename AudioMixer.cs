@@ -7,14 +7,13 @@ public class AudioMixer : IDisposable
 {
     // P/Invoke declarations consolidated in NativeMethods.cs
 
-    private MMDeviceEnumerator _enumerator = new();
+    private readonly MMDeviceEnumerator _enumerator = new();
     private readonly Dictionary<int, int> _lastValues = new();
     private readonly object _lock = new();      // guards _sessions / _sessionsByPid dict access
     private readonly object _enumLock = new();  // guards _enumerator — accessed from multiple threads
     private readonly object _lastValuesLock = new();
     private System.Threading.Timer? _pollTimer;
     private volatile bool _disposed;
-    private int _audioRecoveryInProgress;
 
     // Map of processName (lowercase) -> AudioSessionControl
     private Dictionary<string, AudioSessionControl> _sessions = new();
@@ -238,42 +237,7 @@ public class AudioMixer : IDisposable
         catch (Exception ex)
         {
             Logger.Log($"SetVolume error for {knob.Label}: {ex.Message}");
-            if (Interlocked.Exchange(ref _audioRecoveryInProgress, 1) == 0)
-            {
-                try
-                {
-                    ResetAudioDeviceHandles($"SetVolume failed for {knob.Label}");
-                    RefreshSessions();
-                    lock (_lastValuesLock) _lastValues.Remove(debounceKey);
-                    SetVolume(knob, rawValue, debounceKeyOverride);
-                }
-                finally
-                {
-                    Interlocked.Exchange(ref _audioRecoveryInProgress, 0);
-                }
-            }
         }
-    }
-
-    private void ResetAudioDeviceHandles(string reason)
-    {
-        lock (_lock)
-        {
-            _sessions.Clear();
-            _sessionsByPid.Clear();
-        }
-
-        lock (_enumLock)
-        {
-            try { _renderDevice?.Dispose(); } catch { }
-            try { _masterPeakDevice?.Dispose(); } catch { }
-            try { _enumerator.Dispose(); } catch { }
-            _renderDevice = null;
-            _masterPeakDevice = null;
-            _enumerator = new MMDeviceEnumerator();
-        }
-
-        Logger.Log($"Audio devices reset: {reason}");
     }
 
     private void SetDeviceVolume(string deviceId, DataFlow dataFlow, float vol)
