@@ -77,6 +77,11 @@ public partial class App : Application
     private long _lastHardwareInputLogTick;
     private long _lastHardwareActivityTick = Environment.TickCount64;
     private long _lastTurnUpRgbWriteErrorTick;
+    private long _lastTurnUpRgbWriteTick;
+    private long _lastTurnUpRgbWriteLogTick;
+    private long _turnUpRgbWriteCount;
+    private DateTime _lastTurnUpRgbWatchdogUtc = DateTime.MinValue;
+    private int _turnUpRgbWatchdogRestarts;
     private DateTime _lastN3ReconnectAttemptUtc = DateTime.MinValue;
     private int _n3ReconnectInFlight;
     private volatile bool _n3InitialProbeComplete;
@@ -1454,6 +1459,7 @@ public partial class App : Application
             }
         }
         _rgb.SetKnobPosition(e.Idx, e.Value / 1023f);
+        _rgb.Send();
 
         // Push position to MixerView — throttled to ~33fps to avoid flooding the dispatcher
         long now = Environment.TickCount64;
@@ -2318,6 +2324,8 @@ public partial class App : Application
         try
         {
             if (_config == null) return;
+            MonitorTurnUpRgbOutput();
+
             if (!_isN3Connected && !_forceN3Sleep)
             {
                 TryReconnectN3FromRefreshTick();
@@ -2325,9 +2333,8 @@ public partial class App : Application
             }
 
             // ── N3 idle sleep ─────────────────────────────────────────────
-            // Uses the real firmware standby command (CRT HAN) via N3Controller.Sleep —
-            // actually powers the LCDs down, not just dims to brightness 0.
-            // Wake re-inits the device and resyncs display frames.
+            // Auto idle dims to brightness 0 so HID input stays awake. Sleep Now
+            // still uses firmware standby and wake re-inits/resyncs display frames.
             if (_n3 != null && _isN3Connected)
             {
                 int thresholdSec = Math.Max(0, _config.N3.IdleSleepSeconds);
@@ -2348,7 +2355,10 @@ public partial class App : Application
 
                 if (shouldSleep && !_n3AsleepFromIdle)
                 {
-                    _n3.Sleep();
+                    if (_forceN3Sleep)
+                        _n3.Sleep();
+                    else
+                        _n3.SetBrightness(0);
                     _n3AsleepFromIdle = true;
                 }
                 else if (!shouldSleep && _n3AsleepFromIdle)
@@ -4108,6 +4118,7 @@ public partial class App : Application
             return;
 
         _rgb.SetOutput(WriteTurnUpRgbFrame, () => _serial?.Port?.IsOpen == true);
+        Interlocked.Exchange(ref _lastTurnUpRgbWriteTick, Environment.TickCount64);
         _rgb.ApplyColors(_config.Lights);
 
         if (!string.IsNullOrWhiteSpace(reason))
@@ -4120,7 +4131,19 @@ public partial class App : Application
         {
             var port = _serial?.Port;
             if (port?.IsOpen == true)
+            {
                 port.Write(buffer, offset, length);
+                long now = Environment.TickCount64;
+                long count = Interlocked.Increment(ref _turnUpRgbWriteCount);
+                Interlocked.Exchange(ref _lastTurnUpRgbWriteTick, now);
+
+                long lastLog = Interlocked.Read(ref _lastTurnUpRgbWriteLogTick);
+                if (now - lastLog >= 60000
+                    && Interlocked.CompareExchange(ref _lastTurnUpRgbWriteLogTick, now, lastLog) == lastLog)
+                {
+                    Logger.Log($"Turn Up RGB frames active (count={count}, port={port.PortName}, len={length})");
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -4130,6 +4153,42 @@ public partial class App : Application
                 && Interlocked.CompareExchange(ref _lastTurnUpRgbWriteErrorTick, now, last) == last)
             {
                 Logger.Log($"Turn Up RGB write failed: {ex.Message}");
+            }
+        }
+    }
+
+    private void MonitorTurnUpRgbOutput()
+    {
+        if (!_isConnected || _serial?.Port?.IsOpen != true) return;
+
+        long nowTick = Environment.TickCount64;
+        long lastWrite = Interlocked.Read(ref _lastTurnUpRgbWriteTick);
+        if (lastWrite != 0 && nowTick - lastWrite < 3000)
+        {
+            _turnUpRgbWatchdogRestarts = 0;
+            return;
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        if ((nowUtc - _lastTurnUpRgbWatchdogUtc).TotalSeconds < 5) return;
+        _lastTurnUpRgbWatchdogUtc = nowUtc;
+
+        _turnUpRgbWatchdogRestarts++;
+        Logger.Log(
+            $"Turn Up RGB watchdog: no LED frame writes for {(lastWrite == 0 ? -1 : Math.Max(0, nowTick - lastWrite))}ms; " +
+            $"refreshing output (attempt={_turnUpRgbWatchdogRestarts})");
+        RefreshTurnUpRgbOutput("RGB watchdog");
+
+        if (_turnUpRgbWatchdogRestarts >= 3)
+        {
+            _turnUpRgbWatchdogRestarts = 0;
+            try
+            {
+                _serial.RequestReconnect("RGB watchdog no frame writes");
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Turn Up RGB watchdog reconnect failed: {ex.Message}");
             }
         }
     }

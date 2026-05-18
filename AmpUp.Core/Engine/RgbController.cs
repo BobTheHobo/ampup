@@ -209,7 +209,17 @@ public class RgbController : IDisposable
         if (write != null && isOpen?.Invoke() == true)
         {
             _refreshTimer?.Dispose();
-            _refreshTimer = new System.Threading.Timer(_ => Tick(), null, refreshMs, refreshMs);
+            _refreshTimer = new System.Threading.Timer(_ =>
+            {
+                try
+                {
+                    Tick();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"RGB frame tick failed: {ex.Message}");
+                }
+            }, null, refreshMs, refreshMs);
         }
         else
         {
