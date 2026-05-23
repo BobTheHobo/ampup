@@ -198,6 +198,7 @@ namespace AmpUp.Controls
 
             // Reactive/Status effects
             { LightEffect.ProgramMute,   Color.FromRgb(0xFF, 0x8A, 0x65) }, // deep orange
+            { LightEffect.ProgramStatus, Color.FromRgb(0x00, 0x96, 0xFF) }, // blue
             { LightEffect.AppGroupMute,  Color.FromRgb(0xAB, 0x47, 0xBC) }, // purple
             { LightEffect.DeviceSelect,  Color.FromRgb(0x4D, 0xD0, 0xE1) }, // cyan
             { LightEffect.DevicePositionFill, Color.FromRgb(0x26, 0xC6, 0xDA) }, // cyan
@@ -330,6 +331,7 @@ namespace AmpUp.Controls
                 (LightEffect.AudioReactive, "♫",   "Audio",    false),
                 (LightEffect.AudioPositionBlend, "♫⬍", "Audio+Pos", false),
                 (LightEffect.ProgramMute,   "⊗",   "App Mute", false),
+                (LightEffect.ProgramStatus, "▂●×", "App Status", false),
                 (LightEffect.AppGroupMute,  "⊞",   "Group",    false),
                 (LightEffect.DeviceSelect,  "⬡",   "Device",   false),
                 (LightEffect.DevicePositionFill, "⬡▂", "Dev+Pos", false),
@@ -625,6 +627,7 @@ namespace AmpUp.Controls
                 LightEffect.PositionBlend    => Color.FromRgb(0xE0, 0x6C, 0x9F),
                 LightEffect.PositionBlendMute=> Color.FromRgb(0x55, 0x55, 0x55),
                 LightEffect.CycleFill        => Color.FromRgb(0x66, 0xBB, 0x6A),
+                LightEffect.ProgramStatus    => Color.FromRgb(0xFF, 0x40, 0x40),
                 LightEffect.Fire             => Color.FromRgb(0xFF, 0xD5, 0x4F),
                 LightEffect.FireWall         => Color.FromRgb(0xFF, 0xD5, 0x4F),
                 LightEffect.Lava             => Color.FromRgb(0xFF, 0xD5, 0x4F),

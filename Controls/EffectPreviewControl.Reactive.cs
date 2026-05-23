@@ -88,6 +88,33 @@ namespace AmpUp.Controls
             }
         }
 
+        private void RenderProgramStatus(Ctx c)
+        {
+            double phase = Saw(c.T / 3.0);
+            if (phase < 0.45)
+            {
+                int cols = 10;
+                double sliceW = c.W / cols;
+                for (int i = 0; i < cols; i++)
+                {
+                    double t = i / (double)(cols - 1);
+                    var col = Lerp(c.Color, c.Color2, t);
+                    Rect(c.Dc, i * sliceW, 0, sliceW + 1, c.H, col, 0.85, 0);
+                }
+                return;
+            }
+
+            bool muted = phase < 0.72;
+            var statusColor = muted ? Color.FromRgb(0xFF, 0x40, 0x40) : Color.FromRgb(0x48, 0x48, 0x48);
+            double r = Math.Min(c.W, c.H) * (muted ? 0.28 : 0.22);
+            Dot(c.Dc, c.Cx, c.Cy, r + 3, statusColor, muted ? 0.25 : 0.18);
+            Dot(c.Dc, c.Cx, c.Cy, r, statusColor, muted ? 0.9 : 0.7);
+
+            double d = r * 0.85;
+            var pen = Pen(statusColor, 2.0, 0.8);
+            c.Dc.DrawLine(pen, new Point(c.Cx - d, c.Cy - d), new Point(c.Cx + d, c.Cy + d));
+        }
+
         private void RenderAppGroupMute(Ctx c)
         {
             double r = Math.Min(c.W, c.H) * 0.18;

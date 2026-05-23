@@ -3857,7 +3857,7 @@ public partial class App : Application
                 _cachedMaster = null;
             }
 
-            // Poll program mute states for ProgramMute LED effect
+            // Poll program status states for app-aware LED effects
             PollProgramMuteStates();
             // Poll app group mute states for AppGroupMute LED effect
             PollAppGroupMuteStates();
@@ -3884,7 +3884,7 @@ public partial class App : Application
     {
         if (_config == null) return true;
         static bool NeedsPolling(LightEffect effect) =>
-            effect is LightEffect.ProgramMute or LightEffect.AppGroupMute
+            effect is LightEffect.ProgramMute or LightEffect.ProgramStatus or LightEffect.AppGroupMute
                 or LightEffect.DeviceSelect or LightEffect.DevicePositionFill;
 
         if (_config.Lights.Any(l => NeedsPolling(l.Effect)))
@@ -3938,10 +3938,13 @@ public partial class App : Application
             var lightsToCheck = new List<LightConfig>();
             foreach (var l in _config.Lights)
             {
-                if (l.Effect == LightEffect.ProgramMute && !string.IsNullOrWhiteSpace(l.ProgramName))
+                if ((l.Effect == LightEffect.ProgramMute || l.Effect == LightEffect.ProgramStatus)
+                    && !string.IsNullOrWhiteSpace(l.ProgramName))
                     lightsToCheck.Add(l);
             }
-            if (_config.GlobalLight.Enabled && _config.GlobalLight.Effect == LightEffect.ProgramMute)
+            if (_config.GlobalLight.Enabled
+                && (_config.GlobalLight.Effect == LightEffect.ProgramMute
+                    || _config.GlobalLight.Effect == LightEffect.ProgramStatus))
             {
                 for (int i = 0; i < 5; i++)
                     lightsToCheck.Add(new LightConfig { Idx = i, ProgramName = (_config.Lights.FirstOrDefault(l => l.Idx == i)?.ProgramName) ?? "" });
@@ -3950,6 +3953,8 @@ public partial class App : Application
             if (lightsToCheck.Count == 0) return;
 
             if (_pollEnumerator == null) return;
+
+            var processNamesById = GetRunningProcessNamesById();
 
             // Scan ALL active render devices — not just the default — so apps on
             // secondary audio outputs (common with multi-monitor setups) are found.
@@ -3968,11 +3973,12 @@ public partial class App : Application
                 foreach (var light in lightsToCheck)
                 {
                     if (string.IsNullOrWhiteSpace(light.ProgramName)) continue;
+                    bool running = processNamesById.Values.Any(name => ProcessNameMatches(name, light.ProgramName));
                     bool muted = true; // default: muted/not-found
-                    bool found = false;
+                    bool foundSession = false;
                     foreach (var device in devices)
                     {
-                        if (found) break;
+                        if (foundSession) break;
                         try
                         {
                             var sessions = device.AudioSessionManager.Sessions;
@@ -3983,11 +3989,12 @@ public partial class App : Application
                                 {
                                     uint pid = session.GetProcessID;
                                     if (pid == 0) continue;
-                                    var proc = System.Diagnostics.Process.GetProcessById((int)pid);
-                                    if (proc.ProcessName.Contains(light.ProgramName, StringComparison.OrdinalIgnoreCase))
+                                    if (processNamesById.TryGetValue((int)pid, out var processName)
+                                        && ProcessNameMatches(processName, light.ProgramName))
                                     {
+                                        running = true;
                                         muted = session.SimpleAudioVolume.Mute;
-                                        found = true;
+                                        foundSession = true;
                                         break;
                                     }
                                 }
@@ -3996,7 +4003,12 @@ public partial class App : Application
                         }
                         catch { }
                     }
-                    _rgb.SetProgramMuted(light.Idx, muted);
+
+                    // Process is open but has no audio session yet: present, not offline.
+                    if (running && !foundSession)
+                        muted = false;
+
+                    _rgb.SetProgramState(light.Idx, running, muted);
                 }
             }
             finally
@@ -4005,6 +4017,37 @@ public partial class App : Application
             }
         }
         catch { }
+    }
+
+    private static Dictionary<int, string> GetRunningProcessNamesById()
+    {
+        var result = new Dictionary<int, string>();
+        System.Diagnostics.Process[] processes;
+        try { processes = System.Diagnostics.Process.GetProcesses(); }
+        catch { return result; }
+
+        foreach (var process in processes)
+        {
+            try { result[process.Id] = process.ProcessName; }
+            catch { }
+            finally { process.Dispose(); }
+        }
+
+        return result;
+    }
+
+    private static bool ProcessNameMatches(string processName, string configuredName)
+    {
+        var needle = (configuredName ?? "").Trim();
+        if (needle.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            needle = needle[..^4];
+
+        if (needle.Length == 0) return false;
+
+        var compactNeedle = needle.Replace(" ", "");
+        var compactProcessName = processName.Replace(" ", "");
+        return compactProcessName.Contains(compactNeedle, StringComparison.OrdinalIgnoreCase)
+            || compactNeedle.Contains(compactProcessName, StringComparison.OrdinalIgnoreCase);
     }
 
     private void PollAppGroupMuteStates()

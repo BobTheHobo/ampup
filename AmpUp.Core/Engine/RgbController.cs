@@ -64,9 +64,14 @@ public class RgbController : IDisposable
     // Shadow buffer for AudioPositionBlend global mode — stores idle effect frame
     private readonly byte[] _idleBuffer = new byte[48]; // same layout as _colorMsg
 
-    // ProgramMute state per knob — written from polling timer, read from animation timer
+    // Program state per knob, written from polling timer and read from animation timer.
     private readonly object _stateLock = new();
-    private readonly Dictionary<int, bool> _programMuteStates = new();
+    private struct ProgramState
+    {
+        public bool Running;
+        public bool Muted;
+    }
+    private readonly Dictionary<int, ProgramState> _programStates = new();
     private readonly Dictionary<int, bool> _appGroupMuteStates = new();
 
     // DeviceSelect state: current default output device ID
@@ -248,10 +253,16 @@ public class RgbController : IDisposable
     /// Update per-knob program mute state for the ProgramMute effect.
     /// </summary>
     public void SetProgramMuted(int knobIdx, bool muted)
+        => SetProgramState(knobIdx, running: true, muted);
+
+    /// <summary>
+    /// Update per-knob program running/mute state for ProgramMute and ProgramStatus effects.
+    /// </summary>
+    public void SetProgramState(int knobIdx, bool running, bool muted)
     {
         if (knobIdx >= 0 && knobIdx < 5)
         {
-            lock (_stateLock) _programMuteStates[knobIdx] = muted;
+            lock (_stateLock) _programStates[knobIdx] = new ProgramState { Running = running, Muted = muted };
         }
     }
 
@@ -322,8 +333,8 @@ public class RgbController : IDisposable
 
     /// <summary>
     /// Set the dim brightness level for muted LEDs (0-100%).
-    /// When a knob is muted (ProgramMute/AppGroupMute), LEDs show the primary color
-    /// at this brightness instead of turning off. (Issue #9)
+    /// When an app group is muted, LEDs show the primary color at this
+    /// brightness instead of turning off. (Issue #9)
     /// </summary>
     public void SetMuteBrightness(int pct)
     {
@@ -628,6 +639,8 @@ public class RgbController : IDisposable
                     Effect = _globalLight.Effect,
                     R = kr, G = kg, B = kb,
                     R2 = _globalLight.R2, G2 = _globalLight.G2, B2 = _globalLight.B2,
+                    R3 = _globalLight.R3, G3 = _globalLight.G3, B3 = _globalLight.B3,
+                    R4 = _globalLight.R4, G4 = _globalLight.G4, B4 = _globalLight.B4,
                     EffectSpeed = _globalLight.EffectSpeed,
                     ReactiveMode = _globalLight.ReactiveMode,
                     PaletteName = _globalLight.PaletteName,
@@ -763,6 +776,10 @@ public class RgbController : IDisposable
 
             case LightEffect.ProgramMute:
                 EffectProgramMute(k, light);
+                break;
+
+            case LightEffect.ProgramStatus:
+                EffectProgramStatus(k, light, rawPos);
                 break;
 
             case LightEffect.AppGroupMute:
@@ -1632,20 +1649,48 @@ public class RgbController : IDisposable
         }
     }
 
+    private ProgramState GetProgramState(int k, bool defaultRunning, bool defaultMuted)
+    {
+        lock (_stateLock)
+        {
+            return _programStates.TryGetValue(k, out var state)
+                ? state
+                : new ProgramState { Running = defaultRunning, Muted = defaultMuted };
+        }
+    }
+
     /// <summary>
-    /// Show color1 at full brightness when unmuted, dim color1 at MuteBrightness% when muted. (Issue #9)
+    /// Show color1 when unmuted and color2 when muted or not running.
     /// </summary>
     private void EffectProgramMute(int k, LightConfig light)
     {
-        bool muted;
-        lock (_stateLock) muted = _programMuteStates.GetValueOrDefault(k, true); // default to muted if unknown
-        if (muted)
-        {
-            float scale = _muteBrightnessPct / 100f;
-            SetColor(k, (int)(light.R * scale), (int)(light.G * scale), (int)(light.B * scale));
-        }
+        var state = GetProgramState(k, defaultRunning: true, defaultMuted: true);
+        if (!state.Running || state.Muted)
+            SetColor(k, light.R2, light.G2, light.B2);
         else
             SetColor(k, light.R, light.G, light.B);
+    }
+
+    /// <summary>
+    /// App-aware position blend. Running + unmuted uses color1->color2 by knob
+    /// position; muted uses color3; not running uses color4.
+    /// </summary>
+    private void EffectProgramStatus(int k, LightConfig light, float pos)
+    {
+        var state = GetProgramState(k, defaultRunning: false, defaultMuted: true);
+        if (!state.Running)
+        {
+            SetColor(k, light.R4, light.G4, light.B4);
+            return;
+        }
+
+        if (state.Muted)
+        {
+            SetColor(k, light.R3, light.G3, light.B3);
+            return;
+        }
+
+        EffectPositionBlend(k, light, pos);
     }
 
     /// <summary>

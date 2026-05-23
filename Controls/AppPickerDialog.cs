@@ -17,38 +17,42 @@ namespace AmpUp.Controls;
 
 /// <summary>
 /// Modal app picker dialog — shows running apps + common presets.
-/// Returns the selected app's launch path (exe + args if needed).
+/// Returns the selected app's launch path plus its process name.
 /// </summary>
 public class AppPickerDialog : Window
 {
     private string? _selectedPath;
+    private string? _selectedProcessName;
+    private string? _selectedName;
     private TextBox? _searchBox;
     private StackPanel? _resultsPanel;
     private readonly List<AppEntry> _allEntries = new();
 
     // Common apps with their typical install paths
-    private static readonly (string Name, string Path, MaterialIconKind Icon)[] CommonApps =
+    private static readonly (string Name, string Path, string ProcessName, MaterialIconKind Icon)[] CommonApps =
     {
-        ("Discord", @"%LocalAppData%\Discord\Update.exe --processStart Discord.exe", MaterialIconKind.Chat),
-        ("Spotify", @"%AppData%\Spotify\Spotify.exe", MaterialIconKind.Music),
-        ("Steam", @"C:\Program Files (x86)\Steam\steam.exe", MaterialIconKind.Steam),
-        ("Chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe", MaterialIconKind.GoogleChrome),
-        ("Firefox", @"C:\Program Files\Mozilla Firefox\firefox.exe", MaterialIconKind.Firefox),
-        ("Edge", @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", MaterialIconKind.MicrosoftEdge),
-        ("OBS Studio", @"C:\Program Files\obs-studio\bin\64bit\obs64.exe", MaterialIconKind.Video),
-        ("VLC", @"C:\Program Files\VideoLAN\VLC\vlc.exe", MaterialIconKind.Play),
-        ("Notepad++", @"C:\Program Files\Notepad++\notepad++.exe", MaterialIconKind.NoteEdit),
-        ("VS Code", @"%LocalAppData%\Programs\Microsoft VS Code\Code.exe", MaterialIconKind.MicrosoftVisualStudioCode),
-        ("File Explorer", @"explorer.exe", MaterialIconKind.Folder),
-        ("Task Manager", @"taskmgr.exe", MaterialIconKind.ChartBar),
-        ("Calculator", @"calc.exe", MaterialIconKind.Calculator),
-        ("Slack", @"%LocalAppData%\slack\slack.exe", MaterialIconKind.Slack),
-        ("Teams", @"%LocalAppData%\Microsoft\Teams\Update.exe --processStart ms-teams.exe", MaterialIconKind.MicrosoftTeams),
+        ("Discord", @"%LocalAppData%\Discord\Update.exe --processStart Discord.exe", "Discord", MaterialIconKind.Chat),
+        ("Spotify", @"%AppData%\Spotify\Spotify.exe", "Spotify", MaterialIconKind.Music),
+        ("Steam", @"C:\Program Files (x86)\Steam\steam.exe", "steam", MaterialIconKind.Steam),
+        ("Chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe", "chrome", MaterialIconKind.GoogleChrome),
+        ("Firefox", @"C:\Program Files\Mozilla Firefox\firefox.exe", "firefox", MaterialIconKind.Firefox),
+        ("Edge", @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", "msedge", MaterialIconKind.MicrosoftEdge),
+        ("OBS Studio", @"C:\Program Files\obs-studio\bin\64bit\obs64.exe", "obs64", MaterialIconKind.Video),
+        ("VLC", @"C:\Program Files\VideoLAN\VLC\vlc.exe", "vlc", MaterialIconKind.Play),
+        ("Notepad++", @"C:\Program Files\Notepad++\notepad++.exe", "notepad++", MaterialIconKind.NoteEdit),
+        ("VS Code", @"%LocalAppData%\Programs\Microsoft VS Code\Code.exe", "Code", MaterialIconKind.MicrosoftVisualStudioCode),
+        ("File Explorer", @"explorer.exe", "explorer", MaterialIconKind.Folder),
+        ("Task Manager", @"taskmgr.exe", "Taskmgr", MaterialIconKind.ChartBar),
+        ("Calculator", @"calc.exe", "CalculatorApp", MaterialIconKind.Calculator),
+        ("Slack", @"%LocalAppData%\slack\slack.exe", "slack", MaterialIconKind.Slack),
+        ("Teams", @"%LocalAppData%\Microsoft\Teams\Update.exe --processStart ms-teams.exe", "ms-teams", MaterialIconKind.MicrosoftTeams),
     };
 
-    private record AppEntry(string Name, string Path, ImageSource? Icon, bool IsRunning, MaterialIconKind? MaterialIcon = null);
+    private record AppEntry(string Name, string Path, string ProcessName, ImageSource? Icon, bool IsRunning, MaterialIconKind? MaterialIcon = null);
 
     public string? SelectedPath => _selectedPath;
+    public string? SelectedProcessName => _selectedProcessName;
+    public string? SelectedName => _selectedName;
 
     public AppPickerDialog()
     {
@@ -210,22 +214,22 @@ public class AppPickerDialog : Window
             }
             catch { }
 
-            _allEntries.Add(new AppEntry(name, path, icon, true));
+            _allEntries.Add(new AppEntry(name, path, name, icon, true));
         }
 
         // Add common apps (only if they exist and aren't already in running list)
-        foreach (var (name, rawPath, matIcon) in CommonApps)
+        foreach (var (name, rawPath, processName, matIcon) in CommonApps)
         {
             var expandedPath = Environment.ExpandEnvironmentVariables(rawPath);
             var exePath = ExtractExecutablePath(expandedPath);
 
             // Skip if already shown as running
-            if (runningApps.Keys.Any(k => k.Contains(name.Replace(" ", ""), StringComparison.OrdinalIgnoreCase)))
+            if (runningApps.Keys.Any(k => ProcessNameMatches(k, processName) || ProcessNameMatches(k, name)))
                 continue;
 
             if (File.Exists(exePath) || exePath == "explorer.exe" || exePath == "taskmgr.exe" || exePath == "calc.exe")
             {
-                _allEntries.Add(new AppEntry(name, rawPath, null, false, matIcon));
+                _allEntries.Add(new AppEntry(name, rawPath, processName, null, false, matIcon));
             }
         }
 
@@ -249,6 +253,19 @@ public class AppPickerDialog : Window
             return command[..(exeEnd + 4)];
 
         return command.Split(' ', 2)[0];
+    }
+
+    private static bool ProcessNameMatches(string processName, string configuredName)
+    {
+        var needle = (configuredName ?? "").Trim();
+        if (needle.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            needle = needle[..^4];
+        if (needle.Length == 0) return false;
+
+        var compactNeedle = needle.Replace(" ", "");
+        var compactProcessName = processName.Replace(" ", "");
+        return compactProcessName.Contains(compactNeedle, StringComparison.OrdinalIgnoreCase)
+            || compactNeedle.Contains(compactProcessName, StringComparison.OrdinalIgnoreCase);
     }
 
     private void FilterApps(string query)
@@ -401,6 +418,8 @@ public class AppPickerDialog : Window
             e.Handled = true;
             // Use unexpanded path with env vars for portability
             _selectedPath = entry.Path;
+            _selectedProcessName = entry.ProcessName;
+            _selectedName = entry.Name;
             DialogResult = true;
             Close();
         };

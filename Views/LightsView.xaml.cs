@@ -7,6 +7,8 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using AmpUp.Controls;
+using Material.Icons;
+using Material.Icons.WPF;
 
 namespace AmpUp.Views;
 
@@ -29,7 +31,11 @@ public partial class LightsView : UserControl
     private readonly EffectPickerControl[] _effectPickers = new EffectPickerControl[5];
     private readonly Border[] _color1Swatches = new Border[5];
     private readonly Border[] _color2Swatches = new Border[5];
+    private readonly Border[] _color3Swatches = new Border[5];
+    private readonly Border[] _color4Swatches = new Border[5];
     private readonly Border[] _color2Panels = new Border[5];
+    private readonly Border[] _color3Panels = new Border[5];
+    private readonly Border[] _color4Panels = new Border[5];
     private readonly Border[] _colorSections = new Border[5]; // entire COLOR section card
     private readonly WrapPanel[] _customColorRows = new WrapPanel[5]; // custom color pills
     private readonly WrapPanel[] _presetColorRows = new WrapPanel[5]; // preset palette swatches
@@ -40,6 +46,7 @@ public partial class LightsView : UserControl
     private readonly StackPanel[] _reactiveModePanels = new StackPanel[5];
     private readonly TextBox[] _programNameBoxes = new TextBox[5];
     private readonly StackPanel[] _programNamePanels = new StackPanel[5];
+    private readonly Border[] _programAppChips = new Border[5];
 
 
     // Global knob effect previews
@@ -49,6 +56,8 @@ public partial class LightsView : UserControl
     // Track current colors in memory
     private readonly Color[] _colors1 = new Color[5];
     private readonly Color[] _colors2 = new Color[5];
+    private readonly Color[] _colors3 = new Color[5];
+    private readonly Color[] _colors4 = new Color[5];
 
     // Mode tabs
     private Border? _perKnobTab;
@@ -153,11 +162,11 @@ public partial class LightsView : UserControl
     private List<(string Id, string Name, bool IsOutput)> _audioDevices = new();
 
     private static readonly LightEffect[] EffectsNeedingColor2 =
-        { LightEffect.ColorBlend, LightEffect.Blink, LightEffect.Pulse, LightEffect.MicStatus, LightEffect.DeviceMute, LightEffect.AudioReactive, LightEffect.GradientFill, LightEffect.Fire, LightEffect.PingPong, LightEffect.Candle, LightEffect.Scanner, LightEffect.ColorWave, LightEffect.Segments, LightEffect.PositionBlend, LightEffect.ProgramMute, LightEffect.AppGroupMute, LightEffect.CycleFill, LightEffect.PositionBlendMute };
+        { LightEffect.ColorBlend, LightEffect.Blink, LightEffect.Pulse, LightEffect.MicStatus, LightEffect.DeviceMute, LightEffect.AudioReactive, LightEffect.GradientFill, LightEffect.Fire, LightEffect.PingPong, LightEffect.Candle, LightEffect.Scanner, LightEffect.ColorWave, LightEffect.Segments, LightEffect.PositionBlend, LightEffect.ProgramMute, LightEffect.ProgramStatus, LightEffect.AppGroupMute, LightEffect.CycleFill, LightEffect.PositionBlendMute };
     private static readonly LightEffect[] EffectsNeedingSpeed =
         { LightEffect.Blink, LightEffect.Pulse, LightEffect.RainbowWave, LightEffect.RainbowCycle, LightEffect.AudioReactive, LightEffect.AudioPositionBlend, LightEffect.Breathing, LightEffect.Comet, LightEffect.Sparkle, LightEffect.PingPong, LightEffect.Stack, LightEffect.Wave, LightEffect.Candle, LightEffect.Scanner, LightEffect.MeteorRain, LightEffect.ColorWave, LightEffect.Segments, LightEffect.Wheel, LightEffect.RainbowWheel, LightEffect.CycleFill, LightEffect.RainbowFill, LightEffect.Fire, LightEffect.Heartbeat, LightEffect.Plasma, LightEffect.Drip, LightEffect.Waterfall, LightEffect.Lava, LightEffect.VuWave, LightEffect.NebulaDrift, LightEffect.Vortex, LightEffect.Shockwave, LightEffect.Tidal, LightEffect.Prism, LightEffect.EmberDrift, LightEffect.Glitch, LightEffect.OpalWave, LightEffect.Bloom, LightEffect.ColorTwinkle };
     private static readonly LightEffect[] EffectsNeedingProgramName =
-        { LightEffect.ProgramMute };
+        { LightEffect.ProgramMute, LightEffect.ProgramStatus };
     private static readonly LightEffect[] EffectsNeedingDeviceSelect =
         { LightEffect.DeviceSelect, LightEffect.DevicePositionFill };
 
@@ -276,8 +285,12 @@ public partial class LightsView : UserControl
 
             _colors1[i] = Color.FromRgb((byte)light.R, (byte)light.G, (byte)light.B);
             _colors2[i] = Color.FromRgb((byte)light.R2, (byte)light.G2, (byte)light.B2);
+            _colors3[i] = Color.FromRgb((byte)light.R3, (byte)light.G3, (byte)light.B3);
+            _colors4[i] = Color.FromRgb((byte)light.R4, (byte)light.G4, (byte)light.B4);
             SetSwatchColor(_color1Swatches[i], _colors1[i]);
             SetSwatchColor(_color2Swatches[i], _colors2[i]);
+            SetSwatchColor(_color3Swatches[i], _colors3[i]);
+            SetSwatchColor(_color4Swatches[i], _colors4[i]);
 
             _speedSliders[i].Value = Math.Clamp(light.EffectSpeed, 1, 100);
             _brightnessSliders[i].Value = Math.Clamp(light.Brightness, 0, 100);
@@ -286,7 +299,10 @@ public partial class LightsView : UserControl
                 _reactiveModeComboBoxes[i].Select(light.ReactiveMode.ToString());
 
             if (_programNameBoxes[i] != null)
+            {
                 _programNameBoxes[i].Text = light.ProgramName ?? "";
+                UpdateProgramAppChipDisplay(i, light.ProgramName);
+            }
 
             // Populate DeviceSelect device pickers, then update visibility (which may re-populate),
             // then restore colors/selections after the final populate.
@@ -1009,7 +1025,7 @@ public partial class LightsView : UserControl
 
         muteContent.Children.Add(new TextBlock
         {
-            Text = "How bright LEDs are when muted (ProgramMute / AppGroupMute effects).",
+            Text = "How bright LEDs are when muted in AppGroupMute effects.",
             Style = FindStyle("SecondaryText"),
             Margin = new Thickness(0, 0, 0, 6),
             TextWrapping = TextWrapping.Wrap,
@@ -1710,10 +1726,14 @@ public partial class LightsView : UserControl
             // ── COLORS card ──
             var colorSection = new StackPanel();
 
-            var swatch1 = MakeColorSwatch(idx, isColor2: false);
+            var swatch1 = MakeColorSwatch(idx, 1);
             _color1Swatches[i] = swatch1;
-            var swatch2 = MakeColorSwatch(idx, isColor2: true);
+            var swatch2 = MakeColorSwatch(idx, 2);
             _color2Swatches[i] = swatch2;
+            var swatch3 = MakeColorSwatch(idx, 3);
+            _color3Swatches[i] = swatch3;
+            var swatch4 = MakeColorSwatch(idx, 4);
+            _color4Swatches[i] = swatch4;
 
             var customRow = new WrapPanel
             {
@@ -1722,7 +1742,11 @@ public partial class LightsView : UserControl
             };
             customRow.Children.Add(swatch1);
             customRow.Children.Add(swatch2);
+            customRow.Children.Add(swatch3);
+            customRow.Children.Add(swatch4);
             _color2Panels[i] = swatch2;
+            _color3Panels[i] = swatch3;
+            _color4Panels[i] = swatch4;
             _customColorRows[i] = customRow;
             colorSection.Children.Add(customRow);
 
@@ -1758,9 +1782,15 @@ public partial class LightsView : UserControl
             _reactiveModePanels[idx] = reactiveContainer;
             panel.Children.Add(reactiveContainer);
 
-            // Program name box (only visible for ProgramMute)
+            // App picker (visible for app-aware status effects)
             var programNameContainer = new StackPanel();
-            programNameContainer.Children.Add(MakeLabel("PROGRAM NAME"));
+            programNameContainer.Children.Add(MakeLabel("WATCH APP"));
+
+            var appChip = MakeProgramAppChip(idx);
+            _programAppChips[idx] = appChip;
+            programNameContainer.Children.Add(appChip);
+
+            programNameContainer.Children.Add(MakeLabel("PROCESS NAME"));
             var programNameBox = new TextBox
             {
                 Background = FindBrush("InputBgBrush"),
@@ -1770,9 +1800,13 @@ public partial class LightsView : UserControl
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 FontSize = 12,
                 Padding = new Thickness(6, 4, 6, 4),
-                ToolTip = "Process name to monitor for mute state (e.g. spotify)",
+                ToolTip = "Process name to monitor for mute/running state (e.g. chrome, spotify)",
             };
-            programNameBox.TextChanged += (_, _) => { if (!_loading) QueueSave(); };
+            programNameBox.TextChanged += (_, _) =>
+            {
+                UpdateProgramAppChipDisplay(idx, programNameBox.Text);
+                if (!_loading) QueueSave();
+            };
             _programNameBoxes[idx] = programNameBox;
             programNameContainer.Children.Add(programNameBox);
             programNameContainer.Visibility = Visibility.Collapsed;
@@ -1856,11 +1890,237 @@ public partial class LightsView : UserControl
         _headerIcons[idx].AccentColor = _colors2[idx];
     }
 
-    private Border MakeColorSwatch(int idx, bool isColor2)
+    private Border MakeProgramAppChip(int idx)
     {
-        var label = isColor2 ? "SECONDARY" : "PRIMARY";
-        return MakeColorPill(label, Colors.Black, isColor2 ? "Secondary color (accent/contrast for animated effects)" : "Primary LED color",
-            () => OnPickColor(idx, isColor2));
+        var iconImg = new System.Windows.Controls.Image
+        {
+            Width = 22,
+            Height = 22,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+            Visibility = Visibility.Collapsed,
+        };
+
+        var placeholderIcon = new MaterialIcon
+        {
+            Kind = MaterialIconKind.Application,
+            Width = 18,
+            Height = 18,
+            Foreground = FindBrush("TextDimBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(2, 0, 10, 0),
+        };
+
+        var nameText = new TextBlock
+        {
+            Text = "Choose App...",
+            FontSize = 12,
+            Foreground = FindBrush("TextDimBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+
+        var chevron = new MaterialIcon
+        {
+            Kind = MaterialIconKind.ChevronDown,
+            Width = 14,
+            Height = 14,
+            Foreground = FindBrush("TextDimBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 0, 0),
+        };
+
+        var content = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(iconImg, Dock.Left);
+        DockPanel.SetDock(placeholderIcon, Dock.Left);
+        DockPanel.SetDock(chevron, Dock.Right);
+        content.Children.Add(iconImg);
+        content.Children.Add(placeholderIcon);
+        content.Children.Add(chevron);
+        content.Children.Add(nameText);
+
+        var bg = FindBrush("InputBgBrush");
+        var hoverBg = FindBrush("CardBorderBrush");
+        var idleBorder = FindBrush("InputBorderBrush");
+        var chip = new Border
+        {
+            CornerRadius = new CornerRadius(6),
+            Background = bg,
+            BorderBrush = idleBorder,
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(10, 0, 10, 0),
+            Height = 36,
+            Cursor = Cursors.Hand,
+            Child = content,
+            ToolTip = "Click to pick the app to watch",
+            Margin = new Thickness(0, 0, 0, 6),
+        };
+        chip.Tag = new ProgramAppChipRefs(iconImg, placeholderIcon, nameText);
+
+        chip.MouseEnter += (_, _) =>
+        {
+            chip.Background = hoverBg;
+            chip.BorderBrush = new SolidColorBrush(ThemeManager.Accent);
+        };
+        chip.MouseLeave += (_, _) =>
+        {
+            chip.Background = bg;
+            chip.BorderBrush = idleBorder;
+        };
+        chip.MouseLeftButtonDown += (_, e) =>
+        {
+            e.Handled = true;
+            OnProgramAppChipClick(idx);
+        };
+
+        return chip;
+    }
+
+    private sealed record ProgramAppChipRefs(System.Windows.Controls.Image Icon, MaterialIcon Placeholder, TextBlock Name);
+
+    private void OnProgramAppChipClick(int idx)
+    {
+        var picker = new AppPickerDialog { Owner = Window.GetWindow(this) };
+        if (picker.ShowDialog() != true) return;
+
+        var processName = picker.SelectedProcessName;
+        if (string.IsNullOrWhiteSpace(processName))
+            processName = GetProcessNameFromCommand(picker.SelectedPath);
+        if (string.IsNullOrWhiteSpace(processName)) return;
+
+        _programNameBoxes[idx].Text = processName;
+        _programNameBoxes[idx].Foreground = FindBrush("TextPrimaryBrush");
+        UpdateProgramAppChipDisplay(idx, processName, picker.SelectedName, picker.SelectedPath);
+        if (!_loading) QueueSave();
+    }
+
+    private void UpdateProgramAppChipDisplay(int idx, string? processName, string? displayName = null, string? iconPath = null)
+    {
+        if (idx < 0 || idx >= _programAppChips.Length) return;
+        var chip = _programAppChips[idx];
+        if (chip?.Tag is not ProgramAppChipRefs refs) return;
+
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            refs.Icon.Source = null;
+            refs.Icon.Visibility = Visibility.Collapsed;
+            refs.Placeholder.Visibility = Visibility.Visible;
+            refs.Name.Text = "Choose App...";
+            refs.Name.Foreground = FindBrush("TextDimBrush");
+            chip.ToolTip = "Click to pick the app to watch";
+            return;
+        }
+
+        refs.Name.Text = string.IsNullOrWhiteSpace(displayName) ? processName : displayName;
+        refs.Name.Foreground = FindBrush("TextPrimaryBrush");
+        chip.ToolTip = $"Watching process: {processName}";
+
+        var icon = TryExtractProgramIcon(iconPath) ?? TryFindRunningProcessIcon(processName);
+        if (icon != null)
+        {
+            refs.Icon.Source = icon;
+            refs.Icon.Visibility = Visibility.Visible;
+            refs.Placeholder.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            refs.Icon.Source = null;
+            refs.Icon.Visibility = Visibility.Collapsed;
+            refs.Placeholder.Visibility = Visibility.Visible;
+        }
+    }
+
+    private static string GetProcessNameFromCommand(string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command)) return "";
+        var exe = ExtractExecutablePath(Environment.ExpandEnvironmentVariables(command));
+        return System.IO.Path.GetFileNameWithoutExtension(exe);
+    }
+
+    private static string ExtractExecutablePath(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command)) return command;
+
+        command = command.Trim();
+        if (command.StartsWith('"'))
+        {
+            int closingQuote = command.IndexOf('"', 1);
+            if (closingQuote > 1)
+                return command[1..closingQuote];
+        }
+
+        int exeEnd = command.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+        if (exeEnd >= 0)
+            return command[..(exeEnd + 4)];
+
+        return command.Split(' ', 2)[0];
+    }
+
+    private static bool ProcessNameMatches(string processName, string configuredName)
+    {
+        var needle = (configuredName ?? "").Trim();
+        if (needle.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            needle = needle[..^4];
+        if (needle.Length == 0) return false;
+
+        var compactNeedle = needle.Replace(" ", "");
+        var compactProcessName = processName.Replace(" ", "");
+        return compactProcessName.Contains(compactNeedle, StringComparison.OrdinalIgnoreCase)
+            || compactNeedle.Contains(compactProcessName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ImageSource? TryFindRunningProcessIcon(string processName)
+    {
+        foreach (var process in System.Diagnostics.Process.GetProcesses())
+        {
+            try
+            {
+                if (!ProcessNameMatches(process.ProcessName, processName)) continue;
+                return TryExtractProgramIcon(process.MainModule?.FileName);
+            }
+            catch { }
+            finally { process.Dispose(); }
+        }
+
+        return null;
+    }
+
+    private static ImageSource? TryExtractProgramIcon(string? path)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            var exe = ExtractExecutablePath(Environment.ExpandEnvironmentVariables(path));
+            if (string.IsNullOrWhiteSpace(exe) || !System.IO.File.Exists(exe))
+                return null;
+
+            using var icon = System.Drawing.Icon.ExtractAssociatedIcon(exe);
+            if (icon == null) return null;
+
+            var src = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                icon.Handle,
+                Int32Rect.Empty,
+                BitmapSizeOptions.FromEmptyOptions());
+            src.Freeze();
+            return src;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private Border MakeColorSwatch(int idx, int slot)
+    {
+        var (label, tooltip) = slot switch
+        {
+            2 => ("SECONDARY", "Secondary color (accent/contrast for animated effects)"),
+            3 => ("MUTED", "ProgramStatus color while the watched app is muted"),
+            4 => ("NOT RUNNING", "ProgramStatus color while the watched app process is not running"),
+            _ => ("PRIMARY", "Primary LED color"),
+        };
+
+        return MakeColorPill(label, Colors.Black, tooltip, () => OnPickColor(idx, slot));
     }
 
     private Border MakeColorPill(string label, Color initial, string tooltip, Action onClick)
@@ -1925,10 +2185,16 @@ public partial class LightsView : UserControl
         return pill;
     }
 
-    private void OnPickColor(int knobIdx, bool isColor2)
+    private void OnPickColor(int knobIdx, int slot)
     {
         int idx = knobIdx;
-        var current = isColor2 ? _colors2[idx] : _colors1[idx];
+        var current = slot switch
+        {
+            2 => _colors2[idx],
+            3 => _colors3[idx],
+            4 => _colors4[idx],
+            _ => _colors1[idx],
+        };
         var dialog = new ColorPickerDialog(current)
         {
             Owner = Window.GetWindow(this)
@@ -1942,10 +2208,20 @@ public partial class LightsView : UserControl
         if (dialog.ShowDialog() == true)
         {
             var chosen = dialog.SelectedColor;
-            if (isColor2)
+            if (slot == 2)
             {
                 _colors2[idx] = chosen;
                 SetSwatchColor(_color2Swatches[idx], chosen);
+            }
+            else if (slot == 3)
+            {
+                _colors3[idx] = chosen;
+                SetSwatchColor(_color3Swatches[idx], chosen);
+            }
+            else if (slot == 4)
+            {
+                _colors4[idx] = chosen;
+                SetSwatchColor(_color4Swatches[idx], chosen);
             }
             else
             {
@@ -2104,7 +2380,15 @@ public partial class LightsView : UserControl
             _previewOriginalEffect = light.Effect;
         }
         // Apply preset colors for preview if available
-        if (EffectPresetColors.TryGetValue(effect, out var preset))
+        if (effect == LightEffect.ProgramStatus)
+        {
+            var preset = ProgramStatusPresetColors;
+            light.R = preset.c1.R; light.G = preset.c1.G; light.B = preset.c1.B;
+            light.R2 = preset.c2.R; light.G2 = preset.c2.G; light.B2 = preset.c2.B;
+            light.R3 = preset.c3.R; light.G3 = preset.c3.G; light.B3 = preset.c3.B;
+            light.R4 = preset.c4.R; light.G4 = preset.c4.G; light.B4 = preset.c4.B;
+        }
+        else if (EffectPresetColors.TryGetValue(effect, out var preset))
         {
             light.R = preset.c1.R; light.G = preset.c1.G; light.B = preset.c1.B;
             light.R2 = preset.c2.R; light.G2 = preset.c2.G; light.B2 = preset.c2.B;
@@ -2126,6 +2410,12 @@ public partial class LightsView : UserControl
             light.R2 = _colors2[_previewOriginalIdx].R;
             light.G2 = _colors2[_previewOriginalIdx].G;
             light.B2 = _colors2[_previewOriginalIdx].B;
+            light.R3 = _colors3[_previewOriginalIdx].R;
+            light.G3 = _colors3[_previewOriginalIdx].G;
+            light.B3 = _colors3[_previewOriginalIdx].B;
+            light.R4 = _colors4[_previewOriginalIdx].R;
+            light.G4 = _colors4[_previewOriginalIdx].G;
+            light.B4 = _colors4[_previewOriginalIdx].B;
         }
         _previewOriginalIdx = -1;
         _previewOriginalEffect = null;
@@ -2136,6 +2426,7 @@ public partial class LightsView : UserControl
     // hidden so users can't override a preset applied here. (Issue #11)
     private static readonly Dictionary<LightEffect, (Color c1, Color c2)> EffectPresetColors = new()
     {
+        { LightEffect.ProgramMute,  (Color.FromRgb(0x00, 0xE6, 0x76), Color.FromRgb(0xFF, 0x40, 0x40)) }, // unmuted green + muted red
         { LightEffect.Fire,         (Color.FromRgb(0xFF, 0x6A, 0x00), Color.FromRgb(0xFF, 0x20, 0x00)) }, // orange + deep red
         { LightEffect.Candle,       (Color.FromRgb(0xFF, 0xB3, 0x00), Color.FromRgb(0xFF, 0x57, 0x00)) }, // warm yellow + orange
         { LightEffect.Ocean,        (Color.FromRgb(0x00, 0x6E, 0xCC), Color.FromRgb(0x00, 0xCC, 0xBB)) }, // deep blue + teal
@@ -2151,6 +2442,10 @@ public partial class LightsView : UserControl
         { LightEffect.ColorTwinkle, (Color.FromRgb(0xFF, 0xE7, 0x7A), Color.FromRgb(0xFF, 0xA8, 0xF0)) }, // warm gold + pastel pink
     };
 
+    private static readonly (Color c1, Color c2, Color c3, Color c4) ProgramStatusPresetColors =
+        (Color.FromRgb(0x00, 0x96, 0xFF), Color.FromRgb(0x00, 0xE6, 0x76),
+         Color.FromRgb(0xFF, 0x40, 0x40), Color.FromRgb(0x48, 0x48, 0x48));
+
     // Effects that don't use any user colors (pure rainbow/HSV)
     private static readonly HashSet<LightEffect> EffectsNoColors = new()
     {
@@ -2160,6 +2455,20 @@ public partial class LightsView : UserControl
 
     private void ApplyEffectPresetColors(int idx, LightEffect effect)
     {
+        if (effect == LightEffect.ProgramStatus)
+        {
+            var statusPreset = ProgramStatusPresetColors;
+            _colors1[idx] = statusPreset.c1;
+            _colors2[idx] = statusPreset.c2;
+            _colors3[idx] = statusPreset.c3;
+            _colors4[idx] = statusPreset.c4;
+            SetSwatchColor(_color1Swatches[idx], statusPreset.c1);
+            SetSwatchColor(_color2Swatches[idx], statusPreset.c2);
+            SetSwatchColor(_color3Swatches[idx], statusPreset.c3);
+            SetSwatchColor(_color4Swatches[idx], statusPreset.c4);
+            return;
+        }
+
         if (EffectPresetColors.TryGetValue(effect, out var preset))
         {
             _colors1[idx] = preset.c1;
@@ -2186,11 +2495,14 @@ public partial class LightsView : UserControl
         bool isReactive = effect == LightEffect.AudioReactive;
         bool needsProgramName = EffectsNeedingProgramName.Contains(effect);
         bool needsDeviceSelect = EffectsNeedingDeviceSelect.Contains(effect);
+        bool needsProgramStatusColors = effect == LightEffect.ProgramStatus;
 
         // Hide entire color section for pure rainbow/HSV effects
         if (_colorSections[idx] != null)
             _colorSections[idx].Visibility = noColors ? Visibility.Collapsed : Visibility.Visible;
         _color2Panels[idx].Visibility = (!noColors && needsColor2) ? Visibility.Visible : Visibility.Collapsed;
+        _color3Panels[idx].Visibility = (!noColors && needsProgramStatusColors) ? Visibility.Visible : Visibility.Collapsed;
+        _color4Panels[idx].Visibility = (!noColors && needsProgramStatusColors) ? Visibility.Visible : Visibility.Collapsed;
         _speedPanels[idx].Visibility = Visibility.Visible; // always show (brightness is always relevant)
         _reactiveModePanels[idx].Visibility = isReactive ? Visibility.Visible : Visibility.Collapsed;
         _programNamePanels[idx].Visibility = needsProgramName ? Visibility.Visible : Visibility.Collapsed;
@@ -2263,6 +2575,8 @@ public partial class LightsView : UserControl
                 light.Effect = copy.Effect;
                 light.R = copy.R; light.G = copy.G; light.B = copy.B;
                 light.R2 = copy.R2; light.G2 = copy.G2; light.B2 = copy.B2;
+                light.R3 = copy.R3; light.G3 = copy.G3; light.B3 = copy.B3;
+                light.R4 = copy.R4; light.G4 = copy.G4; light.B4 = copy.B4;
                 light.EffectSpeed = copy.EffectSpeed;
                 light.ReactiveMode = copy.ReactiveMode;
                 light.ProgramName = copy.ProgramName;
@@ -2274,8 +2588,12 @@ public partial class LightsView : UserControl
                 _effectPickers[idx].SelectedEffect = light.Effect;
                 _colors1[idx] = Color.FromRgb((byte)light.R, (byte)light.G, (byte)light.B);
                 _colors2[idx] = Color.FromRgb((byte)light.R2, (byte)light.G2, (byte)light.B2);
+                _colors3[idx] = Color.FromRgb((byte)light.R3, (byte)light.G3, (byte)light.B3);
+                _colors4[idx] = Color.FromRgb((byte)light.R4, (byte)light.G4, (byte)light.B4);
                 SetSwatchColor(_color1Swatches[idx], _colors1[idx]);
                 SetSwatchColor(_color2Swatches[idx], _colors2[idx]);
+                SetSwatchColor(_color3Swatches[idx], _colors3[idx]);
+                SetSwatchColor(_color4Swatches[idx], _colors4[idx]);
                 UpdateHeaderEffect(idx);
                 _speedSliders[idx].Value = Math.Clamp(light.EffectSpeed, 1, 100);
                 if (_reactiveModeComboBoxes[idx] != null)
@@ -2299,6 +2617,8 @@ public partial class LightsView : UserControl
                 light.Effect = LightEffect.SingleColor;
                 light.R = 0; light.G = 230; light.B = 118;
                 light.R2 = 0; light.G2 = 0; light.B2 = 0;
+                light.R3 = 255; light.G3 = 64; light.B3 = 64;
+                light.R4 = 72; light.G4 = 72; light.B4 = 72;
                 light.EffectSpeed = 50;
                 light.ProgramName = "";
                 light.DeviceColors = new List<DeviceColorEntry>();
@@ -2307,8 +2627,12 @@ public partial class LightsView : UserControl
                 _effectPickers[idx].SelectedEffect = LightEffect.SingleColor;
                 _colors1[idx] = Color.FromRgb(0, 230, 118);
                 _colors2[idx] = Color.FromRgb(0, 0, 0);
+                _colors3[idx] = Color.FromRgb(255, 64, 64);
+                _colors4[idx] = Color.FromRgb(72, 72, 72);
                 SetSwatchColor(_color1Swatches[idx], _colors1[idx]);
                 SetSwatchColor(_color2Swatches[idx], _colors2[idx]);
+                SetSwatchColor(_color3Swatches[idx], _colors3[idx]);
+                SetSwatchColor(_color4Swatches[idx], _colors4[idx]);
                 UpdateHeaderEffect(idx);
                 _speedSliders[idx].Value = 50;
                 if (_programNameBoxes[idx] != null)
@@ -2411,6 +2735,14 @@ public partial class LightsView : UserControl
             light.R2 = _colors2[i].R;
             light.G2 = _colors2[i].G;
             light.B2 = _colors2[i].B;
+
+            light.R3 = _colors3[i].R;
+            light.G3 = _colors3[i].G;
+            light.B3 = _colors3[i].B;
+
+            light.R4 = _colors4[i].R;
+            light.G4 = _colors4[i].G;
+            light.B4 = _colors4[i].B;
 
             light.EffectSpeed = (int)_speedSliders[i].Value;
             light.Brightness = (int)_brightnessSliders[i].Value;

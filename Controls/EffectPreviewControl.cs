@@ -251,6 +251,7 @@ namespace AmpUp.Controls
                 case LightEffect.AudioReactive:   RenderAudioReactive(c);   break;
                 case LightEffect.AudioPositionBlend: RenderAudioPositionBlend(c); break;
                 case LightEffect.ProgramMute:     RenderProgramMute(c);     break;
+                case LightEffect.ProgramStatus:   RenderProgramStatus(c);   break;
                 case LightEffect.AppGroupMute:    RenderAppGroupMute(c);    break;
                 case LightEffect.DeviceSelect:    RenderDeviceSelect(c);    break;
                 case LightEffect.DevicePositionFill: RenderDevicePositionFill(c); break;

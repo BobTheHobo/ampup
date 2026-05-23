@@ -251,6 +251,15 @@ public class LightConfig
     public int R2 { get; set; }
     public int G2 { get; set; }
     public int B2 { get; set; }
+    // Extra status colors used by ProgramStatus:
+    // R/G/B and R2/G2/B2 are the unmuted blend endpoints,
+    // R3/G3/B3 is muted, and R4/G4/B4 is not running.
+    public int R3 { get; set; } = 255;
+    public int G3 { get; set; } = 64;
+    public int B3 { get; set; } = 64;
+    public int R4 { get; set; } = 72;
+    public int G4 { get; set; } = 72;
+    public int B4 { get; set; } = 72;
     public int EffectSpeed { get; set; } = 50;
     public int Brightness { get; set; } = 100; // per-knob brightness 0-100
     [JsonConverter(typeof(StringEnumConverter))]
@@ -271,6 +280,12 @@ public class GlobalLightConfig
     public int R2 { get; set; } = 255;
     public int G2 { get; set; } = 255;
     public int B2 { get; set; } = 255;
+    public int R3 { get; set; } = 255;
+    public int G3 { get; set; } = 64;
+    public int B3 { get; set; } = 64;
+    public int R4 { get; set; } = 72;
+    public int G4 { get; set; } = 72;
+    public int B4 { get; set; } = 72;
     public int EffectSpeed { get; set; } = 50;
     [JsonConverter(typeof(StringEnumConverter))]
     public ReactiveMode ReactiveMode { get; set; } = ReactiveMode.SpectrumBands;
@@ -289,7 +304,7 @@ public enum LightEffect
     Breathing, Fire, Comet, Sparkle, GradientFill,
     PositionBlend, PositionBlendMute,
     PingPong, Stack, Wave, Candle, Wheel, RainbowWheel,
-    ProgramMute, AppGroupMute, DeviceSelect, DevicePositionFill,
+    ProgramMute, ProgramStatus, AppGroupMute, DeviceSelect, DevicePositionFill,
     Scanner, MeteorRain, ColorWave, Segments, TheaterChase,
     RainbowScanner, SparkleRain, BreathingSync, FireWall,
     DualRacer, Lightning, Fillup, Ocean, Collision, DNA, Rainfall, PoliceLights,
