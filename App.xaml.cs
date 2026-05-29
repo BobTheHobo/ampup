@@ -3840,11 +3840,18 @@ public partial class App : Application
             return false;
 
         _osdOverlay ??= new OsdOverlay();
-        _osdOverlay.SetPosition(_config.Osd.Position, _config.Osd.MonitorIndex);
+        _osdOverlay.SetPosition(_config.Osd.Position, ResolveOsdMonitorIndex());
         _osdOverlay.VolumeDuration = _config.Osd.VolumeDuration;
         _osdOverlay.ProfileDuration = _config.Osd.ProfileDuration;
         _osdOverlay.DeviceDuration = _config.Osd.DeviceDuration;
         return true;
+    }
+
+    private int ResolveOsdMonitorIndex()
+    {
+        int resolvedIndex = DisplayMonitorResolver.ResolveOsdMonitorIndex(_config.Osd);
+        _config.Osd.MonitorIndex = resolvedIndex;
+        return resolvedIndex;
     }
 
     public void NotifyUpdateAvailable()
@@ -4411,7 +4418,7 @@ public partial class App : Application
                 _lastKnobRaw[i] = (int)(KnobPositions[i] * 1023f);
 
             _radialWheel = new RadialWheelOverlay();
-            _radialWheel.SetMonitor(_config.Osd.MonitorIndex);
+            _radialWheel.SetMonitor(ResolveOsdMonitorIndex());
 
             switch (_activeWheelMode)
             {

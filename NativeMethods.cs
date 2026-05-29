@@ -286,9 +286,16 @@ internal static class NativeMethods
     /// <summary>
     /// Get friendly monitor names mapped by GDI device name (e.g. \\.\DISPLAY1 → "DELL U2723QE").
     /// </summary>
-    internal static Dictionary<string, string> GetMonitorFriendlyNames()
+    internal sealed class MonitorDisplayConfigInfo
     {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        public string GdiDeviceName { get; init; } = "";
+        public string FriendlyName { get; init; } = "";
+        public string DevicePath { get; init; } = "";
+    }
+
+    internal static Dictionary<string, MonitorDisplayConfigInfo> GetMonitorDisplayConfigInfo()
+    {
+        var result = new Dictionary<string, MonitorDisplayConfigInfo>(StringComparer.OrdinalIgnoreCase);
 
         if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, out uint pathCount, out uint modeCount) != 0)
             return result;
@@ -322,12 +329,28 @@ internal static class NativeMethods
                 continue;
 
             var friendly = targetName.monitorFriendlyDeviceName?.Trim('\0');
+            var devicePath = targetName.monitorDevicePath?.Trim('\0');
             var gdiName = sourceName.viewGdiDeviceName?.Trim('\0');
 
-            if (!string.IsNullOrEmpty(gdiName) && !string.IsNullOrEmpty(friendly))
-                result[gdiName] = friendly;
+            if (!string.IsNullOrEmpty(gdiName))
+            {
+                result[gdiName] = new MonitorDisplayConfigInfo
+                {
+                    GdiDeviceName = gdiName,
+                    FriendlyName = friendly ?? "",
+                    DevicePath = devicePath ?? "",
+                };
+            }
         }
 
         return result;
     }
+
+    /// <summary>
+    /// Get friendly monitor names mapped by GDI device name (e.g. \\.\DISPLAY1 -> "DELL U2723QE").
+    /// </summary>
+    internal static Dictionary<string, string> GetMonitorFriendlyNames()
+        => GetMonitorDisplayConfigInfo()
+            .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Value.FriendlyName))
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value.FriendlyName, StringComparer.OrdinalIgnoreCase);
 }

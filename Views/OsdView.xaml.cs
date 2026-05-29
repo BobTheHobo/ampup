@@ -90,7 +90,9 @@ public partial class OsdView : UserControl
         {
             if (_config == null) return;
             _loading = true;
-            PopulateOsdMonitorPicker(_config.Osd.MonitorIndex);
+            var resolvedIndex = DisplayMonitorResolver.ResolveOsdMonitorIndex(_config.Osd);
+            _config.Osd.MonitorIndex = resolvedIndex;
+            PopulateOsdMonitorPicker(resolvedIndex);
             _loading = false;
         });
     }
@@ -100,7 +102,9 @@ public partial class OsdView : UserControl
         if (e.NewValue is true && _config != null)
         {
             _loading = true;
-            PopulateOsdMonitorPicker(_config.Osd.MonitorIndex);
+            var resolvedIndex = DisplayMonitorResolver.ResolveOsdMonitorIndex(_config.Osd);
+            _config.Osd.MonitorIndex = resolvedIndex;
+            PopulateOsdMonitorPicker(resolvedIndex);
             _loading = false;
         }
     }
@@ -124,7 +128,9 @@ public partial class OsdView : UserControl
         SldOsdWheelDur.Value = config.Osd.WheelDuration;
         LblOsdWheelDur.Text = config.Osd.WheelDuration < 0.05 ? "Off" : $"{config.Osd.WheelDuration:F1}s";
         HighlightOsdPosition(config.Osd.Position);
-        PopulateOsdMonitorPicker(config.Osd.MonitorIndex);
+        var resolvedMonitorIndex = DisplayMonitorResolver.ResolveOsdMonitorIndex(config.Osd);
+        config.Osd.MonitorIndex = resolvedMonitorIndex;
+        PopulateOsdMonitorPicker(resolvedMonitorIndex);
         ChkHideInFullscreen.IsChecked = config.Osd.HideInFullscreen;
 
         // Quick wheels
@@ -661,26 +667,22 @@ public partial class OsdView : UserControl
     private void PopulateOsdMonitorPicker(int selectedIndex)
     {
         CmbOsdMonitor.ClearItems();
-        var screens = System.Windows.Forms.Screen.AllScreens;
-        var friendlyNames = NativeMethods.GetMonitorFriendlyNames();
+        var monitors = DisplayMonitorResolver.GetMonitors();
 
-        for (int i = 0; i < screens.Length; i++)
-        {
-            string name = friendlyNames.TryGetValue(screens[i].DeviceName, out var friendly)
-                ? friendly
-                : screens[i].DeviceName;
-            string label = screens[i].Primary ? $"{name} (Primary)" : name;
-            CmbOsdMonitor.AddItem(label, i);
-        }
+        foreach (var monitor in monitors)
+            CmbOsdMonitor.AddItem(monitor.Label, monitor.Index);
 
-        CmbOsdMonitor.SelectedIndex = (selectedIndex >= 0 && selectedIndex < screens.Length)
-            ? selectedIndex : 0;
+        var pickerIndex = monitors.FindIndex(m => m.Index == selectedIndex);
+        CmbOsdMonitor.SelectedIndex = pickerIndex >= 0 ? pickerIndex : 0;
     }
 
     private void CmbOsdMonitor_SelectionChanged(object? sender, EventArgs e)
     {
         if (_loading || _config == null || CmbOsdMonitor.SelectedIndex < 0) return;
-        _config.Osd.MonitorIndex = CmbOsdMonitor.SelectedIndex;
+        if (CmbOsdMonitor.SelectedTag is int monitorIndex)
+            DisplayMonitorResolver.RememberOsdMonitor(_config.Osd, monitorIndex);
+        else
+            _config.Osd.MonitorIndex = CmbOsdMonitor.SelectedIndex;
         _debounceTimer.Stop();
         _debounceTimer.Start();
     }
@@ -689,7 +691,7 @@ public partial class OsdView : UserControl
     {
         if (_config == null) return;
         var overlay = new OsdOverlay();
-        overlay.SetPosition(_config.Osd.Position, _config.Osd.MonitorIndex);
+        overlay.SetPosition(_config.Osd.Position, DisplayMonitorResolver.ResolveOsdMonitorIndex(_config.Osd));
         overlay.ShowVolume("Preview", 75, "VolumeHigh");
     }
 }

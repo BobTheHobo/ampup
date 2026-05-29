@@ -496,6 +496,9 @@ public class OsdConfig
     [JsonConverter(typeof(StringEnumConverter))]
     public OsdPosition Position { get; set; } = OsdPosition.BottomRight;
     public int MonitorIndex { get; set; } = 0;
+    public string MonitorDeviceName { get; set; } = "";
+    public string MonitorFriendlyName { get; set; } = "";
+    public string MonitorDevicePath { get; set; } = "";
     public bool HideInFullscreen { get; set; } = false;
     // Legacy single wheel — kept for backwards compat on config load
     public QuickWheelConfig? QuickWheel { get; set; }
