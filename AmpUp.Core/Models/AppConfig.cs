@@ -92,6 +92,7 @@ public class SignalRgbConfig
 {
     public bool Enabled { get; set; } = false;
     public int BridgePort { get; set; } = 45333;
+    public string CanvasShape { get; set; } = "Classic Strip";
 }
 
 public class SpotifyConfig

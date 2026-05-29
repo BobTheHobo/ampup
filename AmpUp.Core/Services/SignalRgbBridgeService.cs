@@ -124,6 +124,7 @@ public sealed class SignalRgbBridgeService : IDisposable
                     if (!_hasActiveFrame)
                     {
                         _hasActiveFrame = true;
+                        Logger.Log("SignalRGB bridge receiving frames");
                         StatusChanged?.Invoke("Receiving frames");
                     }
                     FrameReceived?.Invoke(frame);
@@ -150,6 +151,7 @@ public sealed class SignalRgbBridgeService : IDisposable
         if ((DateTime.UtcNow - LastFrameUtc).TotalMilliseconds < 1500) return;
 
         _hasActiveFrame = false;
+        Logger.Log("SignalRGB bridge frame timeout; returning to AmpUp lighting");
         FrameTimedOut?.Invoke();
         StatusChanged?.Invoke("Listening");
     }
@@ -173,10 +175,38 @@ public sealed class SignalRgbBridgeService : IDisposable
 
     private static int NormalizePort(int port) => port is >= 1024 and <= 65535 ? port : DefaultPort;
 
-    public static string UserPluginDirectory =>
+    private const string PluginFileName = "AmpUp_TurnUp_Bridge.js";
+
+    public static string UserPluginDirectory => ActiveSignalRgbPluginDirectory ?? LegacyUserPluginDirectory;
+
+    public static string UserPluginPath => Path.Combine(UserPluginDirectory, PluginFileName);
+
+    public static string LegacyUserPluginDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "WhirlwindFX", "Plugins");
 
-    public static string UserPluginPath => Path.Combine(UserPluginDirectory, "AmpUp_TurnUp_Bridge.js");
+    public static string LegacyUserPluginPath => Path.Combine(LegacyUserPluginDirectory, PluginFileName);
+
+    private static string? ActiveSignalRgbPluginDirectory
+    {
+        get
+        {
+            var root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "VortxEngine");
+
+            if (!Directory.Exists(root)) return null;
+
+            var appDir = Directory.GetDirectories(root, "app-*")
+                .Select(path => new DirectoryInfo(path))
+                .Where(dir => Directory.Exists(Path.Combine(dir.FullName, "Signal-x64", "Plugins")))
+                .OrderByDescending(dir => dir.LastWriteTimeUtc)
+                .FirstOrDefault();
+
+            return appDir == null
+                ? null
+                : Path.Combine(appDir.FullName, "Signal-x64", "Plugins", "AmpUp");
+        }
+    }
 
     public static string BundledPluginPath
     {
@@ -194,16 +224,45 @@ public sealed class SignalRgbBridgeService : IDisposable
         }
     }
 
-    public static string InstallUserPlugin()
+    public static string InstallUserPlugin(SignalRgbConfig? config = null)
     {
         var source = BundledPluginPath;
         if (!File.Exists(source))
             throw new FileNotFoundException("SignalRGB plugin template was not found.", source);
 
+        string content = File.ReadAllText(source);
+        string canvasShape = NormalizeCanvasShape(config?.CanvasShape);
+        content = content.Replace(
+            "const ampUpCanvasShape = \"Classic Strip\";",
+            $"const ampUpCanvasShape = \"{canvasShape}\";");
+
         Directory.CreateDirectory(UserPluginDirectory);
-        File.Copy(source, UserPluginPath, overwrite: true);
+        File.WriteAllText(UserPluginPath, content);
+
+        if (!string.Equals(UserPluginPath, LegacyUserPluginPath, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                if (File.Exists(LegacyUserPluginPath))
+                    File.Delete(LegacyUserPluginPath);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"SignalRGB bridge could not remove legacy plugin copy: {ex.Message}");
+            }
+        }
+
         return UserPluginPath;
     }
+
+    private static string NormalizeCanvasShape(string? canvasShape) => canvasShape switch
+    {
+        "Knob Grid" => "Knob Grid",
+        "Arc" => "Arc",
+        "Matrix" => "Matrix",
+        "Wide Strip" => "Wide Strip",
+        _ => "Classic Strip",
+    };
 
     public void Dispose()
     {

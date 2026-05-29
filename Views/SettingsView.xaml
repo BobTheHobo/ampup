@@ -520,6 +520,19 @@
                                                 BorderBrush="{DynamicResource InputBorderBrush}"
                                                 Foreground="{StaticResource TextPrimaryBrush}" />
                                 </StackPanel>
+                                <StackPanel Margin="0,0,12,0">
+                                    <TextBlock Text="Layout" Style="{StaticResource SecondaryText}" Margin="0,0,0,4" />
+                                    <ComboBox x:Name="CmbSignalRgbCanvasShape" Width="160" Height="32"
+                                              Background="{DynamicResource InputBgBrush}"
+                                              BorderBrush="{DynamicResource InputBorderBrush}"
+                                              Foreground="{StaticResource TextPrimaryBrush}">
+                                        <ComboBoxItem Content="Classic Strip" />
+                                        <ComboBoxItem Content="Knob Grid" />
+                                        <ComboBoxItem Content="Arc" />
+                                        <ComboBoxItem Content="Matrix" />
+                                        <ComboBoxItem Content="Wide Strip" />
+                                    </ComboBox>
+                                </StackPanel>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                                     <ui:Button x:Name="BtnSignalRgbInstallPlugin" Content="Install Plugin"
                                                Appearance="Secondary" Height="32" Margin="0,0,6,0" />
@@ -527,6 +540,9 @@
                                                Appearance="Secondary" Height="32" />
                                 </StackPanel>
                             </StackPanel>
+                            <TextBlock Text="Classic Strip is the original SignalRGB mapping. Reinstall the plugin and restart SignalRGB after changing this."
+                                       Style="{StaticResource SecondaryText}" FontSize="11"
+                                       TextWrapping="Wrap" Margin="0,0,0,4" />
                             <TextBlock x:Name="TxtSignalRgbPluginStatus" Text=""
                                        Style="{StaticResource SecondaryText}" FontSize="11"
                                        Margin="0,2,0,0" />

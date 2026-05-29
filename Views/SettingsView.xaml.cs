@@ -167,6 +167,7 @@ public partial class SettingsView : UserControl
         ChkSignalRgbEnabled.Checked += OnSignalRgbEnabledChanged;
         ChkSignalRgbEnabled.Unchecked += OnSignalRgbEnabledChanged;
         TxtSignalRgbPort.TextChanged += OnValueChanged;
+        CmbSignalRgbCanvasShape.SelectionChanged += OnValueChanged;
         BtnSignalRgbInstallPlugin.Click += OnSignalRgbInstallPlugin;
         BtnSignalRgbOpenPluginFolder.Click += OnSignalRgbOpenPluginFolder;
 
@@ -263,6 +264,7 @@ public partial class SettingsView : UserControl
         // Integrations — SignalRGB
         ChkSignalRgbEnabled.IsChecked = config.SignalRgb.Enabled;
         TxtSignalRgbPort.Text = config.SignalRgb.BridgePort.ToString();
+        SelectSignalRgbCanvasShape(config.SignalRgb.CanvasShape);
         RefreshSignalRgbStatus();
 
         // Integrations — Spotify
@@ -815,6 +817,7 @@ public partial class SettingsView : UserControl
         _config.SignalRgb.Enabled = ChkSignalRgbEnabled.IsChecked == true;
         if (int.TryParse(TxtSignalRgbPort.Text.Trim(), out var signalRgbPort))
             _config.SignalRgb.BridgePort = Math.Clamp(signalRgbPort, 1024, 65535);
+        _config.SignalRgb.CanvasShape = GetSelectedSignalRgbCanvasShape();
 
         _onSave(_config);
     }
@@ -1288,15 +1291,48 @@ public partial class SettingsView : UserControl
     {
         try
         {
-            string path = SignalRgbBridgeService.InstallUserPlugin();
+            CollectAndSave();
+            string path = SignalRgbBridgeService.InstallUserPlugin(_config?.SignalRgb);
             RefreshSignalRgbStatus();
-            GlassDialog.ShowInfo($"SignalRGB plugin installed:\n{path}\n\nRestart SignalRGB or reload devices to pick it up.", owner: Window.GetWindow(this));
+            GlassDialog.ShowInfo($"SignalRGB plugin installed:\n{path}\n\nLayout: {GetSelectedSignalRgbCanvasShape()}\nRestart SignalRGB or reload devices to pick it up.", owner: Window.GetWindow(this));
         }
         catch (Exception ex)
         {
             GlassDialog.ShowWarning($"SignalRGB plugin install failed:\n{ex.Message}", owner: Window.GetWindow(this));
         }
     }
+
+    private void SelectSignalRgbCanvasShape(string? canvasShape)
+    {
+        string target = NormalizeSignalRgbCanvasShape(canvasShape);
+        foreach (var item in CmbSignalRgbCanvasShape.Items.OfType<ComboBoxItem>())
+        {
+            if (string.Equals(item.Content?.ToString(), target, StringComparison.OrdinalIgnoreCase))
+            {
+                CmbSignalRgbCanvasShape.SelectedItem = item;
+                return;
+            }
+        }
+
+        CmbSignalRgbCanvasShape.SelectedIndex = 0;
+    }
+
+    private string GetSelectedSignalRgbCanvasShape()
+    {
+        if (CmbSignalRgbCanvasShape.SelectedItem is ComboBoxItem item)
+            return NormalizeSignalRgbCanvasShape(item.Content?.ToString());
+
+        return "Classic Strip";
+    }
+
+    private static string NormalizeSignalRgbCanvasShape(string? canvasShape) => canvasShape switch
+    {
+        "Knob Grid" => "Knob Grid",
+        "Arc" => "Arc",
+        "Matrix" => "Matrix",
+        "Wide Strip" => "Wide Strip",
+        _ => "Classic Strip",
+    };
 
     private void OnSignalRgbOpenPluginFolder(object sender, RoutedEventArgs e)
     {
