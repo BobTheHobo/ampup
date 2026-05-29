@@ -202,7 +202,6 @@ public partial class App : Application
 
         // Load config and create backend
         _config = ConfigManager.Load();
-        RefreshGoveeLanPowerStatesForStartup(_config.Ambience);
 
         // Apply user's accent color and card theme
         ThemeManager.SetAccentColor(_config.AccentColor);
@@ -301,6 +300,7 @@ public partial class App : Application
         };
         // Screen Sync init is deferred too — it grabs screen buffers and
         // kicks off a capture thread, which can stall the UI on first run.
+        StartGoveeLanPowerRefreshForStartup();
 
         _buttons.OnProfileSwitch += HandleProfileSwitch;
         _buttons.OnDeviceSwitched += HandleDeviceSwitched;
@@ -3041,18 +3041,31 @@ public partial class App : Application
         });
     }
 
-    private static void RefreshGoveeLanPowerStatesForStartup(AmbienceConfig ambience)
+    private void StartGoveeLanPowerRefreshForStartup()
     {
-        try
+        if (_config?.Ambience?.GoveeEnabled != true || _config.Ambience.GoveeDevices.Count == 0)
+            return;
+
+        _ambienceSync?.SetSyncSuspended(true);
+        _dreamSync?.SetSuspended(true);
+
+        _ = Task.Run(async () =>
         {
-            RefreshGoveeLanPowerStatesAsync(ambience, "Startup", CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"Startup Govee LAN power refresh failed: {ex.Message}");
-        }
+            try
+            {
+                await RefreshGoveeLanPowerStatesAsync(_config.Ambience, "Startup", CancellationToken.None);
+                _ambienceSync?.UpdateConfig(_config.Ambience);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Startup Govee LAN power refresh failed: {ex.Message}");
+            }
+            finally
+            {
+                _ambienceSync?.SetSyncSuspended(false);
+                _dreamSync?.SetSuspended(false);
+            }
+        });
     }
 
     private static async Task RefreshGoveeLanPowerStatesAsync(
@@ -3074,7 +3087,7 @@ public partial class App : Application
                 try
                 {
                     ct.ThrowIfCancellationRequested();
-                    var status = await AmbienceSync.GetDeviceStatusAsync(dev.Ip);
+                    var status = await GetGoveeStatusWithTimeoutAsync(dev.Ip, ct);
                     if (status.HasValue)
                     {
                         dev.PoweredOn = status.Value.On;
@@ -3102,6 +3115,21 @@ public partial class App : Application
         {
             Logger.Log($"{context} Govee LAN power refresh failed: {ex.Message}");
         }
+    }
+
+    private static async Task<(bool On, int Brightness, int R, int G, int B, int ColorTempK)?> GetGoveeStatusWithTimeoutAsync(
+        string ip,
+        CancellationToken ct)
+    {
+        var statusTask = AmbienceSync.GetDeviceStatusAsync(ip);
+        var timeoutTask = Task.Delay(TimeSpan.FromMilliseconds(2500), ct);
+        var completed = await Task.WhenAny(statusTask, timeoutTask);
+
+        if (completed == statusTask)
+            return await statusTask;
+
+        ct.ThrowIfCancellationRequested();
+        return null;
     }
 
     /// <summary>
