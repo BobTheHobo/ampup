@@ -218,18 +218,18 @@ public partial class MixerView
             // ── Sensitivity slider card ────────────────────────────────
             // N3 encoders are digital infinite scrollers — what matters is
             // how much volume change one detent produces. Slider value is
-            // displayed as "% per click" (1-13%) and stored as raw step
-            // (×10, clamped to 128). 3% per click ≈ legacy default.
+            // displayed as "% per click" in 0.1% increments and stored as raw step
+            // (×10, clamped to 128). 3.2% per click ≈ legacy default.
             var sensitivity = new StyledSlider
             {
-                Minimum = 1,
-                Maximum = 13,
-                Value = 3,
-                Step = 1,
-                LabelFormat = "F0",
+                Minimum = 0.1,
+                Maximum = 12.8,
+                Value = 3.2,
+                Step = 0.1,
+                LabelFormat = "F1",
                 Suffix = "% per click",
                 Height = 28,
-                ToolTip = "How much the volume changes with each click of the wheel. Lower = finer control.",
+                ToolTip = "How much the volume changes with each click of the wheel. Lower = finer control. Adjusts in 0.1% steps.",
             };
             sensitivity.ValueChanged += (_, _) =>
             {
@@ -359,9 +359,9 @@ public partial class MixerView
 
             _scChannelLabels[i].Text = GetDisplayLabel(knob);
             SelectTarget(_scTargetPickers[i], knob.Target, knob.DeviceId);
-            // Encoder step → "% per click" display (round-trip via /10).
+            // Encoder step -> "% per click" display (round-trip via /10).
             int stepRaw = knob.EncoderStep > 0 ? knob.EncoderStep : 32;
-            _scSensitivitySliders[i].Value = Math.Clamp((int)Math.Round(stepRaw / 10.0), 1, 13);
+            _scSensitivitySliders[i].Value = Math.Clamp(stepRaw / 10.0, 0.1, 12.8);
             _scRangeSliders[i].LowerValue = Math.Clamp(knob.MinVolume, 0, 100);
             _scRangeSliders[i].UpperValue = Math.Clamp(knob.MaxVolume, 0, 100);
 
@@ -455,9 +455,9 @@ public partial class MixerView
         if (_config == null) return;
         var knob = _config.N3.Knobs.FirstOrDefault(k => k.Idx == idx);
         if (knob == null) return;
-        // UI value is "% per click" (1-13). Stored as raw step = ×10, clamped 1-128.
-        int pct = (int)Math.Round(_scSensitivitySliders[idx].Value);
-        knob.EncoderStep = Math.Clamp(pct * 10, 1, 128);
+        // UI value is "% per click" (0.1-12.8). Stored as raw step = x10, clamped 1-128.
+        double pct = _scSensitivitySliders[idx].Value;
+        knob.EncoderStep = Math.Clamp((int)Math.Round(pct * 10), 1, 128);
         QueueSave();
     }
 
