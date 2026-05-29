@@ -39,6 +39,7 @@ public partial class SettingsView : UserControl
     private AppConfig? _config;
     private Action<AppConfig>? _onSave;
     private CorsairSync? _corsairSyncRef;
+    private SignalRgbBridgeService? _signalRgbBridgeRef;
     public Action? OnNavigateToOverview { get; set; }
     public Action<string>? OnEditProfile { get; set; }
     public Action<DeviceSurface>? OnActiveSurfaceChangedExternal { get; set; }
@@ -162,6 +163,13 @@ public partial class SettingsView : UserControl
         ChkCorsairEnabled.Checked += OnCorsairEnabledChanged;
         ChkCorsairEnabled.Unchecked += OnCorsairEnabledChanged;
 
+        // SignalRGB
+        ChkSignalRgbEnabled.Checked += OnSignalRgbEnabledChanged;
+        ChkSignalRgbEnabled.Unchecked += OnSignalRgbEnabledChanged;
+        TxtSignalRgbPort.TextChanged += OnValueChanged;
+        BtnSignalRgbInstallPlugin.Click += OnSignalRgbInstallPlugin;
+        BtnSignalRgbOpenPluginFolder.Click += OnSignalRgbOpenPluginFolder;
+
         // Spotify
         TxtSpotifyClientId.TextChanged += OnValueChanged;
         BtnSpotifySetupGuide.Click += OnSpotifySetupGuide;
@@ -252,6 +260,11 @@ public partial class SettingsView : UserControl
         ChkCorsairEnabled.IsChecked = config.Corsair.Enabled;
         RefreshCorsairStatus();
 
+        // Integrations — SignalRGB
+        ChkSignalRgbEnabled.IsChecked = config.SignalRgb.Enabled;
+        TxtSignalRgbPort.Text = config.SignalRgb.BridgePort.ToString();
+        RefreshSignalRgbStatus();
+
         // Integrations — Spotify
         TxtSpotifyClientId.Text = config.Spotify.ClientId;
         RefreshSpotifyStatus();
@@ -276,6 +289,13 @@ public partial class SettingsView : UserControl
     }
 
     public void SetAmbienceSync(AmbienceSync sync) => _ambienceSync = sync;
+
+    public void SetSignalRgbBridge(SignalRgbBridgeService bridge)
+    {
+        _signalRgbBridgeRef = bridge;
+        bridge.StatusChanged += _ => Dispatcher.BeginInvoke(RefreshSignalRgbStatus);
+        RefreshSignalRgbStatus();
+    }
 
     private void BuildAccentSwatches()
     {
@@ -462,6 +482,7 @@ public partial class SettingsView : UserControl
         loaded.AutoSwitch = _config.AutoSwitch;
         loaded.Ambience = _config.Ambience;
         loaded.VoiceMeeter = _config.VoiceMeeter;
+        loaded.SignalRgb = _config.SignalRgb;
         loaded.Groups = _config.Groups;
     }
 
@@ -789,6 +810,11 @@ public partial class SettingsView : UserControl
 
         // Corsair iCUE
         _config.Corsair.Enabled = ChkCorsairEnabled.IsChecked == true;
+
+        // SignalRGB
+        _config.SignalRgb.Enabled = ChkSignalRgbEnabled.IsChecked == true;
+        if (int.TryParse(TxtSignalRgbPort.Text.Trim(), out var signalRgbPort))
+            _config.SignalRgb.BridgePort = Math.Clamp(signalRgbPort, 1024, 65535);
 
         _onSave(_config);
     }
@@ -1219,6 +1245,74 @@ public partial class SettingsView : UserControl
     }
 
     // ── Spotify ────────────────────────────────────────────────────────
+
+    private void OnSignalRgbEnabledChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        RefreshSignalRgbStatus();
+        CollectAndSave();
+    }
+
+    private void RefreshSignalRgbStatus()
+    {
+        bool enabled = ChkSignalRgbEnabled.IsChecked == true;
+        bool pluginInstalled = File.Exists(SignalRgbBridgeService.UserPluginPath);
+
+        if (!enabled)
+        {
+            SignalRgbStatusDot.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#555555"));
+            TxtSignalRgbStatus.Text = "Disabled";
+        }
+        else if (_signalRgbBridgeRef?.HasActiveFrame == true)
+        {
+            SignalRgbStatusDot.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#00E676"));
+            TxtSignalRgbStatus.Text = "Receiving";
+        }
+        else if (_signalRgbBridgeRef?.IsRunning == true)
+        {
+            SignalRgbStatusDot.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFB800"));
+            TxtSignalRgbStatus.Text = $"Listening on {_signalRgbBridgeRef.Port}";
+        }
+        else
+        {
+            SignalRgbStatusDot.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF4444"));
+            TxtSignalRgbStatus.Text = "Not listening";
+        }
+
+        TxtSignalRgbPluginStatus.Text = pluginInstalled
+            ? $"Plugin installed: {SignalRgbBridgeService.UserPluginPath}"
+            : "Plugin not installed";
+    }
+
+    private void OnSignalRgbInstallPlugin(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string path = SignalRgbBridgeService.InstallUserPlugin();
+            RefreshSignalRgbStatus();
+            GlassDialog.ShowInfo($"SignalRGB plugin installed:\n{path}\n\nRestart SignalRGB or reload devices to pick it up.", owner: Window.GetWindow(this));
+        }
+        catch (Exception ex)
+        {
+            GlassDialog.ShowWarning($"SignalRGB plugin install failed:\n{ex.Message}", owner: Window.GetWindow(this));
+        }
+    }
+
+    private void OnSignalRgbOpenPluginFolder(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(SignalRgbBridgeService.UserPluginDirectory);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(SignalRgbBridgeService.UserPluginDirectory)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            GlassDialog.ShowWarning($"Could not open plugin folder:\n{ex.Message}", owner: Window.GetWindow(this));
+        }
+    }
 
     private async void OnSpotifySetupGuide(object sender, RoutedEventArgs e)
     {

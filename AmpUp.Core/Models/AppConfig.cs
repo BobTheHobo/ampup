@@ -39,6 +39,7 @@ public class AppConfig
     public AutoSwitchConfig AutoSwitch { get; set; } = new();
     public ObsConfig Obs { get; set; } = new();
     public VoiceMeeterConfig VoiceMeeter { get; set; } = new();
+    public SignalRgbConfig SignalRgb { get; set; } = new();
     public bool HasCompletedSetup { get; set; } = false;
     public bool AutoSuggestLayout { get; set; } = false;
     public string LastWelcomeVersion { get; set; } = "";
@@ -85,6 +86,12 @@ public class CorsairConfig
     public string StaticColor { get; set; } = "#00E676";
     public string SelectedMural { get; set; } = "";
     public bool SyncToGlobal { get; set; } = true; // Corsair follows Global tab effects
+}
+
+public class SignalRgbConfig
+{
+    public bool Enabled { get; set; } = false;
+    public int BridgePort { get; set; } = 45333;
 }
 
 public class SpotifyConfig

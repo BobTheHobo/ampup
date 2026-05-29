@@ -309,6 +309,30 @@ public class RgbController : IDisposable
     }
 
     /// <summary>
+    /// Set and immediately render an external 45-byte RGB frame.
+    /// Used by bridges that already run at their own frame rate.
+    /// </summary>
+    public void PushScreenSyncColors(byte[] colors)
+    {
+        if (colors.Length != 45) return;
+        _screenSyncColors = colors;
+        RenderScreenSyncFrame(colors);
+    }
+
+    private void RenderScreenSyncFrame(byte[] colors)
+    {
+        for (int k = 0; k < 5; k++)
+            for (int led = 0; led < 3; led++)
+            {
+                int offset = k * 9 + led * 3;
+                SetColor(k, led, colors[offset], colors[offset + 1], colors[offset + 2]);
+            }
+
+        Send();
+        OnFrameReady?.Invoke(_linearColors);
+    }
+
+    /// <summary>
     /// Set global brightness (0-100). Applied as final multiplier on all RGB values.
     /// The hardware has a dead zone below ~33% where LEDs can't display,
     /// so we remap 1-100% to 33-100% device brightness. 0% = off.
@@ -511,14 +535,7 @@ public class RgbController : IDisposable
         var screenSync = _screenSyncColors;
         if (screenSync != null && screenSync.Length == 45 && preview == null)
         {
-            for (int k = 0; k < 5; k++)
-                for (int led = 0; led < 3; led++)
-                {
-                    int offset = k * 9 + led * 3;
-                    SetColor(k, led, screenSync[offset], screenSync[offset + 1], screenSync[offset + 2]);
-                }
-            Send();
-            OnFrameReady?.Invoke(_linearColors);
+            RenderScreenSyncFrame(screenSync);
             return;
         }
 

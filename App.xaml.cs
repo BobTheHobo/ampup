@@ -50,6 +50,7 @@ public partial class App : Application
     private AmbienceSync? _ambienceSync;
     private DreamSyncController? _dreamSync;
     private CorsairSync? _corsairSync;
+    private SignalRgbBridgeService? _signalRgbBridge;
     private LgMonitorSync? _lgMonitor;
     private N3Controller? _n3;
     private SpotifyIntegration? _spotify;
@@ -246,6 +247,15 @@ public partial class App : Application
             if (!_config.Ambience.LinkToLights) return;
             _lgMonitor.SyncFromRoomEffect(frame);
         };
+
+        _signalRgbBridge = new SignalRgbBridgeService(_config.SignalRgb);
+        _signalRgbBridge.FrameReceived += frame =>
+        {
+            if (_config.SignalRgb.Enabled)
+                _rgb.PushScreenSyncColors(frame);
+        };
+        _signalRgbBridge.FrameTimedOut += ClearSignalRgbOverride;
+        _signalRgbBridge.UpdateConfig(_config.SignalRgb);
 
         _n3 = new N3Controller();
         _n3.OnInput += e => QueueHardwareInput($"N3 {e.Describe()}", () => HandleN3Input(e));
@@ -454,6 +464,8 @@ public partial class App : Application
         _mainWindow.SetDreamSync(_dreamSync);
         if (_corsairSync != null)
             _mainWindow.SetCorsairSync(_corsairSync);
+        if (_signalRgbBridge != null)
+            _mainWindow.SetSignalRgbBridge(_signalRgbBridge);
         if (_lgMonitor?.IsAvailable == true)
             _mainWindow.SetLgMonitor(_lgMonitor);
         _mainWindow.SetHAIntegration(_ha);
@@ -1148,6 +1160,7 @@ public partial class App : Application
         foreach (var timer in _osdFinalTimers)
             timer?.Dispose();
         _streamControllerRefreshTimer?.Stop();
+        _signalRgbBridge?.Dispose();
         _duckingEngine?.Dispose();
         Dispatcher.Invoke(() => Shutdown());
     }
@@ -1302,12 +1315,22 @@ public partial class App : Application
             else
                 _corsairSync.Stop();
         }
+        _signalRgbBridge?.UpdateConfig(_config.SignalRgb);
+        if (!_config.SignalRgb.Enabled)
+            ClearSignalRgbOverride();
         ConfigureMutePollingTimer();
         if (_n3 != null && _isN3Connected)
         {
             _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
             SyncStreamControllerDisplays();
         }
+    }
+
+    private void ClearSignalRgbOverride()
+    {
+        if (_config.Ambience.SyncRoomToTurnUp) return;
+        if (_config.Ambience.ScreenSync.Enabled && _config.Ambience.ScreenSync.SyncToTurnUp) return;
+        _rgb.SetScreenSyncColors(null);
     }
 
     private void QueueHardwareInput(string source, Action action)

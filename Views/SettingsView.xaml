@@ -496,6 +496,43 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- SignalRGB -->
+                    <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
+                            Margin="0,14,0,0" Padding="0,14,0,0">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="SignalRGB" Style="{StaticResource BodyText}" FontWeight="SemiBold" />
+                                <Ellipse x:Name="SignalRgbStatusDot" Width="8" Height="8"
+                                         Fill="#555555" VerticalAlignment="Center" Margin="12,0,6,0" />
+                                <TextBlock x:Name="TxtSignalRgbStatus" Text="Disabled"
+                                           Style="{StaticResource SecondaryText}" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <CheckBox x:Name="ChkSignalRgbEnabled"
+                                      Content="Enabled"
+                                      Foreground="{StaticResource TextPrimaryBrush}"
+                                      Margin="0,0,0,8" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <StackPanel Margin="0,0,12,0">
+                                    <TextBlock Text="Bridge Port" Style="{StaticResource SecondaryText}" Margin="0,0,0,4" />
+                                    <ui:TextBox x:Name="TxtSignalRgbPort" Width="120"
+                                                PlaceholderText="45333"
+                                                Background="{DynamicResource InputBgBrush}"
+                                                BorderBrush="{DynamicResource InputBorderBrush}"
+                                                Foreground="{StaticResource TextPrimaryBrush}" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
+                                    <ui:Button x:Name="BtnSignalRgbInstallPlugin" Content="Install Plugin"
+                                               Appearance="Secondary" Height="32" Margin="0,0,6,0" />
+                                    <ui:Button x:Name="BtnSignalRgbOpenPluginFolder" Content="Open Folder"
+                                               Appearance="Secondary" Height="32" />
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock x:Name="TxtSignalRgbPluginStatus" Text=""
+                                       Style="{StaticResource SecondaryText}" FontSize="11"
+                                       Margin="0,2,0,0" />
+                        </StackPanel>
+                    </Border>
+
                     <!-- Spotify -->
                     <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
                             Margin="0,14,0,0" Padding="0,14,0,0">

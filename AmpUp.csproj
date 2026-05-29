@@ -80,6 +80,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="integrations\signalrgb\AmpUp_TurnUp_Bridge.js">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
     <PackageReference Include="Svg.Skia" Version="4.3.0" />
     <PackageReference Include="WPF-UI" Version="4.*" />

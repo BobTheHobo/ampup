@@ -1447,6 +1447,11 @@ public partial class MainWindow : FluentWindow
         _settingsView.SetCorsairSync(corsairSync);
     }
 
+    public void SetSignalRgbBridge(SignalRgbBridgeService signalRgbBridge)
+    {
+        _settingsView.SetSignalRgbBridge(signalRgbBridge);
+    }
+
     public void SetLgMonitor(LgMonitorSync lgMonitor)
     {
         _ambienceView.SetLgMonitor(lgMonitor);
