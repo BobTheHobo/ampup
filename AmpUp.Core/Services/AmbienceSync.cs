@@ -323,7 +323,7 @@ public class AmbienceSync : IDisposable
     /// Called by RoomView.OnRoomFrame for room pattern effects.
     /// Sends full 15-LED frame with rate limiting and segment support.
     /// </summary>
-    public void OnRoomFrame(byte[] linear45, AmbienceConfig cfg)
+    public void OnRoomFrame(byte[] linear45, AmbienceConfig cfg, bool allowNativeSegmentEffects = true)
     {
         if (_disposed || !cfg.GoveeEnabled || cfg.GoveeDevices.Count == 0) return;
         if (_syncSuspended) return;
@@ -381,7 +381,8 @@ public class AmbienceSync : IDisposable
                 bool isSeg = zones > 1 && device.UseSegmentProtocol;
                 if (isSeg)
                 {
-                    if (TryRenderNativeSegmentEffect(device, zones, cfg, out var nativeColors))
+                    if (allowNativeSegmentEffects
+                        && TryRenderNativeSegmentEffect(device, zones, cfg, out var nativeColors))
                     {
                         SendDeviceFrame(device, nativeColors, true);
                         continue;

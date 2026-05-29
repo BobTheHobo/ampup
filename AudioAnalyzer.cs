@@ -21,6 +21,7 @@ public class AudioAnalyzer : IDisposable
     private int _analysisHop;
     private bool _running;
     private bool _disposed;
+    private bool _unsupportedFormatLogged;
 
     // Band frequency ranges (Hz): [min, max]
     private static readonly (float Min, float Max)[] BandRanges =
@@ -60,11 +61,12 @@ public class AudioAnalyzer : IDisposable
                 capture.RecordingStopped += OnRecordingStopped;
                 _bufferPos = 0;
                 _analysisHop = 0;
+                _unsupportedFormatLogged = false;
                 _capture = capture;
                 _running = true;
             }
             capture.StartRecording();
-            Logger.Log("AudioAnalyzer started");
+            Logger.Log($"AudioAnalyzer started ({DescribeWaveFormat(capture.WaveFormat)})");
         }
         catch (Exception ex)
         {
@@ -121,32 +123,23 @@ public class AudioAnalyzer : IDisposable
         lock (_lock) { capture = _capture; }
         if (capture == null) return;
 
-        var format = capture.WaveFormat;
+        var sourceFormat = capture.WaveFormat;
+        var format = NormalizeWaveFormat(sourceFormat);
         int channels = format.Channels;
         int bytesPerSample = format.BitsPerSample / 8;
+        int frameBytes = bytesPerSample * channels;
+        if (channels <= 0 || bytesPerSample <= 0 || frameBytes <= 0)
+        {
+            LogUnsupportedFormatOnce(sourceFormat, format);
+            return;
+        }
 
         // Feed mono-mixed float samples into the accumulator buffer
-        for (int offset = 0; offset + bytesPerSample * channels <= e.BytesRecorded; offset += bytesPerSample * channels)
+        for (int offset = 0; offset + frameBytes <= e.BytesRecorded; offset += frameBytes)
         {
-            float mono = 0f;
-
-            if (format.Encoding == WaveFormatEncoding.IeeeFloat && bytesPerSample == 4)
+            if (!TryReadMonoSample(e.Buffer, offset, format, channels, bytesPerSample, out float mono))
             {
-                // 32-bit float samples — mix down to mono
-                for (int ch = 0; ch < channels; ch++)
-                    mono += BitConverter.ToSingle(e.Buffer, offset + ch * 4);
-                mono /= channels;
-            }
-            else if (format.Encoding == WaveFormatEncoding.Pcm && bytesPerSample == 2)
-            {
-                // 16-bit PCM — mix down to mono, normalize to -1..1
-                for (int ch = 0; ch < channels; ch++)
-                    mono += BitConverter.ToInt16(e.Buffer, offset + ch * 2) / 32768f;
-                mono /= channels;
-            }
-            else
-            {
-                // Unsupported format — skip
+                LogUnsupportedFormatOnce(sourceFormat, format);
                 break;
             }
 
@@ -163,6 +156,82 @@ public class AudioAnalyzer : IDisposable
                 _bufferPos = 0;
             }
         }
+    }
+
+    private static WaveFormat NormalizeWaveFormat(WaveFormat format)
+    {
+        if (format is WaveFormatExtensible extensible)
+        {
+            try { return extensible.ToStandardWaveFormat(); }
+            catch { }
+        }
+
+        return format;
+    }
+
+    private static bool TryReadMonoSample(
+        byte[] buffer,
+        int frameOffset,
+        WaveFormat format,
+        int channels,
+        int bytesPerSample,
+        out float mono)
+    {
+        mono = 0f;
+
+        if (format.Encoding == WaveFormatEncoding.IeeeFloat && bytesPerSample == 4)
+        {
+            for (int ch = 0; ch < channels; ch++)
+                mono += BitConverter.ToSingle(buffer, frameOffset + ch * bytesPerSample);
+            mono /= channels;
+            return true;
+        }
+
+        if (format.Encoding != WaveFormatEncoding.Pcm || bytesPerSample is < 1 or > 4)
+            return false;
+
+        for (int ch = 0; ch < channels; ch++)
+        {
+            int offset = frameOffset + ch * bytesPerSample;
+            mono += bytesPerSample switch
+            {
+                1 => (buffer[offset] - 128) / 128f,
+                2 => BitConverter.ToInt16(buffer, offset) / 32768f,
+                3 => ReadPcm24(buffer, offset) / 8388608f,
+                4 => BitConverter.ToInt32(buffer, offset) / 2147483648f,
+                _ => 0f,
+            };
+        }
+
+        mono /= channels;
+        return true;
+    }
+
+    private static int ReadPcm24(byte[] buffer, int offset)
+    {
+        int sample = buffer[offset] | (buffer[offset + 1] << 8) | (buffer[offset + 2] << 16);
+        if ((sample & 0x800000) != 0)
+            sample |= unchecked((int)0xFF000000);
+        return sample;
+    }
+
+    private void LogUnsupportedFormatOnce(WaveFormat sourceFormat, WaveFormat normalizedFormat)
+    {
+        lock (_lock)
+        {
+            if (_unsupportedFormatLogged) return;
+            _unsupportedFormatLogged = true;
+        }
+
+        Logger.Log($"AudioAnalyzer unsupported format: source={DescribeWaveFormat(sourceFormat)}, normalized={DescribeWaveFormat(normalizedFormat)}");
+    }
+
+    private static string DescribeWaveFormat(WaveFormat format)
+    {
+        string text = $"{format.Encoding}, {format.SampleRate} Hz, {format.Channels} ch, {format.BitsPerSample} bit";
+        if (format is WaveFormatExtensible extensible)
+            text += $", sub={extensible.SubFormat}";
+        return text;
     }
 
     private void OnRecordingStopped(object? sender, StoppedEventArgs e)

@@ -2370,6 +2370,9 @@ public partial class RoomView : UserControl
         StopCorsairMusicSync(); // stop any existing
 
         App.AudioAnalyzer?.Start();
+        _globalMusicBands = App.AudioAnalyzer?.SmoothedBands;
+        _musicReactiveBrightness = 1f;
+        EnsureGoveeDevicesPoweredForUserMode();
 
         _corsairMusicTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
         _corsairMusicTimer.Tick += (_, _) =>
@@ -2378,29 +2381,56 @@ public partial class RoomView : UserControl
         };
         _corsairMusicTimer.Start();
 
-        // If no room pattern is running, start an AudioReactive pattern
-        if (_roomRgb == null && (_activePattern == null || _activePattern == "__sync__"))
+        EnsureRoomRendererForMusicReactive();
+    }
+
+    private void EnsureRoomRendererForMusicReactive()
+    {
+        if (_roomRgb != null) return;
+
+        var pattern = _activePattern;
+        if (string.IsNullOrWhiteSpace(pattern) || pattern == "__sync__")
+            pattern = _config?.Ambience.RoomEffect;
+
+        if (!string.IsNullOrWhiteSpace(pattern)
+            && pattern != "__sync__"
+            && NormalizeRoomEffectName(pattern) != null)
         {
-            _activePattern = "AudioReactive";
-            _roomPatternCorsairOnly = false;
-            ResumeAllGoveeSync();
-            _roomRgb = new RgbController();
-            _roomRgb.SetBrightness(100);
-            _roomRgb.SetAudioBandsProvider(() => App.AudioAnalyzer?.SmoothedBands ?? Array.Empty<float>());
-            _roomRgb.UpdateCustomPalettes(_config?.CustomPalettes);
-            for (int k = 0; k < 5; k++)
-                _roomRgb.SetKnobPosition(k, 1.0f);
-            _roomRgb.UpdateGlobalConfig(new GlobalLightConfig
-            {
-                Enabled = true, Effect = LightEffect.AudioReactive,
-                R = _roomColor1.R, G = _roomColor1.G, B = _roomColor1.B,
-                R2 = _roomColor2.R, G2 = _roomColor2.G, B2 = _roomColor2.B,
-                EffectSpeed = _roomEffectSpeed, ReactiveMode = ReactiveMode.SpectrumBands,
-                PaletteName = _roomPalette.Name,
-            });
-            _roomRgb.OnFrameReady += OnRoomFrame;
-            _roomRgb.SetOutput((_, _, _) => { }, () => true);
+            StartRoomPattern(pattern);
+            return;
         }
+
+        StartTransientMusicReactivePattern();
+    }
+
+    private void StartTransientMusicReactivePattern()
+    {
+        _activePattern = "AudioReactive";
+        _roomPatternCorsairOnly = false;
+        if (_config != null)
+        {
+            _config.Ambience.LinkToLights = false;
+            _config.Corsair.LightSyncMode = "static";
+        }
+
+        ResumeAllGoveeSync();
+        _roomRgb = new RgbController();
+        _roomRgb.SetBrightness(100);
+        _roomRgb.SetAudioBandsProvider(() => App.AudioAnalyzer?.SmoothedBands ?? Array.Empty<float>());
+        _roomRgb.UpdateCustomPalettes(_config?.CustomPalettes);
+        for (int k = 0; k < 5; k++)
+            _roomRgb.SetKnobPosition(k, 1.0f);
+        _roomRgb.UpdateGlobalConfig(new GlobalLightConfig
+        {
+            Enabled = true, Effect = LightEffect.AudioReactive,
+            R = _roomColor1.R, G = _roomColor1.G, B = _roomColor1.B,
+            R2 = _roomColor2.R, G2 = _roomColor2.G, B2 = _roomColor2.B,
+            EffectSpeed = _roomEffectSpeed,
+            ReactiveMode = ReactiveMode.BeatPulse,
+            PaletteName = _roomPalette.Name,
+        });
+        _roomRgb.OnFrameReady += OnRoomFrame;
+        _roomRgb.SetOutput((_, _, _) => { }, () => true, 30);
     }
 
     // ── VU FILL MODE ─────────────────────────────────────────────────
@@ -2411,7 +2441,7 @@ public partial class RoomView : UserControl
         StopRoomPattern(); // stop any running room effect so we don't fight for Govee segments
         _vuFillActive = true;
         App.AudioAnalyzer?.Start();
-        ResumeAllGoveeSync();
+        EnsureGoveeDevicesPoweredForUserMode();
 
         _vuFillTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) }; // ~30fps
         _vuFillTimer.Tick += (_, _) => VuFillTick();
@@ -5316,6 +5346,25 @@ public partial class RoomView : UserControl
                 AmbienceSync.ResumeSync(dev.Ip);
     }
 
+    private void EnsureGoveeDevicesPoweredForUserMode()
+    {
+        if (_config?.Ambience.GoveeEnabled != true) return;
+
+        foreach (var dev in _config.Ambience.GoveeDevices)
+        {
+            if (string.IsNullOrWhiteSpace(dev.Ip) || !dev.SyncWithAmpUp)
+                continue;
+
+            AmbienceSync.ResumeSync(dev.Ip);
+            if (dev.PoweredOn)
+                continue;
+
+            dev.PoweredOn = true;
+            string ip = dev.Ip;
+            _ = Task.Run(() => AmbienceSync.SendTurnAsync(ip, true));
+        }
+    }
+
     private void StopRoomPattern()
     {
         StopPaletteCycle();
@@ -5354,7 +5403,7 @@ public partial class RoomView : UserControl
         // Music reactive: modulate brightness with fast attack / slow decay
         // Skip when the active pattern is already AudioReactive — it already renders
         // audio-driven brightness, so double-modulating would crush everything to near-black.
-        var musicBands = _globalMusicBands;
+        var musicBands = _globalMusicBands ?? App.AudioAnalyzer?.SmoothedBands;
         float musicBrightness = 1f;
         bool isAudioReactivePattern = _activePattern == "AudioReactive" || _activePattern == "AudioPositionBlend";
         if (_corsairMusicTimer?.IsEnabled == true && !isAudioReactivePattern
@@ -5398,7 +5447,10 @@ public partial class RoomView : UserControl
         if (!_roomPatternCorsairOnly && (config.Ambience.GoveeEnabled || config.Ambience.GoveeCloudEnabled))
         {
             if (config.Ambience.GoveeEnabled)
-                _sync?.OnRoomFrame(frameForSync, config.Ambience);
+                _sync?.OnRoomFrame(
+                    frameForSync,
+                    config.Ambience,
+                    allowNativeSegmentEffects: _corsairMusicTimer?.IsEnabled != true);
 
             // Cloud-only devices (no LAN IP) — throttle to ~1/sec (Cloud API rate limit)
             if (config.Ambience.GoveeCloudEnabled
