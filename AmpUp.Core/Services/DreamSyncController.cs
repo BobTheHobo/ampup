@@ -33,6 +33,7 @@ public class DreamSyncController : IDisposable
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
     private bool _running;
+    private volatile bool _suspended;
 
     // Per-device persistent UDP sockets (avoids allocation per frame)
     private readonly Dictionary<string, UdpClient> _udpClients = new();
@@ -63,6 +64,20 @@ public class DreamSyncController : IDisposable
     public string Status { get; private set; } = "Stopped";
 
     public bool IsRunning => _running;
+
+    public void SetSuspended(bool suspended)
+    {
+        _suspended = suspended;
+        if (suspended)
+        {
+            _lastSent.Clear();
+            _segmentEnabled.Clear();
+            _segmentEnableTick.Clear();
+            _segmentBrightnessResetTick.Clear();
+            _lastSegmentColors.Clear();
+            Status = "Suspended";
+        }
+    }
 
     public DreamSyncController(ScreenSyncConfig config, AmbienceConfig ambience, IScreenCapture capture)
     {
@@ -147,6 +162,14 @@ public class DreamSyncController : IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
+            if (_suspended)
+            {
+                Status = "Suspended";
+                try { await Task.Delay(250, ct); }
+                catch (OperationCanceledException) { break; }
+                continue;
+            }
+
             ScreenSyncConfig cfg;
             AmbienceConfig amb;
             lock (_lock) { cfg = _config; amb = _ambience; }

@@ -72,6 +72,8 @@ public partial class App : Application
     private const int MutePollingIdleMs = 1000;
     private const int MutePollingDuckingMs = 500;
     private const int MutePollingQuietMs = 5000;
+    private const int ResumeSettleMs = 8000;
+    private const int ResumeSerialIdleMs = 6000;
     private const int HardwareInputSampleLogMs = 5000;
     private const int HardwareInputSlowLogMs = 1000;
     private long _lastHardwareInputLogTick;
@@ -80,6 +82,9 @@ public partial class App : Application
     private DateTime _lastN3ReconnectAttemptUtc = DateTime.MinValue;
     private int _n3ReconnectInFlight;
     private volatile bool _n3InitialProbeComplete;
+    private volatile bool _resumeSettling;
+    private DateTime _resumeSettlingUntilUtc = DateTime.MinValue;
+    private CancellationTokenSource? _resumeRecoveryCts;
 
     private sealed class N3AnimatedKeyState
     {
@@ -628,7 +633,7 @@ public partial class App : Application
                 NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.Role.Multimedia);
             float cur = device.AudioEndpointVolume.MasterVolumeLevelScalar;
             float next = Math.Clamp(cur + deltaPercent / 100f, 0f, 1f);
-            device.AudioEndpointVolume.MasterVolumeLevelScalar = next;
+            AudioMixer.SetRenderEndpointVolume(device.AudioEndpointVolume, next);
             // Tray icon update comes from OnMasterVolumeNotification callback
         }
         catch (Exception ex)
@@ -719,6 +724,11 @@ public partial class App : Application
         {
             // Session is restored — rebuild subscriptions and reseed state
             _sessionLocked = false;
+            if (IsResumeSettling)
+            {
+                Logger.Log("Session unlocked during resume settling; deferring audio refresh");
+                return;
+            }
             Logger.Log("Session unlocked — re-subscribing mute notifications");
             try { _mixer?.RefreshNow(); } catch { }
             try { SubscribeMuteNotifications(); } catch { }
@@ -727,6 +737,9 @@ public partial class App : Application
 
     // True while the Windows session is locked — guards against stale WASAPI callbacks
     private volatile bool _sessionLocked;
+
+    private bool IsResumeSettling =>
+        _resumeSettling || DateTime.UtcNow < _resumeSettlingUntilUtc;
 
     /// <summary>
     /// Blank the N3 screens when the system suspends so they don't sit lit
@@ -741,49 +754,153 @@ public partial class App : Application
         {
             if (e.Mode == PowerModes.Suspend)
             {
+                try { _resumeRecoveryCts?.Cancel(); } catch { }
+                _resumeSettling = false;
+                _resumeSettlingUntilUtc = DateTime.MinValue;
+                _ambienceSync?.SetSyncSuspended(true);
+                _dreamSync?.SetSuspended(true);
+                Dispatcher.BeginInvoke(() =>
+                {
+                    try { _streamControllerRefreshTimer?.Stop(); } catch { }
+                });
+
                 if (_n3 != null && _isN3Connected)
                     _n3.Sleep();
             }
             else if (e.Mode == PowerModes.Resume)
             {
-                try
-                {
-                    _mixer?.InvalidatePeakDevice();
-                    _mixer?.RefreshNow();
-                    SubscribeMuteNotifications();
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"Power resume audio refresh error: {ex.Message}");
-                }
-
-                if (_n3 != null && _isN3Connected)
-                {
-                    _n3.Wake();
-                    _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
-                    SyncStreamControllerDisplays();
-                }
-
-                if (_serial != null)
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await Task.Delay(750);
-                            _serial.RequestReconnect("system resume");
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.Log($"Turn Up resume reconnect failed: {ex.Message}");
-                        }
-                    });
-                }
+                BeginResumeRecovery();
             }
         }
         catch (Exception ex)
         {
             Logger.Log($"PowerModeChanged error: {ex.Message}");
+        }
+    }
+
+    private void BeginResumeRecovery()
+    {
+        try
+        {
+            _resumeRecoveryCts?.Cancel();
+            _resumeRecoveryCts?.Dispose();
+        }
+        catch { }
+
+        _resumeRecoveryCts = new CancellationTokenSource();
+        var token = _resumeRecoveryCts.Token;
+
+        _resumeSettling = true;
+        _resumeSettlingUntilUtc = DateTime.UtcNow.AddMilliseconds(ResumeSettleMs);
+
+        _ambienceSync?.SetSyncSuspended(true);
+        _dreamSync?.SetSuspended(true);
+        try { _mutePollingTimer?.Change(Timeout.Infinite, Timeout.Infinite); } catch { }
+        try { _autoSwitchTimer?.Change(Timeout.Infinite, Timeout.Infinite); } catch { }
+        try { _gameModeTimer?.Change(Timeout.Infinite, Timeout.Infinite); } catch { }
+        Dispatcher.BeginInvoke(() =>
+        {
+            try { _streamControllerRefreshTimer?.Stop(); } catch { }
+        });
+
+        _ = Task.Run(() => RecoverFromResumeAsync(token), token);
+    }
+
+    private async Task RecoverFromResumeAsync(CancellationToken ct)
+    {
+        try
+        {
+            Logger.Log($"Resume recovery: settling for {ResumeSettleMs}ms");
+            await Task.Delay(ResumeSettleMs, ct);
+
+            await RefreshGoveeLanPowerStatesAsync(_config.Ambience, "Resume", ct);
+            _ambienceSync?.UpdateConfig(_config.Ambience);
+            _dreamSync?.UpdateConfig(_config.Ambience.ScreenSync, _config.Ambience);
+
+            try
+            {
+                _mixer?.InvalidatePeakDevice();
+                _mixer?.RefreshNow();
+                SubscribeMuteNotifications();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Power resume audio refresh error: {ex.Message}");
+            }
+
+            TryRecoverN3AfterResume();
+            TryReconnectTurnUpAfterResume();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Logger.Log($"Resume recovery error: {ex.Message}");
+        }
+        finally
+        {
+            if (!ct.IsCancellationRequested)
+            {
+                _resumeSettling = false;
+                _resumeSettlingUntilUtc = DateTime.MinValue;
+                _ambienceSync?.SetSyncSuspended(false);
+                _dreamSync?.SetSuspended(false);
+                ConfigureMutePollingTimer();
+                ConfigureAutoSwitchTimer();
+                ConfigureGameModeTimer();
+                _ = Dispatcher.BeginInvoke(() =>
+                {
+                    try { _streamControllerRefreshTimer?.Start(); } catch { }
+                });
+                Logger.Log("Resume recovery complete");
+            }
+        }
+    }
+
+    private void TryRecoverN3AfterResume()
+    {
+        if (_n3 == null || !_isN3Connected) return;
+
+        try
+        {
+            _n3.Wake();
+            _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
+            Dispatcher.BeginInvoke(() =>
+            {
+                try { SyncStreamControllerDisplays(); }
+                catch (Exception ex) { Logger.Log($"N3 resume display sync failed: {ex.Message}"); }
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"N3 resume wake failed: {ex.Message}");
+        }
+    }
+
+    private void TryReconnectTurnUpAfterResume()
+    {
+        if (_serial == null) return;
+
+        try
+        {
+            bool shouldReconnect = !_isConnected;
+            if (_isConnected)
+            {
+                var lastRead = _serial.LastReadUtc;
+                shouldReconnect = lastRead == DateTime.MinValue
+                    || (DateTime.UtcNow - lastRead).TotalMilliseconds > ResumeSerialIdleMs;
+            }
+
+            if (!shouldReconnect)
+            {
+                Logger.Log("Turn Up resume reconnect skipped; serial traffic is healthy.");
+                return;
+            }
+
+            _serial.RequestReconnect("system resume stale serial");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Turn Up resume reconnect check failed: {ex.Message}");
         }
     }
 
@@ -1027,6 +1144,7 @@ public partial class App : Application
         _mutePollingTimer?.Dispose();
         _autoSwitchTimer?.Dispose();
         _gameModeTimer?.Dispose();
+        try { _resumeRecoveryCts?.Cancel(); _resumeRecoveryCts?.Dispose(); } catch { }
         foreach (var timer in _osdFinalTimers)
             timer?.Dispose();
         _streamControllerRefreshTimer?.Stop();
@@ -1308,6 +1426,7 @@ public partial class App : Application
             else if (knob.Target.Equals("room_lights", StringComparison.OrdinalIgnoreCase))
             {
                 if (Environment.TickCount64 - _startupTick >= 8000
+                    && !IsResumeSettling
                     && (DateTime.UtcNow - _connectedAt).TotalMilliseconds >= 2000)
                 {
                     float norm = e.Value / 1023f;
@@ -1319,6 +1438,7 @@ public partial class App : Application
             {
                 // Device Group — unified brightness control for grouped devices
                 if (Environment.TickCount64 - _startupTick >= 8000
+                    && !IsResumeSettling
                     && (DateTime.UtcNow - _connectedAt).TotalMilliseconds >= 2000)
                 {
                     var groupName = knob.Target.Substring(6);
@@ -1334,7 +1454,7 @@ public partial class App : Application
             else if (knob.Target.Equals("govee", StringComparison.OrdinalIgnoreCase))
             {
                 // Skip during startup restore to avoid turning on Govee devices on app launch
-                if (Environment.TickCount64 - _startupTick >= 8000)
+                if (Environment.TickCount64 - _startupTick >= 8000 && !IsResumeSettling)
                 {
                     float norm = e.Value / 1023f;
                     _ambienceSync?.EnsureDevicesPoweredOn();
@@ -1345,7 +1465,7 @@ public partial class App : Application
             else if (knob.Target.StartsWith("govee:", StringComparison.OrdinalIgnoreCase))
             {
                 // Skip during startup restore to avoid turning on Govee devices on app launch
-                if (Environment.TickCount64 - _startupTick >= 8000)
+                if (Environment.TickCount64 - _startupTick >= 8000 && !IsResumeSettling)
                 {
                     var ip = knob.Target.Substring(6);
                     float norm = e.Value / 1023f;
@@ -1513,6 +1633,7 @@ public partial class App : Application
         else if (knob.Target.Equals("room_lights", StringComparison.OrdinalIgnoreCase))
         {
             if (Environment.TickCount64 - _startupTick >= 8000
+                && !IsResumeSettling
                 && (DateTime.UtcNow - _connectedAt).TotalMilliseconds >= 2000)
             {
                 float norm = rawValue / 1023f;
@@ -1523,6 +1644,7 @@ public partial class App : Application
         else if (knob.Target.StartsWith("group:", StringComparison.OrdinalIgnoreCase))
         {
             if (Environment.TickCount64 - _startupTick >= 8000
+                && !IsResumeSettling
                 && (DateTime.UtcNow - _connectedAt).TotalMilliseconds >= 2000)
             {
                 var groupName = knob.Target.Substring(6);
@@ -1537,7 +1659,7 @@ public partial class App : Application
         }
         else if (knob.Target.Equals("govee", StringComparison.OrdinalIgnoreCase))
         {
-            if (Environment.TickCount64 - _startupTick >= 8000)
+            if (Environment.TickCount64 - _startupTick >= 8000 && !IsResumeSettling)
             {
                 float norm = rawValue / 1023f;
                 _ambienceSync?.EnsureDevicesPoweredOn();
@@ -1547,7 +1669,7 @@ public partial class App : Application
         }
         else if (knob.Target.StartsWith("govee:", StringComparison.OrdinalIgnoreCase))
         {
-            if (Environment.TickCount64 - _startupTick >= 8000)
+            if (Environment.TickCount64 - _startupTick >= 8000 && !IsResumeSettling)
             {
                 var ip = knob.Target.Substring(6);
                 float norm = rawValue / 1023f;
@@ -2031,6 +2153,7 @@ public partial class App : Application
 
     private void PollGameMode()
     {
+        if (IsResumeSettling) return;
         if (!_config.Ambience.GameModeEnabled) return;
 
         // Debounce: don't toggle more than once every 3 seconds
@@ -2920,6 +3043,23 @@ public partial class App : Application
 
     private static void RefreshGoveeLanPowerStatesForStartup(AmbienceConfig ambience)
     {
+        try
+        {
+            RefreshGoveeLanPowerStatesAsync(ambience, "Startup", CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Startup Govee LAN power refresh failed: {ex.Message}");
+        }
+    }
+
+    private static async Task RefreshGoveeLanPowerStatesAsync(
+        AmbienceConfig ambience,
+        string context,
+        CancellationToken ct)
+    {
         if (!ambience.GoveeEnabled || ambience.GoveeDevices.Count == 0) return;
 
         var devices = ambience.GoveeDevices
@@ -2929,10 +3069,11 @@ public partial class App : Application
 
         try
         {
-            var tasks = devices.Select(dev => Task.Run(async () =>
+            var tasks = devices.Select(async dev =>
             {
                 try
                 {
+                    ct.ThrowIfCancellationRequested();
                     var status = await AmbienceSync.GetDeviceStatusAsync(dev.Ip);
                     if (status.HasValue)
                     {
@@ -2943,21 +3084,23 @@ public partial class App : Application
                     else
                     {
                         dev.PoweredOn = false;
-                        Logger.Log($"Startup Govee LAN state unavailable for {dev.Name}; suppressing auto-resume for that device.");
+                        Logger.Log($"{context} Govee LAN state unavailable for {dev.Name}; suppressing auto-resume for that device.");
                     }
                 }
+                catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
                 {
                     dev.PoweredOn = false;
-                    Logger.Log($"Startup Govee LAN state failed for {dev.Name}: {ex.Message}");
+                    Logger.Log($"{context} Govee LAN state failed for {dev.Name}: {ex.Message}");
                 }
-            }));
+            });
 
-            Task.WhenAll(tasks).GetAwaiter().GetResult();
+            await Task.WhenAll(tasks);
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            Logger.Log($"Startup Govee LAN power refresh failed: {ex.Message}");
+            Logger.Log($"{context} Govee LAN power refresh failed: {ex.Message}");
         }
     }
 
@@ -3783,7 +3926,7 @@ public partial class App : Application
     private void OnMasterVolumeNotification(NAudio.CoreAudioApi.AudioVolumeNotificationData data)
     {
         // Guard: session lock tears down COM objects — stale callbacks must be ignored
-        if (_isShuttingDown || _sessionLocked) return;
+        if (_isShuttingDown || _sessionLocked || IsResumeSettling) return;
         try
         {
             _rgb.SetMasterMuted(data.Muted);
@@ -3794,7 +3937,7 @@ public partial class App : Application
 
     private void OnMicVolumeNotification(NAudio.CoreAudioApi.AudioVolumeNotificationData data)
     {
-        if (_isShuttingDown || _sessionLocked) return;
+        if (_isShuttingDown || _sessionLocked || IsResumeSettling) return;
         try { _rgb.SetMicMuted(data.Muted); } catch { }
     }
 
@@ -3802,7 +3945,7 @@ public partial class App : Application
     {
         // Skip during session lock — WASAPI COM objects are invalidated while locked,
         // and we've already torn down our cached devices in OnSessionSwitch.
-        if (_isShuttingDown || _sessionLocked) return;
+        if (_isShuttingDown || _sessionLocked || IsResumeSettling) return;
         // Skip if a previous poll is still running (protects _cachedMaster from concurrent access)
         if (System.Threading.Interlocked.CompareExchange(ref _pollMuteRunning, 1, 0) != 0)
             return;
@@ -4571,6 +4714,7 @@ public partial class App : Application
         _mutePollingTimer?.Dispose();
         _autoSwitchTimer?.Dispose();
         _gameModeTimer?.Dispose();
+        try { _resumeRecoveryCts?.Cancel(); _resumeRecoveryCts?.Dispose(); } catch { }
         foreach (var timer in _osdFinalTimers)
             timer?.Dispose();
         _streamControllerRefreshTimer?.Stop();

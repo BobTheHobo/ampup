@@ -1740,7 +1740,8 @@ public class TrayMixerPopup : Window
             try
             {
                 float newVol = (float)(e.NewValue / 100.0);
-                device.AudioEndpointVolume.MasterVolumeLevelScalar = newVol;
+                AudioMixer.SetRenderEndpointVolume(device.AudioEndpointVolume, newVol);
+                UpdateMuteButton(muteBtn, device.AudioEndpointVolume.Mute);
                 volLabel.Text = $"{(int)Math.Round(e.NewValue)}%";
             }
             catch { }
@@ -1765,7 +1766,8 @@ public class TrayMixerPopup : Window
                 int delta = e.Delta > 0 ? 2 : -2;
                 float cur = device.AudioEndpointVolume.MasterVolumeLevelScalar;
                 float next = Math.Clamp(cur + delta / 100f, 0f, 1f);
-                device.AudioEndpointVolume.MasterVolumeLevelScalar = next;
+                AudioMixer.SetRenderEndpointVolume(device.AudioEndpointVolume, next);
+                UpdateMuteButton(muteBtn, device.AudioEndpointVolume.Mute);
                 int pct = (int)Math.Round(next * 100);
                 slider.Value = pct;
                 volLabel.Text = $"{pct}%";

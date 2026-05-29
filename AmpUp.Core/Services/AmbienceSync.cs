@@ -17,6 +17,7 @@ public class AmbienceSync : IDisposable
     private AmbienceConfig _config;
     private readonly object _lock = new();
     private bool _disposed;
+    private volatile bool _syncSuspended;
 
     // Per-device last-sent color for delta throttling
     private readonly ConcurrentDictionary<string, (byte R, byte G, byte B)> _lastSent = new();
@@ -51,6 +52,21 @@ public class AmbienceSync : IDisposable
     public void UpdateConfig(AmbienceConfig config)
     {
         lock (_lock) _config = config;
+    }
+
+    /// <summary>
+    /// Temporarily block all automatic LAN frame/brightness sends. Used while
+    /// Windows is suspending/resuming so stale power state cannot wake lights.
+    /// </summary>
+    public void SetSyncSuspended(bool suspended)
+    {
+        _syncSuspended = suspended;
+        if (suspended)
+        {
+            _lastSent.Clear();
+            _lastSendTick.Clear();
+            ClearAllSegmentTracking();
+        }
     }
 
     /// <summary>
@@ -106,6 +122,7 @@ public class AmbienceSync : IDisposable
     public void OnFrame(byte[] linear45)
     {
         if (_disposed) return;
+        if (_syncSuspended) return;
 
         AmbienceConfig cfg;
         lock (_lock) cfg = _config;
@@ -309,6 +326,7 @@ public class AmbienceSync : IDisposable
     public void OnRoomFrame(byte[] linear45, AmbienceConfig cfg)
     {
         if (_disposed || !cfg.GoveeEnabled || cfg.GoveeDevices.Count == 0) return;
+        if (_syncSuspended) return;
 
         // Collect active devices with their zone counts
         var activeDevices = new List<(GoveeDeviceConfig Dev, int Zones)>();
@@ -913,6 +931,7 @@ public class AmbienceSync : IDisposable
     public void SetBrightness(float normalized)
     {
         if (_disposed) return;
+        if (_syncSuspended) return;
 
         AmbienceConfig cfg;
         lock (_lock) cfg = _config;
@@ -942,6 +961,7 @@ public class AmbienceSync : IDisposable
     /// <summary>Turn on all Govee devices that are currently powered off (user intent from knob turn).</summary>
     public void EnsureDevicesPoweredOn()
     {
+        if (_syncSuspended) return;
         AmbienceConfig cfg;
         lock (_lock) cfg = _config;
         foreach (var device in cfg.GoveeDevices)
@@ -961,6 +981,7 @@ public class AmbienceSync : IDisposable
     public void EnsureDevicePoweredOn(string ip)
     {
         if (string.IsNullOrWhiteSpace(ip)) return;
+        if (_syncSuspended) return;
         AmbienceConfig cfg;
         lock (_lock) cfg = _config;
         var device = cfg.GoveeDevices.FirstOrDefault(d => d.Ip == ip);
@@ -976,6 +997,7 @@ public class AmbienceSync : IDisposable
     public void SetBrightnessForDevice(string ip, float normalized)
     {
         if (_disposed || string.IsNullOrWhiteSpace(ip)) return;
+        if (_syncSuspended) return;
 
         // Respect device PoweredOn state
         AmbienceConfig cfg;
@@ -1226,6 +1248,7 @@ public class AmbienceSync : IDisposable
     /// </summary>
     public void SendSegmentFrame(string ip, (byte R, byte G, byte B)[] colors)
     {
+        if (_syncSuspended) return;
         if (string.IsNullOrWhiteSpace(ip) || IsSyncPaused(ip)) return;
         var now = DateTime.UtcNow.Ticks;
         if (_lastSendTick.TryGetValue(ip, out long lastTick) && now - lastTick < MinTicksSegment)

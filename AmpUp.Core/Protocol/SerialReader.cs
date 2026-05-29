@@ -16,6 +16,7 @@ public class SerialReader : IDisposable
     private bool _running;
     private int _connectionState;
     private int _reconnectRequested;
+    private long _lastReadUtcTicks;
 
     // Jitter deadzone: only fire OnKnob if value changed by >= this many ADC counts
     private const int JitterDeadzone = 5;
@@ -28,6 +29,14 @@ public class SerialReader : IDisposable
 
     /// <summary>The underlying serial port, available after connection for RGB writes.</summary>
     public SerialPort? Port => _port;
+    public DateTime LastReadUtc
+    {
+        get
+        {
+            long ticks = System.Threading.Interlocked.Read(ref _lastReadUtcTicks);
+            return ticks > 0 ? new DateTime(ticks, DateTimeKind.Utc) : DateTime.MinValue;
+        }
+    }
 
     public SerialReader(string portName, int baud)
     {
@@ -92,6 +101,7 @@ public class SerialReader : IDisposable
                 }
 
                 _port = port;
+                MarkReadActivity();
                 Logger.Log($"Connected to {portName} @ {_baud} baud");
                 NotifyConnectionChanged(true);
                 _buf.Clear();
@@ -227,6 +237,7 @@ public class SerialReader : IDisposable
                     continue;
 
                 lastReadUtc = DateTime.UtcNow;
+                MarkReadActivity(lastReadUtc);
                 for (int i = 0; i < n; i++) _buf.Add(tmp[i]);
 
                 // Security: prevent unbounded buffer growth from malformed data
@@ -267,6 +278,9 @@ public class SerialReader : IDisposable
         try { port.Write(new byte[] { 0xFE, 0x01, 0xFF }, 0, 3); }
         catch { }
     }
+
+    private void MarkReadActivity(DateTime? utc = null)
+        => System.Threading.Interlocked.Exchange(ref _lastReadUtcTicks, (utc ?? DateTime.UtcNow).Ticks);
 
     private void NotifyConnectionChanged(bool connected)
     {

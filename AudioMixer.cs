@@ -14,6 +14,7 @@ public class AudioMixer : IDisposable
     private readonly object _lastValuesLock = new();
     private System.Threading.Timer? _pollTimer;
     private volatile bool _disposed;
+    private const float NonZeroVolumeThreshold = 0.0001f;
 
     // Map of processName (lowercase) -> AudioSessionControl
     private Dictionary<string, AudioSessionControl> _sessions = new();
@@ -120,6 +121,18 @@ public class AudioMixer : IDisposable
     private static float ComputeVolume(int rawValue, KnobConfig knob)
         => VolumePipeline.ComputeVolume(rawValue, knob);
 
+    internal static void SetRenderEndpointVolume(AudioEndpointVolume endpointVolume, float volume)
+    {
+        endpointVolume.MasterVolumeLevelScalar = volume;
+
+        // Some Bluetooth endpoints flip endpoint mute when volume reaches 0 and
+        // do not automatically clear it when the scalar is raised again.
+        if (volume > NonZeroVolumeThreshold && endpointVolume.Mute)
+        {
+            endpointVolume.Mute = false;
+        }
+    }
+
     public void SetVolume(KnobConfig knob, int rawValue, int? debounceKeyOverride = null)
     {
         // Debounce — skip if change < 5
@@ -143,7 +156,7 @@ public class AudioMixer : IDisposable
             {
                 MMDevice? device;
                 lock (_enumLock) device = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
-                using (device) { device!.AudioEndpointVolume.MasterVolumeLevelScalar = vol; }
+                using (device) { SetRenderEndpointVolume(device!.AudioEndpointVolume, vol); }
                 return;
             }
 
@@ -258,7 +271,14 @@ public class AudioMixer : IDisposable
                     using var dev = devices[i];
                     if (dev.ID == deviceId)
                     {
-                        dev.AudioEndpointVolume.MasterVolumeLevelScalar = vol;
+                        if (dataFlow == DataFlow.Render)
+                        {
+                            SetRenderEndpointVolume(dev.AudioEndpointVolume, vol);
+                        }
+                        else
+                        {
+                            dev.AudioEndpointVolume.MasterVolumeLevelScalar = vol;
+                        }
                         return;
                     }
                 }
