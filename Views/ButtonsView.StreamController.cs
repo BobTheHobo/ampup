@@ -107,7 +107,8 @@ public partial class ButtonsView
     private static readonly HashSet<string> MultiActionStepPathActions = new()
     {
         "launch_exe", "close_program", "mute_program", "open_url", "sc_go_to_page",
-        "ha_service", "govee_color", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus"
+        "ha_service", "govee_color", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus",
+        "signalrgb_effect"
     };
 
     // Sidebar tabs
@@ -1691,7 +1692,7 @@ public partial class ButtonsView
 
     // Actions that require a path textbox inside Toggle A/B (same set as main picker)
     private static bool ToggleSubActionNeedsPath(string action) =>
-        PathActions.Contains(action) || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
+        PathActions.Contains(action) || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus" or "signalrgb_effect";
 
     private ActionPicker MakeFilteredActionCombo(HashSet<string> blocklist)
     {
@@ -1838,6 +1839,7 @@ public partial class ButtonsView
         "ha_service" => "SERVICE CALL",
         "govee_color" => "HEX COLOR",
         "obs_scene" => "SCENE NAME",
+        "signalrgb_effect" => "EFFECT NAME",
         "obs_mute" => "SOURCE NAME",
         "vm_mute_strip" => "STRIP INDEX",
         "vm_mute_bus" => "BUS INDEX",
@@ -2154,7 +2156,7 @@ public partial class ButtonsView
             return;
 
         var action = GetComboActionValue(_scActionPicker);
-        bool needsPath = PathActions.Contains(action) || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
+        bool needsPath = PathActions.Contains(action) || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus" or "signalrgb_effect";
         _scPathPanel.Visibility = needsPath ? Visibility.Visible : Visibility.Collapsed;
         _scMacroPanel.Visibility = action == "macro" ? Visibility.Visible : Visibility.Collapsed;
         if (_scTextSnippetPanel != null)
@@ -3512,6 +3514,7 @@ public partial class ButtonsView
                 "ha_service" => "ENTITY ID",
                 "govee_color" => "DEVICE IP / NAME",
                 "obs_scene" => "SCENE NAME",
+                "signalrgb_effect" => "EFFECT NAME",
                 "obs_mute" => "SOURCE NAME",
                 "vm_mute_strip" or "vm_mute_bus" => "INDEX",
                 _ => "PATH"

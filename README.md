@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.6.1--beta-00BFEF" alt="Version" />
+  <img src="https://img.shields.io/badge/version-1.0.7--beta-00BFEF" alt="Version" />
   <img src="https://img.shields.io/badge/Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows" />
   <img src="https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white" alt=".NET 8" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
@@ -26,7 +26,7 @@ The 1.0 beta also adds native support for the **TreasLin / VSDinside N3** stream
 
 ## Install
 
-1. Download **`AmpUp-Setup-1.0.6.1-beta.exe`** from [Releases](https://github.com/audioslayer/ampup/releases).
+1. Download **`AmpUp-Setup-1.0.7-beta.exe`** from [Releases](https://github.com/audioslayer/ampup/releases).
 2. Run the installer.
 3. Launch Amp Up, then connect your Turn Up mixer or N3 controller.
 

@@ -166,7 +166,7 @@ public partial class ButtonsView
 
         bool needsPath = PathActions.Contains(action)
             || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute"
-                      or "vm_mute_strip" or "vm_mute_bus";
+            or "vm_mute_strip" or "vm_mute_bus" or "signalrgb_effect";
 
         SetCardVisible(_v2PathCard, needsPath);
         SetCardVisible(_v2MacroCard, action == "macro");
@@ -423,6 +423,7 @@ public partial class ButtonsView
         "ha_service"     => "SERVICE CALL",
         "govee_color"    => "DEVICE / COLOR",
         "obs_scene"      => "OBS SCENE",
+        "signalrgb_effect" => "SIGNALRGB EFFECT",
         "obs_mute"       => "OBS SOURCE",
         "vm_mute_strip"  => "VOICEMEETER STRIP",
         "vm_mute_bus"    => "VOICEMEETER BUS",

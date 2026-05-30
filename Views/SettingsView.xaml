@@ -543,6 +543,23 @@
                             <TextBlock Text="Classic Strip is the original SignalRGB mapping. Reinstall the plugin and restart SignalRGB after changing this."
                                        Style="{StaticResource SecondaryText}" FontSize="11"
                                        TextWrapping="Wrap" Margin="0,0,0,4" />
+                            <TextBlock Text="AmpUp-Controlled Knobs"
+                                       Style="{StaticResource SecondaryText}" Margin="0,8,0,4" />
+                            <UniformGrid Columns="5" Margin="0,0,0,4">
+                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob1" Content="K1"
+                                          Foreground="{StaticResource TextPrimaryBrush}" />
+                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob2" Content="K2"
+                                          Foreground="{StaticResource TextPrimaryBrush}" />
+                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob3" Content="K3"
+                                          Foreground="{StaticResource TextPrimaryBrush}" />
+                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob4" Content="K4"
+                                          Foreground="{StaticResource TextPrimaryBrush}" />
+                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob5" Content="K5"
+                                          Foreground="{StaticResource TextPrimaryBrush}" />
+                            </UniformGrid>
+                            <TextBlock Text="Checked knobs keep AmpUp lighting effects while the rest follow SignalRGB."
+                                       Style="{StaticResource SecondaryText}" FontSize="11"
+                                       TextWrapping="Wrap" Margin="0,0,0,4" />
                             <TextBlock x:Name="TxtSignalRgbPluginStatus" Text=""
                                        Style="{StaticResource SecondaryText}" FontSize="11"
                                        Margin="0,2,0,0" />

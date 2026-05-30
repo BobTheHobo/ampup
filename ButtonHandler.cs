@@ -5,6 +5,7 @@ using NAudio.CoreAudioApi;
 using AmpUp.Core.Engine;
 using AmpUp.Core.Models;
 using AmpUp.Core.Services;
+using AmpUp.Services;
 
 namespace AmpUp;
 
@@ -371,6 +372,9 @@ public class ButtonHandler : IDisposable
                 case "spotify_prev":       OnSpotifyPrev?.Invoke();       break;
                 case "spotify_shuffle":    OnSpotifyShuffleToggle?.Invoke(); break;
                 case "spotify_like":       OnSpotifyLikeToggle?.Invoke(); break;
+                case "signalrgb_effect":
+                    SignalRgbEffectCatalog.ApplyEffect(path);
+                    break;
                 case "sc_page_next":
                     OnScPageChange?.Invoke(1, false);
                     break;

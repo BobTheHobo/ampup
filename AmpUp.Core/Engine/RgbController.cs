@@ -124,6 +124,7 @@ public class RgbController : IDisposable
     // Screen sync override: when set, replaces normal effect rendering with screen colors
     // byte[45] = 15 LEDs × 3 (R,G,B), same layout as _linearColors
     private volatile byte[]? _screenSyncColors;
+    private volatile bool[]? _screenSyncLedMask;
 
     // Random number generator for stochastic effects
     private static readonly Random _rng = new();
@@ -303,33 +304,58 @@ public class RgbController : IDisposable
     /// Set screen sync colors on the Turn Up LEDs. Overrides normal effect rendering.
     /// Pass a 45-byte array (15 LEDs × R,G,B) or null to resume normal effects.
     /// </summary>
-    public void SetScreenSyncColors(byte[]? colors)
+    public void SetScreenSyncColors(byte[]? colors, bool[]? ledMask = null)
     {
         _screenSyncColors = colors;
+        _screenSyncLedMask = NormalizeLedMask(ledMask);
     }
 
     /// <summary>
     /// Set and immediately render an external 45-byte RGB frame.
     /// Used by bridges that already run at their own frame rate.
     /// </summary>
-    public void PushScreenSyncColors(byte[] colors)
+    public void PushScreenSyncColors(byte[] colors, bool[]? ledMask = null)
     {
         if (colors.Length != 45) return;
         _screenSyncColors = colors;
-        RenderScreenSyncFrame(colors);
+        _screenSyncLedMask = NormalizeLedMask(ledMask);
+        RenderScreenSyncFrame(colors, _screenSyncLedMask);
     }
 
-    private void RenderScreenSyncFrame(byte[] colors)
+    private void RenderScreenSyncFrame(byte[] colors, bool[]? ledMask = null)
+    {
+        OverlayScreenSyncFrame(colors, ledMask);
+        Send();
+        OnFrameReady?.Invoke(_linearColors);
+    }
+
+    private void OverlayScreenSyncFrame(byte[] colors, bool[]? ledMask)
     {
         for (int k = 0; k < 5; k++)
             for (int led = 0; led < 3; led++)
             {
+                int ledIndex = k * 3 + led;
+                if (ledMask != null && (ledIndex >= ledMask.Length || !ledMask[ledIndex]))
+                    continue;
+
                 int offset = k * 9 + led * 3;
                 SetColor(k, led, colors[offset], colors[offset + 1], colors[offset + 2]);
             }
+    }
 
-        Send();
-        OnFrameReady?.Invoke(_linearColors);
+    private static bool[]? NormalizeLedMask(bool[]? ledMask)
+    {
+        if (ledMask == null || ledMask.Length == 0) return null;
+
+        var normalized = new bool[15];
+        bool anyIgnored = false;
+        for (int i = 0; i < normalized.Length; i++)
+        {
+            normalized[i] = i < ledMask.Length && ledMask[i];
+            if (!normalized[i]) anyIgnored = true;
+        }
+
+        return anyIgnored ? normalized : null;
     }
 
     /// <summary>
@@ -533,7 +559,8 @@ public class RgbController : IDisposable
 
         // Screen sync override: push screen capture colors directly to Turn Up LEDs
         var screenSync = _screenSyncColors;
-        if (screenSync != null && screenSync.Length == 45 && preview == null)
+        var screenSyncMask = _screenSyncLedMask;
+        if (screenSync != null && screenSync.Length == 45 && preview == null && screenSyncMask == null)
         {
             RenderScreenSyncFrame(screenSync);
             return;
@@ -556,6 +583,9 @@ public class RgbController : IDisposable
         // Per-knob preview: override only the target knob, others render normally
         if (preview != null && previewIdx >= 0 && previewIdx < 5)
             SetColor(previewIdx, preview[0], preview[1], preview[2]);
+
+        if (screenSync != null && screenSync.Length == 45 && preview == null && screenSyncMask != null)
+            OverlayScreenSyncFrame(screenSync, screenSyncMask);
 
         Send();
         OnFrameReady?.Invoke(_linearColors);

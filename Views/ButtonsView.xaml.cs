@@ -9,6 +9,7 @@ using Microsoft.Win32;
 using Material.Icons;
 using Material.Icons.WPF;
 using AmpUp.Controls;
+using AmpUp.Services;
 
 namespace AmpUp.Views;
 
@@ -49,6 +50,7 @@ public partial class ButtonsView : UserControl
         ("OBS: Record", "obs_record"), ("OBS: Stream", "obs_stream"),
         ("OBS: Scene", "obs_scene"), ("OBS: Mute", "obs_mute"),
         ("VM: Mute Strip", "vm_mute_strip"), ("VM: Mute Bus", "vm_mute_bus"),
+        ("SignalRGB: Effect", "signalrgb_effect"),
         ("SC: Next Page", "sc_page_next"), ("SC: Prev Page", "sc_page_prev"),
         ("SC: Home Page", "sc_page_home"), ("SC: Go To Page", "sc_go_to_page"),
         ("Multi-Action",  "multi_action"),
@@ -59,7 +61,7 @@ public partial class ButtonsView : UserControl
         ("Screenshot",    "screenshot"),
     };
 
-    private static readonly string[] PathActions = { "mute_program", "launch_exe", "close_program", "sc_go_to_page", "open_url" };
+    private static readonly string[] PathActions = { "mute_program", "launch_exe", "close_program", "sc_go_to_page", "open_url", "signalrgb_effect" };
 
     private static readonly (string Display, string Value)[] PowerOptions =
     {
@@ -93,6 +95,7 @@ public partial class ButtonsView : UserControl
         { "type_text", "✎" }, { "screenshot", "📷" },
         { "spotify_play_pause", "▶" }, { "spotify_next", "⏭" }, { "spotify_prev", "⏮" },
         { "spotify_shuffle", "⇌" }, { "spotify_like", "♥" },
+        { "signalrgb_effect", "S" },
     };
 
     private static readonly Dictionary<string, Color> ActionColors = new()
@@ -140,6 +143,7 @@ public partial class ButtonsView : UserControl
         { "obs_mute",           Color.FromRgb(0xEF, 0x53, 0x50) },
         { "vm_mute_strip",      Color.FromRgb(0xFF, 0x8F, 0x00) },
         { "vm_mute_bus",        Color.FromRgb(0xFF, 0x8F, 0x00) },
+        { "signalrgb_effect",   Color.FromRgb(0xFF, 0x9E, 0x55) },
         { "sc_page_next",       Color.FromRgb(0x26, 0xC6, 0xDA) },
         { "sc_page_prev",       Color.FromRgb(0x26, 0xC6, 0xDA) },
         { "sc_page_home",       Color.FromRgb(0x00, 0xE6, 0x76) },
@@ -410,6 +414,7 @@ public partial class ButtonsView : UserControl
         SelectProfileSubTag(_tapCombos[idx], btn.Action, btn.ProfileName);
         SelectGroupSubTag(_tapCombos[idx], btn.Action, btn.Path);
         SelectGoveeSubTag(_tapCombos[idx], btn.Action, btn.Path);
+        SelectSignalRgbEffectSubTag(_tapCombos[idx], btn.Action, btn.Path);
         UpdateTapVisibility(idx, btn.Action);
         // Restore checked IDs after UpdateTapVisibility (which may re-populate and clear)
         _tapCycleDevicePickers[idx].SetCheckedIds(btn.DeviceIds);
@@ -428,6 +433,7 @@ public partial class ButtonsView : UserControl
         SelectProfileSubTag(_dblCombos[idx], btn.DoublePressAction, btn.DoublePressProfileName);
         SelectGroupSubTag(_dblCombos[idx], btn.DoublePressAction, btn.DoublePressPath);
         SelectGoveeSubTag(_dblCombos[idx], btn.DoublePressAction, btn.DoublePressPath);
+        SelectSignalRgbEffectSubTag(_dblCombos[idx], btn.DoublePressAction, btn.DoublePressPath);
         UpdateGestureVisibility(_dblPathPanels[idx], _dblPathLabels[idx], _dblBrowseButtons[idx], _dblPickButtons[idx], _dblMacroPanels[idx],
             _dblDevicePanels[idx], _dblCycleDevicePanels[idx], _dblCycleDevicePickers[idx], _dblCycleTypePanels[idx],
             _dblPowerPanels[idx], _dblKnobPanels[idx], btn.DoublePressAction, _dblAppChips[idx], _dblPathBoxes[idx]);
@@ -447,6 +453,7 @@ public partial class ButtonsView : UserControl
         SelectProfileSubTag(_holdCombos[idx], btn.HoldAction, btn.HoldProfileName);
         SelectGroupSubTag(_holdCombos[idx], btn.HoldAction, btn.HoldPath);
         SelectGoveeSubTag(_holdCombos[idx], btn.HoldAction, btn.HoldPath);
+        SelectSignalRgbEffectSubTag(_holdCombos[idx], btn.HoldAction, btn.HoldPath);
         UpdateGestureVisibility(_holdPathPanels[idx], _holdPathLabels[idx], _holdBrowseButtons[idx], _holdPickButtons[idx], _holdMacroPanels[idx],
             _holdDevicePanels[idx], _holdCycleDevicePanels[idx], _holdCycleDevicePickers[idx], _holdCycleTypePanels[idx],
             _holdPowerPanels[idx], _holdKnobPanels[idx], btn.HoldAction, _holdAppChips[idx], _holdPathBoxes[idx]);
@@ -530,6 +537,7 @@ public partial class ButtonsView : UserControl
             SelectProfileSubTag(_tapCombos[i], btn.Action, btn.ProfileName);
             SelectGroupSubTag(_tapCombos[i], btn.Action, btn.Path);
             SelectGoveeSubTag(_tapCombos[i], btn.Action, btn.Path);
+            SelectSignalRgbEffectSubTag(_tapCombos[i], btn.Action, btn.Path);
             UpdateTapVisibility(i, btn.Action);
             // Restore checked IDs after UpdateTapVisibility (which may re-populate and clear)
             _tapCycleDevicePickers[i].SetCheckedIds(btn.DeviceIds);
@@ -548,6 +556,7 @@ public partial class ButtonsView : UserControl
             SelectProfileSubTag(_dblCombos[i], btn.DoublePressAction, btn.DoublePressProfileName);
             SelectGroupSubTag(_dblCombos[i], btn.DoublePressAction, btn.DoublePressPath);
             SelectGoveeSubTag(_dblCombos[i], btn.DoublePressAction, btn.DoublePressPath);
+            SelectSignalRgbEffectSubTag(_dblCombos[i], btn.DoublePressAction, btn.DoublePressPath);
             UpdateGestureVisibility(_dblPathPanels[i], _dblPathLabels[i], _dblBrowseButtons[i], _dblPickButtons[i], _dblMacroPanels[i],
                 _dblDevicePanels[i], _dblCycleDevicePanels[i], _dblCycleDevicePickers[i], _dblCycleTypePanels[i],
                 _dblPowerPanels[i], _dblKnobPanels[i], btn.DoublePressAction, _dblAppChips[i], _dblPathBoxes[i]);
@@ -567,6 +576,7 @@ public partial class ButtonsView : UserControl
             SelectProfileSubTag(_holdCombos[i], btn.HoldAction, btn.HoldProfileName);
             SelectGroupSubTag(_holdCombos[i], btn.HoldAction, btn.HoldPath);
             SelectGoveeSubTag(_holdCombos[i], btn.HoldAction, btn.HoldPath);
+            SelectSignalRgbEffectSubTag(_holdCombos[i], btn.HoldAction, btn.HoldPath);
             UpdateGestureVisibility(_holdPathPanels[i], _holdPathLabels[i], _holdBrowseButtons[i], _holdPickButtons[i], _holdMacroPanels[i],
                 _holdDevicePanels[i], _holdCycleDevicePanels[i], _holdCycleDevicePickers[i], _holdCycleTypePanels[i],
                 _holdPowerPanels[i], _holdKnobPanels[i], btn.HoldAction, _holdAppChips[i], _holdPathBoxes[i]);
@@ -1072,6 +1082,12 @@ public partial class ButtonsView : UserControl
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
+            case "signalrgb_effect":
+                label.Text = "EFFECT NAME";
+                if (box != null) box.ToolTip = "SignalRGB effect name, e.g. Dark Matter. Installed effects may also appear in the action flyout.";
+                browseBtn.Visibility = Visibility.Collapsed;
+                pickBtn.Visibility = Visibility.Collapsed;
+                break;
             default:
                 label.Text = "PROCESS NAME";
                 if (box != null) box.ToolTip = "Enter part of the process name";
@@ -1270,6 +1286,7 @@ public partial class ButtonsView : UserControl
         { "spotify_prev",       "Go to the previous Spotify track" },
         { "spotify_shuffle",    "Toggle Spotify shuffle mode" },
         { "spotify_like",       "Like / unlike the currently-playing Spotify track" },
+        { "signalrgb_effect",   "Switch to a SignalRGB lighting effect using the free signalrgb:// URL handler" },
         { "sc_page_next",       "Navigate to the next Stream Controller page" },
         { "sc_page_prev",       "Navigate to the previous Stream Controller page" },
         { "sc_page_home",       "Jump back to page 1 (home page)" },
@@ -1333,6 +1350,7 @@ public partial class ButtonsView : UserControl
 
                 // Profile sub-menu
                 picker.RegisterSubMenu("switch_profile", () => GetProfileSubItems());
+                picker.RegisterSubMenu("signalrgb_effect", GetSignalRgbEffectSubItems);
 
                 // Device group sub-menu
                 if (groupsExist || anyGroupConfigured)
@@ -1375,7 +1393,7 @@ public partial class ButtonsView : UserControl
         ("Advanced",        new[] { "multi_action", "toggle_action", "open_folder" }),
         ("Power",           new[] { "power_sleep", "power_lock", "power_off", "power_restart", "power_logoff", "power_hibernate" }),
         ("Room",            new[] { "room_toggle", "room_effect" }),
-        ("Integrations",    new[] { "group_toggle", "ha_toggle", "ha_scene", "ha_service", "corsair_toggle", "govee_toggle", "govee_color", "govee_white_toggle", "obs_record", "obs_stream", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus", "spotify_play_pause", "spotify_next", "spotify_prev", "spotify_shuffle", "spotify_like" }),
+        ("Integrations",    new[] { "group_toggle", "ha_toggle", "ha_scene", "ha_service", "corsair_toggle", "govee_toggle", "govee_color", "govee_white_toggle", "obs_record", "obs_stream", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus", "spotify_play_pause", "spotify_next", "spotify_prev", "spotify_shuffle", "spotify_like", "signalrgb_effect" }),
         ("Stream Controller", new[] { "sc_page_next", "sc_page_prev", "sc_page_home", "sc_go_to_page" }),
     };
 
@@ -2251,12 +2269,21 @@ public partial class ButtonsView : UserControl
         picker.SelectWithSub(action, deviceId);
     }
 
+    private void SelectSignalRgbEffectSubTag(ActionPicker picker, string action, string effectName)
+    {
+        if (action != "signalrgb_effect" || string.IsNullOrEmpty(effectName))
+            return;
+        picker.SelectWithSub(action, effectName);
+    }
+
     private string GetActionPath(ActionPicker combo, TextBox pathBox)
     {
         var action = GetComboActionValue(combo);
         if (action is "ha_toggle" or "ha_scene" or "select_output" or "select_input" or "mute_device" or "group_toggle"
             or "govee_toggle" or "govee_white_toggle")
             return combo.SelectedSubTag ?? "";
+        if (action is "signalrgb_effect")
+            return combo.SelectedSubTag ?? GetTextBoxValue(pathBox);
         if (action is "govee_color")
         {
             // Combine device IP + hex color: "ip|hexcolor"
@@ -2286,6 +2313,17 @@ public partial class ButtonsView : UserControl
                 var (icon, color) = HADomainStyles.GetStyle(e.Domain);
                 return new ActionPicker.SubItem(e.FriendlyName, e.EntityId, icon, color);
             })
+            .ToList();
+    }
+
+    private List<ActionPicker.SubItem> GetSignalRgbEffectSubItems()
+    {
+        return SignalRgbEffectCatalog.GetInstalledEffects()
+            .Select(e => new ActionPicker.SubItem(
+                e.Name,
+                e.Name,
+                ActionIcons.GetValueOrDefault("signalrgb_effect", "S"),
+                ActionColors.GetValueOrDefault("signalrgb_effect", Color.FromRgb(0xFF, 0x9E, 0x55))))
             .ToList();
     }
 

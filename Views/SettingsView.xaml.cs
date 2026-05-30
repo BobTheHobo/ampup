@@ -168,6 +168,11 @@ public partial class SettingsView : UserControl
         ChkSignalRgbEnabled.Unchecked += OnSignalRgbEnabledChanged;
         TxtSignalRgbPort.TextChanged += OnValueChanged;
         CmbSignalRgbCanvasShape.SelectionChanged += OnValueChanged;
+        foreach (var checkbox in SignalRgbIgnoreKnobChecks())
+        {
+            checkbox.Checked += OnValueChanged;
+            checkbox.Unchecked += OnValueChanged;
+        }
         BtnSignalRgbInstallPlugin.Click += OnSignalRgbInstallPlugin;
         BtnSignalRgbOpenPluginFolder.Click += OnSignalRgbOpenPluginFolder;
 
@@ -265,6 +270,7 @@ public partial class SettingsView : UserControl
         ChkSignalRgbEnabled.IsChecked = config.SignalRgb.Enabled;
         TxtSignalRgbPort.Text = config.SignalRgb.BridgePort.ToString();
         SelectSignalRgbCanvasShape(config.SignalRgb.CanvasShape);
+        LoadSignalRgbIgnoredKnobs(config.SignalRgb.IgnoredLedIndexes);
         RefreshSignalRgbStatus();
 
         // Integrations — Spotify
@@ -818,6 +824,7 @@ public partial class SettingsView : UserControl
         if (int.TryParse(TxtSignalRgbPort.Text.Trim(), out var signalRgbPort))
             _config.SignalRgb.BridgePort = Math.Clamp(signalRgbPort, 1024, 65535);
         _config.SignalRgb.CanvasShape = GetSelectedSignalRgbCanvasShape();
+        _config.SignalRgb.IgnoredLedIndexes = GetSignalRgbIgnoredLedIndexes();
 
         _onSave(_config);
     }
@@ -1333,6 +1340,43 @@ public partial class SettingsView : UserControl
         "Wide Strip" => "Wide Strip",
         _ => "Classic Strip",
     };
+
+    private CheckBox[] SignalRgbIgnoreKnobChecks() =>
+    [
+        ChkSignalRgbIgnoreKnob1,
+        ChkSignalRgbIgnoreKnob2,
+        ChkSignalRgbIgnoreKnob3,
+        ChkSignalRgbIgnoreKnob4,
+        ChkSignalRgbIgnoreKnob5,
+    ];
+
+    private void LoadSignalRgbIgnoredKnobs(List<int>? ignoredLedIndexes)
+    {
+        var ignored = ignoredLedIndexes == null
+            ? new HashSet<int>()
+            : new HashSet<int>(ignoredLedIndexes.Where(i => i is >= 0 and < 15));
+
+        var checks = SignalRgbIgnoreKnobChecks();
+        for (int knob = 0; knob < checks.Length; knob++)
+            checks[knob].IsChecked = Enumerable.Range(knob * 3, 3).All(ignored.Contains);
+    }
+
+    private List<int> GetSignalRgbIgnoredLedIndexes()
+    {
+        var indexes = new List<int>();
+        var checks = SignalRgbIgnoreKnobChecks();
+        for (int knob = 0; knob < checks.Length; knob++)
+        {
+            if (checks[knob].IsChecked != true) continue;
+
+            int baseIndex = knob * 3;
+            indexes.Add(baseIndex);
+            indexes.Add(baseIndex + 1);
+            indexes.Add(baseIndex + 2);
+        }
+
+        return indexes;
+    }
 
     private void OnSignalRgbOpenPluginFolder(object sender, RoutedEventArgs e)
     {

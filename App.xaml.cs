@@ -252,7 +252,7 @@ public partial class App : Application
         _signalRgbBridge.FrameReceived += frame =>
         {
             if (_config.SignalRgb.Enabled)
-                _rgb.PushScreenSyncColors(frame);
+                _rgb.PushScreenSyncColors(frame, BuildSignalRgbLedMask(_config.SignalRgb));
         };
         _signalRgbBridge.FrameTimedOut += ClearSignalRgbOverride;
         _signalRgbBridge.UpdateConfig(_config.SignalRgb);
@@ -1331,6 +1331,18 @@ public partial class App : Application
         if (_config.Ambience.SyncRoomToTurnUp) return;
         if (_config.Ambience.ScreenSync.Enabled && _config.Ambience.ScreenSync.SyncToTurnUp) return;
         _rgb.SetScreenSyncColors(null);
+    }
+
+    private static bool[]? BuildSignalRgbLedMask(SignalRgbConfig config)
+    {
+        if (config.IgnoredLedIndexes.Count == 0) return null;
+
+        var mask = Enumerable.Repeat(true, 15).ToArray();
+        foreach (int ledIndex in config.IgnoredLedIndexes)
+            if (ledIndex is >= 0 and < 15)
+                mask[ledIndex] = false;
+
+        return mask;
     }
 
     private void QueueHardwareInput(string source, Action action)
