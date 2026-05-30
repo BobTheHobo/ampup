@@ -1281,7 +1281,7 @@ public partial class SettingsView : UserControl
         else if (_signalRgbBridgeRef?.IsRunning == true)
         {
             SignalRgbStatusDot.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFB800"));
-            TxtSignalRgbStatus.Text = $"Listening on {_signalRgbBridgeRef.Port}";
+            TxtSignalRgbStatus.Text = "Listening";
         }
         else
         {
@@ -1290,7 +1290,7 @@ public partial class SettingsView : UserControl
         }
 
         TxtSignalRgbPluginStatus.Text = pluginInstalled
-            ? $"Plugin installed: {SignalRgbBridgeService.UserPluginPath}"
+            ? "Plugin installed"
             : "Plugin not installed";
     }
 
@@ -1301,7 +1301,7 @@ public partial class SettingsView : UserControl
             CollectAndSave();
             string path = SignalRgbBridgeService.InstallUserPlugin(_config?.SignalRgb);
             RefreshSignalRgbStatus();
-            GlassDialog.ShowInfo($"SignalRGB plugin installed:\n{path}\n\nLayout: {GetSelectedSignalRgbCanvasShape()}\nRestart SignalRGB or reload devices to pick it up.", owner: Window.GetWindow(this));
+            GlassDialog.ShowInfo($"SignalRGB plugin updated:\n{path}\n\nRestart SignalRGB or reload devices to pick it up.", owner: Window.GetWindow(this));
         }
         catch (Exception ex)
         {

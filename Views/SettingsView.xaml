@@ -512,7 +512,7 @@
                                       Foreground="{StaticResource TextPrimaryBrush}"
                                       Margin="0,0,0,8" />
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                <StackPanel Margin="0,0,12,0">
+                                <StackPanel Margin="0,0,12,0" Visibility="Collapsed">
                                     <TextBlock Text="Bridge Port" Style="{StaticResource SecondaryText}" Margin="0,0,0,4" />
                                     <ui:TextBox x:Name="TxtSignalRgbPort" Width="120"
                                                 PlaceholderText="45333"
@@ -534,32 +534,26 @@
                                     </ComboBox>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
-                                    <ui:Button x:Name="BtnSignalRgbInstallPlugin" Content="Install Plugin"
+                                    <ui:Button x:Name="BtnSignalRgbInstallPlugin" Content="Update Plugin"
                                                Appearance="Secondary" Height="32" Margin="0,0,6,0" />
                                     <ui:Button x:Name="BtnSignalRgbOpenPluginFolder" Content="Open Folder"
                                                Appearance="Secondary" Height="32" />
                                 </StackPanel>
                             </StackPanel>
-                            <TextBlock Text="Classic Strip is the original SignalRGB mapping. Reinstall the plugin and restart SignalRGB after changing this."
-                                       Style="{StaticResource SecondaryText}" FontSize="11"
-                                       TextWrapping="Wrap" Margin="0,0,0,4" />
-                            <TextBlock Text="AmpUp-Controlled Knobs"
+                            <TextBlock Text="Ignored Lights"
                                        Style="{StaticResource SecondaryText}" Margin="0,8,0,4" />
-                            <UniformGrid Columns="5" Margin="0,0,0,4">
-                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob1" Content="K1"
+                            <WrapPanel Margin="0,0,0,4">
+                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob1" Content="Light 1"
+                                          Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,22,0" />
+                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob2" Content="Light 2"
+                                          Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,22,0" />
+                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob3" Content="Light 3"
+                                          Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,22,0" />
+                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob4" Content="Light 4"
+                                          Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,22,0" />
+                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob5" Content="Light 5"
                                           Foreground="{StaticResource TextPrimaryBrush}" />
-                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob2" Content="K2"
-                                          Foreground="{StaticResource TextPrimaryBrush}" />
-                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob3" Content="K3"
-                                          Foreground="{StaticResource TextPrimaryBrush}" />
-                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob4" Content="K4"
-                                          Foreground="{StaticResource TextPrimaryBrush}" />
-                                <CheckBox x:Name="ChkSignalRgbIgnoreKnob5" Content="K5"
-                                          Foreground="{StaticResource TextPrimaryBrush}" />
-                            </UniformGrid>
-                            <TextBlock Text="Checked knobs keep AmpUp lighting effects while the rest follow SignalRGB."
-                                       Style="{StaticResource SecondaryText}" FontSize="11"
-                                       TextWrapping="Wrap" Margin="0,0,0,4" />
+                            </WrapPanel>
                             <TextBlock x:Name="TxtSignalRgbPluginStatus" Text=""
                                        Style="{StaticResource SecondaryText}" FontSize="11"
                                        Margin="0,2,0,0" />

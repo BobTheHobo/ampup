@@ -14,7 +14,8 @@ public sealed class SignalRgbBridgeService : IDisposable
     public const int DefaultPort = 45333;
     public const int LedCount = 15;
     public const int FrameLength = LedCount * 3;
-    private static readonly byte[] Magic = [(byte)'A', (byte)'U', (byte)'P', (byte)'1'];
+    private static readonly byte[] LegacyMagic = [(byte)'A', (byte)'U', (byte)'P', (byte)'1'];
+    private static readonly byte[] LayoutMagic = [(byte)'A', (byte)'U', (byte)'P', (byte)'2'];
 
     private readonly object _gate = new();
     private SignalRgbConfig _config;
@@ -156,12 +157,31 @@ public sealed class SignalRgbBridgeService : IDisposable
         StatusChanged?.Invoke("Listening");
     }
 
-    private static bool TryParseFrame(byte[] packet, out byte[] frame)
+    private bool TryParseFrame(byte[] packet, out byte[] frame)
     {
         frame = [];
         if (packet.Length < 5) return false;
-        for (int i = 0; i < Magic.Length; i++)
-            if (packet[i] != Magic[i]) return false;
+
+        if (HasMagic(packet, LegacyMagic))
+            return TryParseLegacyFrame(packet, out frame);
+
+        if (HasMagic(packet, LayoutMagic))
+            return TryParseLayoutFrame(packet, out frame);
+
+        return false;
+    }
+
+    private static bool HasMagic(byte[] packet, byte[] magic)
+    {
+        if (packet.Length < magic.Length) return false;
+        for (int i = 0; i < magic.Length; i++)
+            if (packet[i] != magic[i]) return false;
+        return true;
+    }
+
+    private static bool TryParseLegacyFrame(byte[] packet, out byte[] frame)
+    {
+        frame = [];
 
         int count = packet[4];
         if (count <= 0) return false;
@@ -170,6 +190,42 @@ public sealed class SignalRgbBridgeService : IDisposable
 
         frame = new byte[FrameLength];
         Buffer.BlockCopy(packet, 5, frame, 0, Math.Min(FrameLength, rgbBytes));
+        return true;
+    }
+
+    private bool TryParseLayoutFrame(byte[] packet, out byte[] frame)
+    {
+        frame = [];
+        int layoutCount = packet[4];
+        if (layoutCount <= 0) return false;
+
+        int targetLayout = CanvasShapeToId(_config.CanvasShape);
+        int offset = 5;
+        byte[]? fallback = null;
+
+        for (int layout = 0; layout < layoutCount; layout++)
+        {
+            if (offset + 2 > packet.Length) return false;
+
+            int layoutId = packet[offset++];
+            int count = packet[offset++];
+            int rgbBytes = count * 3;
+            if (count <= 0 || offset + rgbBytes > packet.Length) return false;
+
+            var candidate = new byte[FrameLength];
+            Buffer.BlockCopy(packet, offset, candidate, 0, Math.Min(FrameLength, rgbBytes));
+            fallback ??= candidate;
+            if (layoutId == targetLayout)
+            {
+                frame = candidate;
+                return true;
+            }
+
+            offset += rgbBytes;
+        }
+
+        if (fallback == null) return false;
+        frame = fallback;
         return true;
     }
 
@@ -231,10 +287,6 @@ public sealed class SignalRgbBridgeService : IDisposable
             throw new FileNotFoundException("SignalRGB plugin template was not found.", source);
 
         string content = File.ReadAllText(source);
-        string canvasShape = NormalizeCanvasShape(config?.CanvasShape);
-        content = content.Replace(
-            "const ampUpCanvasShape = \"Classic Strip\";",
-            $"const ampUpCanvasShape = \"{canvasShape}\";");
 
         Directory.CreateDirectory(UserPluginDirectory);
         File.WriteAllText(UserPluginPath, content);
@@ -262,6 +314,15 @@ public sealed class SignalRgbBridgeService : IDisposable
         "Matrix" => "Matrix",
         "Wide Strip" => "Wide Strip",
         _ => "Classic Strip",
+    };
+
+    private static int CanvasShapeToId(string? canvasShape) => NormalizeCanvasShape(canvasShape) switch
+    {
+        "Knob Grid" => 1,
+        "Arc" => 2,
+        "Matrix" => 3,
+        "Wide Strip" => 4,
+        _ => 0,
     };
 
     public void Dispose()

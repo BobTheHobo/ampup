@@ -1,13 +1,13 @@
 import udp from "@SignalRGB/udp";
 
 export function Name() { return "AmpUp Turn Up Bridge"; }
-export function Version() { return "0.3.1"; }
+export function Version() { return "0.4.0"; }
 export function VendorId() { return 0x1A86; }
 export function ProductId() { return 0x55D3; }
 export function Publisher() { return "AmpUp"; }
 export function Type() { return "serial"; }
 export function DeviceType() { return "lightingcontroller"; }
-export function Size() { return getCanvasShape().size; }
+export function Size() { return [29, 9]; }
 export function DefaultPosition() { return [75, 70]; }
 export function DefaultScale() { return 8.0; }
 export function ImageUrl() { return "https://assets.signalrgb.com/devices/default/misc/usb-drive-render.png"; }
@@ -24,8 +24,6 @@ export function ControllableParameters() {
         { property: "forcedColor", group: "lighting", label: "Forced Color", type: "color", default: "#00E676" },
     ];
 }
-
-const ampUpCanvasShape = "Classic Strip";
 
 const ledNames = [
     "Knob 1 Left", "Knob 1 Center", "Knob 1 Right",
@@ -83,7 +81,7 @@ export function LedNames() {
 }
 
 export function LedPositions() {
-    return getCanvasShape().positions;
+    return knobGridPositions;
 }
 
 export function Initialize() {
@@ -97,13 +95,17 @@ export function Initialize() {
 export function Render() {
     if (!socket) return;
 
-    const positions = getCanvasShape().positions;
-    const packet = [0x41, 0x55, 0x50, 0x31, positions.length];
-    for (let i = 0; i < positions.length; i++) {
-        const x = positions[i][0];
-        const y = positions[i][1];
-        const color = LightingMode === "Forced" ? hexToRgb(forcedColor) : device.color(x, y);
-        packet.push(color[0], color[1], color[2]);
+    const layouts = getCanvasLayouts();
+    const packet = [0x41, 0x55, 0x50, 0x32, layouts.length];
+    for (let l = 0; l < layouts.length; l++) {
+        const layout = layouts[l];
+        packet.push(layout.id, layout.positions.length);
+        for (let i = 0; i < layout.positions.length; i++) {
+            const x = layout.positions[i][0];
+            const y = layout.positions[i][1];
+            const color = LightingMode === "Forced" ? hexToRgb(forcedColor) : device.color(x, y);
+            packet.push(color[0], color[1], color[2]);
+        }
     }
 
     socket.write(packet, "127.0.0.1", getBridgePort());
@@ -143,19 +145,17 @@ function getDeviceName() {
 }
 
 function applyCanvasShape() {
-    const layout = getCanvasShape();
-    device.setSize(layout.size);
-    device.setControllableLeds(ledNames, layout.positions);
-    device.log(`AmpUp bridge canvas shape: ${layout.name}`);
+    device.setSize([29, 9]);
+    device.setControllableLeds(ledNames, knobGridPositions);
+    device.log("AmpUp bridge canvas ready");
 }
 
-function getCanvasShape() {
-    const shape = ampUpCanvasShape;
-
-    if (shape === "Classic Strip") return { name: "Classic Strip", size: [15, 1], positions: classicStripPositions };
-    if (shape === "Arc") return { name: "Arc", size: [29, 9], positions: arcPositions };
-    if (shape === "Matrix") return { name: "Matrix", size: [29, 9], positions: matrixPositions };
-    if (shape === "Wide Strip") return { name: "Wide Strip", size: [29, 9], positions: wideStripPositions };
-
-    return { name: "Knob Grid", size: [29, 9], positions: knobGridPositions };
+function getCanvasLayouts() {
+    return [
+        { id: 0, name: "Classic Strip", positions: classicStripPositions },
+        { id: 1, name: "Knob Grid", positions: knobGridPositions },
+        { id: 2, name: "Arc", positions: arcPositions },
+        { id: 3, name: "Matrix", positions: matrixPositions },
+        { id: 4, name: "Wide Strip", positions: wideStripPositions },
+    ];
 }
