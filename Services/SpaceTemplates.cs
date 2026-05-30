@@ -231,6 +231,12 @@ public static class SpaceTemplates
         {
             var effect = effects[i];
             folder.DisplayKeys[i] = DisplayKey(i, effect.Name, "#FF9E55", "PaletteOutline");
+            string imagePath = SignalRgbEffectCatalog.GetOrCacheEffectImagePath(effect);
+            if (!string.IsNullOrWhiteSpace(imagePath))
+            {
+                folder.DisplayKeys[i].ImagePath = imagePath;
+                folder.DisplayKeys[i].PresetIconKind = "";
+            }
             folder.DisplayKeys[i].BackgroundColor = "#181818";
             folder.DisplayKeys[i].TextSize = effect.Name.Length > 14 ? 11 : 13;
             folder.Buttons[i] = Btn(KeyBase + i, "signalrgb_effect", effect.Name);

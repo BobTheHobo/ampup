@@ -1,17 +1,25 @@
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Text.RegularExpressions;
+using AmpUp.Core;
 using Microsoft.Win32;
+using Newtonsoft.Json.Linq;
 
 namespace AmpUp.Services;
 
-public sealed record SignalRgbEffectInfo(string Name, string Id);
+public sealed record SignalRgbEffectInfo(string Name, string Id, string ImageUrl = "");
 public sealed record SignalRgbLayoutInfo(string Name, string Path);
 
 public static class SignalRgbEffectCatalog
 {
     private const string EffectsRegistryPath = @"Software\WhirlwindFX\SignalRgb\effects";
     private const string SolidColorEffectName = "Solid Color";
+    private static readonly HttpClient ImageHttpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(8),
+    };
+    private static Dictionary<string, string>? _catalogImageUrlsById;
 
     public static string LastAppliedEffectName { get; private set; } = "";
 
@@ -27,7 +35,7 @@ public static class SignalRgbEffectCatalog
             name = name.Trim();
             if (IsUnresolvedHashName(name, id)) continue;
 
-            effects[name] = new SignalRgbEffectInfo(name, id);
+            effects[name] = new SignalRgbEffectInfo(name, id, ResolveEffectImageUrl(id, name));
         }
 
         return effects.Values
@@ -99,6 +107,39 @@ public static class SignalRgbEffectCatalog
         ApplySignalRgbUrl("layout", layoutName);
     }
 
+    public static string GetOrCacheEffectImagePath(SignalRgbEffectInfo effect)
+    {
+        if (string.IsNullOrWhiteSpace(effect.ImageUrl))
+            return "";
+
+        try
+        {
+            string cacheDir = Path.Combine(ConfigManager.AppDataDir, "SignalRgbIcons");
+            Directory.CreateDirectory(cacheDir);
+
+            string extension = Path.GetExtension(new Uri(effect.ImageUrl).AbsolutePath);
+            if (string.IsNullOrWhiteSpace(extension) || extension.Length > 5)
+                extension = ".png";
+
+            string fileName = $"{SanitizeFileName(effect.Id)}{extension}";
+            string path = Path.Combine(cacheDir, fileName);
+            if (File.Exists(path) && new FileInfo(path).Length > 0)
+                return path;
+
+            byte[] bytes = ImageHttpClient.GetByteArrayAsync(effect.ImageUrl).GetAwaiter().GetResult();
+            if (bytes.Length == 0)
+                return "";
+
+            File.WriteAllBytes(path, bytes);
+            return path;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"SignalRGB effect image cache error ({effect.Name}): {ex.Message}");
+            return "";
+        }
+    }
+
     private static void ApplySignalRgbUrl(string type, string name)
     {
         string trimmed = name.Trim();
@@ -146,6 +187,64 @@ public static class SignalRgbEffectCatalog
         using var key = Registry.CurrentUser.OpenSubKey($@"{EffectsRegistryPath}\{id}");
         string? name = key?.GetValue("name") as string;
         return string.IsNullOrWhiteSpace(name) ? id : name;
+    }
+
+    private static string ResolveEffectImageUrl(string id, string name)
+    {
+        var catalog = GetCatalogImageUrlsById();
+        if (catalog.TryGetValue(id, out var byId))
+            return byId;
+
+        return catalog.TryGetValue(name, out var byName) ? byName : "";
+    }
+
+    private static Dictionary<string, string> GetCatalogImageUrlsById()
+    {
+        if (_catalogImageUrlsById != null)
+            return _catalogImageUrlsById;
+
+        var urls = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "WhirlwindFX",
+            "SignalRgb",
+            "cache",
+            "catalog_en.json");
+
+        if (!File.Exists(path))
+            return _catalogImageUrlsById = urls;
+
+        try
+        {
+            var root = JObject.Parse(File.ReadAllText(path));
+            foreach (var prop in root.Properties())
+            {
+                if (prop.Value is not JObject entry)
+                    continue;
+
+                string image = entry.Value<string>("image") ?? "";
+                if (string.IsNullOrWhiteSpace(image))
+                    continue;
+
+                urls[prop.Name] = image;
+
+                string name = entry.Value<string>("name") ?? "";
+                if (!string.IsNullOrWhiteSpace(name))
+                    urls[name] = image;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"SignalRGB catalog image read error: {ex.Message}");
+        }
+
+        return _catalogImageUrlsById = urls;
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        string clean = string.Concat(value.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+        return string.IsNullOrWhiteSpace(clean) ? Guid.NewGuid().ToString("N") : clean;
     }
 
     private static bool IsUnresolvedHashName(string name, string id)

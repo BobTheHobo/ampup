@@ -1624,11 +1624,13 @@ public partial class ButtonsView
         for (int i = 0; i < effects.Count; i++)
         {
             var effect = effects[i];
+            string imagePath = AmpUp.Services.SignalRgbEffectCatalog.GetOrCacheEffectImagePath(effect);
             folder.DisplayKeys[i] = new StreamControllerDisplayKeyConfig
             {
                 Idx = i,
                 Title = effect.Name,
-                PresetIconKind = "PaletteOutline",
+                ImagePath = imagePath,
+                PresetIconKind = string.IsNullOrWhiteSpace(imagePath) ? "PaletteOutline" : "",
                 AccentColor = "#FF9E55",
                 IconColor = "#FFFFFF",
                 TextColor = "#FFFFFF",
