@@ -40,6 +40,8 @@ public static class SpaceTemplates
             "#E040FB", "neon_mixer", BuildAudioProfiles),
         new Template("Spotify",       "Spotify transport + launch / mute / shuffle.",
             "#1DB954", "", BuildSpotify),
+        new Template("SignalRGB",     "Installed SignalRGB effects, cycle all, blackout, and restore.",
+            "#FF9E55", "", BuildSignalRgb),
     };
 
     // ── Builders ────────────────────────────────────────────────────────
@@ -194,6 +196,58 @@ public static class SpaceTemplates
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
+
+    private static ButtonFolderConfig BuildSignalRgb()
+    {
+        var effects = SignalRgbEffectCatalog.GetInstalledEffects();
+        if (effects.Count == 0)
+        {
+            return SinglePage("SignalRGB", new[]
+            {
+                ("Blackout", "#555566", "", "signalrgb_blackout", ""),
+                ("Restore",  "#00E676", "", "signalrgb_restore", ""),
+                ("Effect",   "#FF9E55", "", "signalrgb_effect", ""),
+                ("Cycle",    "#FFC107", "", "signalrgb_effect_cycle", ""),
+                ("",         "#1C1C1C", "", "none", ""),
+                ("",         "#1C1C1C", "", "none", ""),
+            });
+        }
+
+        var folder = new ButtonFolderConfig
+        {
+            Name = "SignalRGB",
+            PageCount = Math.Max(1, (int)Math.Ceiling((effects.Count + 1) / (double)KeysPerPage)),
+            BackKeyEnabled = false,
+        };
+
+        int totalSlots = folder.PageCount * KeysPerPage;
+        for (int i = 0; i < totalSlots; i++)
+        {
+            folder.DisplayKeys.Add(DisplayKey(i, "", "#1C1C1C", ""));
+            folder.Buttons.Add(Btn(KeyBase + i, "none", ""));
+        }
+
+        for (int i = 0; i < effects.Count && i < totalSlots; i++)
+        {
+            var effect = effects[i];
+            folder.DisplayKeys[i] = DisplayKey(i, effect.Name, "#FF9E55", "PaletteOutline");
+            folder.DisplayKeys[i].BackgroundColor = "#181818";
+            folder.DisplayKeys[i].TextSize = effect.Name.Length > 14 ? 11 : 13;
+            folder.Buttons[i] = Btn(KeyBase + i, "signalrgb_effect", effect.Name);
+        }
+
+        var cycleDisplay = folder.DisplayKeys[^1];
+        var cycleButton = folder.Buttons[^1];
+        cycleDisplay.Title = "Cycle All";
+        cycleDisplay.AccentColor = "#FFC107";
+        cycleDisplay.IconColor = "#FFC107";
+        cycleDisplay.PresetIconKind = "Autorenew";
+        cycleButton.Action = "signalrgb_effect_cycle";
+        cycleButton.Path = string.Join(Environment.NewLine, effects.Select(e => e.Name));
+        cycleButton.SignalRgbEffectNames = effects.Select(e => e.Name).ToList();
+
+        return folder;
+    }
 
     private static ButtonFolderConfig SinglePage(
         string name,
