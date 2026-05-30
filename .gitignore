@@ -13,3 +13,5 @@ installer/version.iss
 .claude/settings.local.json
 .howl-backups/
 *.howlbak
+AGENTS.md
+CLAUDE.md

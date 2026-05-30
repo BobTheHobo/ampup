@@ -21,6 +21,8 @@ public static class SignalRgbEffectCatalog
             if (string.IsNullOrWhiteSpace(name)) continue;
 
             name = name.Trim();
+            if (IsUnresolvedHashName(name, id)) continue;
+
             effects[name] = new SignalRgbEffectInfo(name, id);
         }
 
@@ -72,6 +74,14 @@ public static class SignalRgbEffectCatalog
         using var key = Registry.CurrentUser.OpenSubKey($@"{EffectsRegistryPath}\{id}");
         string? name = key?.GetValue("name") as string;
         return string.IsNullOrWhiteSpace(name) ? id : name;
+    }
+
+    private static bool IsUnresolvedHashName(string name, string id)
+    {
+        if (!string.Equals(name, id, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return name.Contains('-');
     }
 
     private static string? ResolveCachedEffectTitle(string id)
