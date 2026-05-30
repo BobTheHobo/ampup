@@ -554,6 +554,47 @@
                                 <CheckBox x:Name="ChkSignalRgbIgnoreKnob5" Content="Light 5"
                                           Foreground="{StaticResource TextPrimaryBrush}" />
                             </WrapPanel>
+                            <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
+                                    Margin="0,10,0,0" Padding="0,10,0,0">
+                                <StackPanel>
+                                    <CheckBox x:Name="ChkSignalRgbProfileSync"
+                                              Content="Sync AmpUp profiles to SignalRGB"
+                                              Foreground="{StaticResource TextPrimaryBrush}"
+                                              Margin="0,0,0,8" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <StackPanel Margin="0,0,12,0">
+                                            <TextBlock Text="Profile" Style="{StaticResource SecondaryText}" Margin="0,0,0,4" />
+                                            <controls:ListPicker x:Name="CmbSignalRgbProfile" Width="150"
+                                                                 Height="32"
+                                                                 Background="{DynamicResource InputBgBrush}"
+                                                                 BorderBrush="{DynamicResource InputBorderBrush}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,12,0">
+                                            <TextBlock Text="Effect" Style="{StaticResource SecondaryText}" Margin="0,0,0,4" />
+                                            <ui:TextBox x:Name="TxtSignalRgbProfileEffect" Width="190"
+                                                        PlaceholderText="SignalRGB effect name"
+                                                        Background="{DynamicResource InputBgBrush}"
+                                                        BorderBrush="{DynamicResource InputBorderBrush}"
+                                                        Foreground="{StaticResource TextPrimaryBrush}" />
+                                        </StackPanel>
+                                        <StackPanel>
+                                            <TextBlock Text="Layout" Style="{StaticResource SecondaryText}" Margin="0,0,0,4" />
+                                            <ui:TextBox x:Name="TxtSignalRgbProfileLayout" Width="190"
+                                                        PlaceholderText="Optional layout name"
+                                                        Background="{DynamicResource InputBgBrush}"
+                                                        BorderBrush="{DynamicResource InputBorderBrush}"
+                                                        Foreground="{StaticResource TextPrimaryBrush}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:Button x:Name="BtnSignalRgbApplyProfileSync" Content="Apply Now"
+                                                   Appearance="Secondary" Height="30" Margin="0,0,8,0" />
+                                        <TextBlock x:Name="TxtSignalRgbProfileSyncHint" Text=""
+                                                   Style="{StaticResource SecondaryText}" FontSize="11"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
                             <TextBlock x:Name="TxtSignalRgbPluginStatus" Text=""
                                        Style="{StaticResource SecondaryText}" FontSize="11"
                                        Margin="0,2,0,0" />

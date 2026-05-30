@@ -94,6 +94,9 @@ public class SignalRgbConfig
     public int BridgePort { get; set; } = 45333;
     public string CanvasShape { get; set; } = "Classic Strip";
     public List<int> IgnoredLedIndexes { get; set; } = new();
+    public bool ProfileSyncEnabled { get; set; } = false;
+    public Dictionary<string, string> ProfileEffects { get; set; } = new();
+    public Dictionary<string, string> ProfileLayouts { get; set; } = new();
 }
 
 public class SpotifyConfig
@@ -168,6 +171,7 @@ public class ButtonConfig
     public List<string> ProfileNames { get; set; } = new(); // for cycle_profile subset
     public string PowerAction { get; set; } = "";
     public int LinkedKnobIdx { get; set; } = -1;
+    public List<string> SignalRgbEffectNames { get; set; } = new();
     [JsonConverter(typeof(StringEnumConverter))]
     public CycleDeviceType CycleDeviceType { get; set; } = CycleDeviceType.Both;
     public string HoldDeviceId { get; set; } = "";
@@ -177,6 +181,7 @@ public class ButtonConfig
     public List<string> HoldProfileNames { get; set; } = new();
     public string HoldPowerAction { get; set; } = "";
     public int HoldLinkedKnobIdx { get; set; } = -1;
+    public List<string> HoldSignalRgbEffectNames { get; set; } = new();
     [JsonConverter(typeof(StringEnumConverter))]
     public CycleDeviceType HoldCycleDeviceType { get; set; } = CycleDeviceType.Both;
     public string DoublePressDeviceId { get; set; } = "";
@@ -186,6 +191,7 @@ public class ButtonConfig
     public List<string> DoublePressProfileNames { get; set; } = new();
     public string DoublePressPowerAction { get; set; } = "";
     public int DoublePressLinkedKnobIdx { get; set; } = -1;
+    public List<string> DoublePressSignalRgbEffectNames { get; set; } = new();
     [JsonConverter(typeof(StringEnumConverter))]
     public CycleDeviceType DoublePressCycleDeviceType { get; set; } = CycleDeviceType.Both;
 

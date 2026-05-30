@@ -125,6 +125,7 @@ public class ButtonGestureEngine : IDisposable
                         ProfileNames = btn.HoldProfileNames,
                         PowerAction = btn.HoldPowerAction,
                         LinkedKnobIdx = btn.HoldLinkedKnobIdx,
+                        SignalRgbEffectNames = btn.HoldSignalRgbEffectNames,
                         CycleDeviceType = btn.HoldCycleDeviceType,
                         // Fall back to the tap FolderName if the hold-specific one is empty
                         // so upgrades from earlier builds don't lose their binding.
@@ -175,6 +176,7 @@ public class ButtonGestureEngine : IDisposable
                             ProfileNames = btn.DoublePressProfileNames,
                             PowerAction = btn.DoublePressPowerAction,
                             LinkedKnobIdx = btn.DoublePressLinkedKnobIdx,
+                            SignalRgbEffectNames = btn.DoublePressSignalRgbEffectNames,
                             CycleDeviceType = btn.DoublePressCycleDeviceType,
                             FolderName = !string.IsNullOrEmpty(btn.DoublePressFolderName) ? btn.DoublePressFolderName : btn.FolderName,
                         };

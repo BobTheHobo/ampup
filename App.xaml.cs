@@ -9,6 +9,7 @@ using Microsoft.Win32;
 using AmpUp.Controls;
 using AmpUp.Core.Engine;
 using AmpUp.Core.Services;
+using AmpUp.Services;
 using AmpUp.Views;
 using Forms = System.Windows.Forms;
 
@@ -329,6 +330,7 @@ public partial class App : Application
         _buttons.OnGroupToggle += HandleGroupToggle;
         _buttons.OnScPageChange += HandleScPageChange;
         _buttons.OnOpenFolder += NavigateToN3Folder;
+        _buttons.OnAppGroupChanged += HandleButtonAppGroupChanged;
 
         // Wire up folder-aware button resolution so gesture engine can find buttons
         // inside the currently-open folder by their (non-root) idx.
@@ -2303,6 +2305,7 @@ public partial class App : Application
         var profileIcons = _config.ProfileIcons;
         var ducking = _config.Ducking;
         var autoSwitch = _config.AutoSwitch;
+        var signalRgb = _config.SignalRgb;
 
         _config = profile;
         _config.ActiveProfile = profileName;
@@ -2316,8 +2319,10 @@ public partial class App : Application
         _config.ProfileIcons = profileIcons;
         _config.Ducking = ducking;
         _config.AutoSwitch = autoSwitch;
+        _config.SignalRgb = signalRgb;
         ConfigManager.Save(_config);
         ApplyRgbConfig();
+        ApplySignalRgbProfileSync(profileName);
         UpdateAudioAnalyzer();
         if (_n3 != null && _isN3Connected)
         {
@@ -3152,6 +3157,23 @@ public partial class App : Application
         }
     }
 
+    private void ApplySignalRgbProfileSync(string profileName)
+    {
+        if (!_config.SignalRgb.ProfileSyncEnabled) return;
+
+        if (_config.SignalRgb.ProfileEffects.TryGetValue(profileName, out var effectName)
+            && !string.IsNullOrWhiteSpace(effectName))
+        {
+            SignalRgbEffectCatalog.ApplyEffect(effectName);
+        }
+
+        if (_config.SignalRgb.ProfileLayouts.TryGetValue(profileName, out var layoutName)
+            && !string.IsNullOrWhiteSpace(layoutName))
+        {
+            SignalRgbEffectCatalog.ApplyLayout(layoutName);
+        }
+    }
+
     private static async Task<(bool On, int Brightness, int R, int G, int B, int ColorTempK)?> GetGoveeStatusWithTimeoutAsync(
         string ip,
         CancellationToken ct)
@@ -3684,6 +3706,20 @@ public partial class App : Application
     }
 
     private readonly Dictionary<string, bool> _groupStates = new();
+
+    private void HandleButtonAppGroupChanged()
+    {
+        try
+        {
+            ConfigManager.Save(_config);
+            _mixer?.RefreshNow();
+            _mainWindow?.RefreshViews();
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"HandleButtonAppGroupChanged failed: {ex.Message}");
+        }
+    }
 
     private void HandleGroupToggle(string groupName)
     {
@@ -4559,6 +4595,7 @@ public partial class App : Application
             "volume_down" => ("VolumeLow", System.Windows.Media.Color.FromRgb(0x42, 0xA5, 0xF5)),
             "mute_program" => ("VolumeOff", System.Windows.Media.Color.FromRgb(0xFF, 0x44, 0x44)),
             "mute_active_window" => ("VolumeOff", System.Windows.Media.Color.FromRgb(0xFF, 0x44, 0x44)),
+            "add_active_app_to_group" => ("PlusCircleOutline", System.Windows.Media.Color.FromRgb(0x26, 0xC6, 0xDA)),
             "switch_profile" => ("AccountCircleOutline", System.Windows.Media.Color.FromRgb(0xAB, 0x47, 0xBC)),
             "cycle_brightness" => ("Brightness6", System.Windows.Media.Color.FromRgb(0xFF, 0xB8, 0x00)),
             "launch_exe" => ("Launch", System.Windows.Media.Color.FromRgb(0x42, 0xA5, 0xF5)),

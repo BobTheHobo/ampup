@@ -26,6 +26,7 @@ public partial class ButtonsView
     private Border? _v2GoveeCard;
     private Border? _v2RoomEffectCard;
     private Border? _v2SignalRgbEffectCard;
+    private Border? _v2SignalRgbCycleCard;
     private Border? _v2KnobCard;
     private Border? _v2ToggleCard;
     private Border? _v2MultiActionCard;
@@ -75,7 +76,10 @@ public partial class ButtonsView
         _v2SignalRgbEffectCard = MakeV2SectionCard("SIGNALRGB EFFECT", out _, _scSignalRgbEffectPanel);
         _v2ActionFieldsPanel.Children.Add(_v2SignalRgbEffectCard);
 
-        // 6. Linked Turn Up knob (mute_app_group).
+        _v2SignalRgbCycleCard = MakeV2SectionCard("SIGNALRGB CYCLE", out _, _scSignalRgbCyclePanel);
+        _v2ActionFieldsPanel.Children.Add(_v2SignalRgbCycleCard);
+
+        // 6. Linked Turn Up knob (app-group actions).
         _v2KnobCard = MakeV2SectionCard("LINKED TURN UP KNOB", out _, _scKnobPanel);
         _v2ActionFieldsPanel.Children.Add(_v2KnobCard);
 
@@ -150,6 +154,7 @@ public partial class ButtonsView
         ShowInner(_scGoveePanel);
         ShowInner(_scRoomEffectPanel);
         ShowInner(_scSignalRgbEffectPanel);
+        ShowInner(_scSignalRgbCyclePanel);
         ShowInner(_scKnobPanel);
         ShowInner(_scTogglePanel);
         ShowInner(_scMultiActionPanel);
@@ -169,7 +174,7 @@ public partial class ButtonsView
         }
         if (string.IsNullOrEmpty(action)) action = GetComboActionValue(_scActionPicker);
 
-        bool needsPath = (PathActions.Contains(action) && action != "signalrgb_effect")
+        bool needsPath = (PathActions.Contains(action) && action is not "signalrgb_effect" and not "signalrgb_effect_cycle")
             || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute"
             or "vm_mute_strip" or "vm_mute_bus";
 
@@ -187,7 +192,9 @@ public partial class ButtonsView
         if (action == "room_effect") RefreshRoomEffectPickerItems();
         SetCardVisible(_v2SignalRgbEffectCard, action == "signalrgb_effect");
         if (action == "signalrgb_effect") RefreshSignalRgbEffectPickerItems(GetCurrentGesturePath());
-        SetCardVisible(_v2KnobCard, action == "mute_app_group");
+        SetCardVisible(_v2SignalRgbCycleCard, action == "signalrgb_effect_cycle");
+        if (action == "signalrgb_effect_cycle") RefreshSignalRgbCycleItems();
+        SetCardVisible(_v2KnobCard, UsesLinkedKnob(action));
         SetCardVisible(_v2ToggleCard, action == "toggle_action");
         SetCardVisible(_v2MultiActionCard, action == "multi_action");
         SetCardVisible(_v2FolderCard, action == "open_folder");
@@ -431,6 +438,7 @@ public partial class ButtonsView
         "govee_color"    => "DEVICE / COLOR",
         "obs_scene"      => "OBS SCENE",
         "signalrgb_effect" => "SIGNALRGB EFFECT",
+        "signalrgb_effect_cycle" => "SIGNALRGB CYCLE",
         "obs_mute"       => "OBS SOURCE",
         "vm_mute_strip"  => "VOICEMEETER STRIP",
         "vm_mute_bus"    => "VOICEMEETER BUS",

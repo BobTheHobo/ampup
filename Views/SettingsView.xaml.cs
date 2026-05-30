@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using AmpUp.Core.Services;
+using AmpUp.Services;
 
 namespace AmpUp.Views;
 
@@ -46,6 +47,7 @@ public partial class SettingsView : UserControl
     public Action? OnHardwareModeChangedExternal { get; set; }
     private readonly DispatcherTimer _debounceTimer;
     private bool _loading;
+    private bool _loadingSignalRgbProfileMapping;
     private bool _configLoaded;
     private bool _turnUpConnected;
     private bool _streamControllerConnected;
@@ -168,6 +170,12 @@ public partial class SettingsView : UserControl
         ChkSignalRgbEnabled.Unchecked += OnSignalRgbEnabledChanged;
         TxtSignalRgbPort.TextChanged += OnValueChanged;
         CmbSignalRgbCanvasShape.SelectionChanged += OnValueChanged;
+        ChkSignalRgbProfileSync.Checked += OnValueChanged;
+        ChkSignalRgbProfileSync.Unchecked += OnValueChanged;
+        CmbSignalRgbProfile.SelectionChanged += OnSignalRgbProfileSelectionChanged;
+        TxtSignalRgbProfileEffect.TextChanged += OnSignalRgbProfileMappingChanged;
+        TxtSignalRgbProfileLayout.TextChanged += OnSignalRgbProfileMappingChanged;
+        BtnSignalRgbApplyProfileSync.Click += OnSignalRgbApplyProfileSync;
         foreach (var checkbox in SignalRgbIgnoreKnobChecks())
         {
             checkbox.Checked += OnValueChanged;
@@ -271,6 +279,8 @@ public partial class SettingsView : UserControl
         TxtSignalRgbPort.Text = config.SignalRgb.BridgePort.ToString();
         SelectSignalRgbCanvasShape(config.SignalRgb.CanvasShape);
         LoadSignalRgbIgnoredKnobs(config.SignalRgb.IgnoredLedIndexes);
+        ChkSignalRgbProfileSync.IsChecked = config.SignalRgb.ProfileSyncEnabled;
+        LoadSignalRgbProfileMappings(config);
         RefreshSignalRgbStatus();
 
         // Integrations — Spotify
@@ -825,6 +835,8 @@ public partial class SettingsView : UserControl
             _config.SignalRgb.BridgePort = Math.Clamp(signalRgbPort, 1024, 65535);
         _config.SignalRgb.CanvasShape = GetSelectedSignalRgbCanvasShape();
         _config.SignalRgb.IgnoredLedIndexes = GetSignalRgbIgnoredLedIndexes();
+        _config.SignalRgb.ProfileSyncEnabled = ChkSignalRgbProfileSync.IsChecked == true;
+        SaveCurrentSignalRgbProfileMapping();
 
         _onSave(_config);
     }
@@ -1292,6 +1304,109 @@ public partial class SettingsView : UserControl
         TxtSignalRgbPluginStatus.Text = pluginInstalled
             ? "Plugin installed"
             : "Plugin not installed";
+    }
+
+    private void LoadSignalRgbProfileMappings(AppConfig config)
+    {
+        _loadingSignalRgbProfileMapping = true;
+
+        CmbSignalRgbProfile.ClearItems();
+        int activeIdx = -1;
+        for (int i = 0; i < config.Profiles.Count; i++)
+        {
+            string profile = config.Profiles[i];
+            CmbSignalRgbProfile.AddItem(profile, profile);
+            if (string.Equals(profile, config.ActiveProfile, StringComparison.OrdinalIgnoreCase))
+                activeIdx = i;
+        }
+
+        CmbSignalRgbProfile.SelectedIndex = activeIdx >= 0 ? activeIdx : 0;
+        LoadSelectedSignalRgbProfileMapping();
+        RefreshSignalRgbProfileSyncHint();
+
+        _loadingSignalRgbProfileMapping = false;
+    }
+
+    private void OnSignalRgbProfileSelectionChanged(object? sender, EventArgs e)
+    {
+        if (_config == null || _loading) return;
+
+        _loadingSignalRgbProfileMapping = true;
+        LoadSelectedSignalRgbProfileMapping();
+        RefreshSignalRgbProfileSyncHint();
+        _loadingSignalRgbProfileMapping = false;
+    }
+
+    private void LoadSelectedSignalRgbProfileMapping()
+    {
+        if (_config == null) return;
+
+        string profileName = CmbSignalRgbProfile.SelectedTag as string ?? CmbSignalRgbProfile.SelectedDisplay;
+        if (string.IsNullOrWhiteSpace(profileName))
+        {
+            TxtSignalRgbProfileEffect.Text = "";
+            TxtSignalRgbProfileLayout.Text = "";
+            return;
+        }
+
+        TxtSignalRgbProfileEffect.Text = _config.SignalRgb.ProfileEffects.TryGetValue(profileName, out var effect)
+            ? effect
+            : "";
+        TxtSignalRgbProfileLayout.Text = _config.SignalRgb.ProfileLayouts.TryGetValue(profileName, out var layout)
+            ? layout
+            : "";
+    }
+
+    private void OnSignalRgbProfileMappingChanged(object? sender, EventArgs e)
+    {
+        if (_loading || _loadingSignalRgbProfileMapping) return;
+
+        SaveCurrentSignalRgbProfileMapping();
+        OnValueChanged(sender, e);
+    }
+
+    private void SaveCurrentSignalRgbProfileMapping()
+    {
+        if (_config == null) return;
+
+        string profileName = CmbSignalRgbProfile.SelectedTag as string ?? CmbSignalRgbProfile.SelectedDisplay;
+        if (string.IsNullOrWhiteSpace(profileName)) return;
+
+        string effect = TxtSignalRgbProfileEffect.Text.Trim();
+        string layout = TxtSignalRgbProfileLayout.Text.Trim();
+
+        if (string.IsNullOrWhiteSpace(effect))
+            _config.SignalRgb.ProfileEffects.Remove(profileName);
+        else
+            _config.SignalRgb.ProfileEffects[profileName] = effect;
+
+        if (string.IsNullOrWhiteSpace(layout))
+            _config.SignalRgb.ProfileLayouts.Remove(profileName);
+        else
+            _config.SignalRgb.ProfileLayouts[profileName] = layout;
+    }
+
+    private void OnSignalRgbApplyProfileSync(object sender, RoutedEventArgs e)
+    {
+        SaveCurrentSignalRgbProfileMapping();
+
+        string effect = TxtSignalRgbProfileEffect.Text.Trim();
+        string layout = TxtSignalRgbProfileLayout.Text.Trim();
+
+        if (!string.IsNullOrWhiteSpace(effect))
+            SignalRgbEffectCatalog.ApplyEffect(effect);
+        if (!string.IsNullOrWhiteSpace(layout))
+            SignalRgbEffectCatalog.ApplyLayout(layout);
+    }
+
+    private void RefreshSignalRgbProfileSyncHint()
+    {
+        int effectCount = SignalRgbEffectCatalog.GetInstalledEffects().Count;
+        int layoutCount = SignalRgbEffectCatalog.GetInstalledLayouts().Count;
+
+        TxtSignalRgbProfileSyncHint.Text = layoutCount > 0
+            ? $"{effectCount} effects, {layoutCount} layouts found"
+            : $"{effectCount} effects found; enter layout names manually";
     }
 
     private void OnSignalRgbInstallPlugin(object sender, RoutedEventArgs e)

@@ -632,6 +632,22 @@ public partial class ButtonsView
             Color.FromRgb(0x66, 0xBB, 0x6A), "Integrations",
             "Toggle a Govee device, set a specific color, or flip a single device between white + last color",
             goveeChildren, enabled: goveeEnabled || anyGoveeConfigured);
+
+        AddV2SignalRgbAction("signalrgb_effect_cycle", "SignalRGB: Cycle Effects",
+            "Cycle through the selected SignalRGB effects in order");
+        AddV2SignalRgbAction("signalrgb_blackout", "SignalRGB: Blackout",
+            "Temporarily turn SignalRGB lighting black");
+        AddV2SignalRgbAction("signalrgb_restore", "SignalRGB: Restore",
+            "Restore SignalRGB lighting after blackout");
+    }
+
+    private void AddV2SignalRgbAction(string value, string display, string tooltip)
+    {
+        if (_v2ActionPicker == null) return;
+        _v2ActionPicker.AddItem(value, display, "S",
+            ActionColors.GetValueOrDefault("signalrgb_effect", Color.FromRgb(0xFF, 0x9E, 0x55)),
+            "Integrations",
+            tooltip);
     }
 
     private void AddIntegrationGroup(string groupValue, string groupDisplay, string groupIcon,
@@ -1146,6 +1162,28 @@ public partial class ButtonsView
             case V2Gesture.Double: btn.DoublePressPath = value; break;
             case V2Gesture.Hold: btn.HoldPath = value; break;
             default: btn.Path = value; break;
+        }
+    }
+
+    private void SetGestureSignalRgbEffectNames(ButtonConfig btn, List<string> value)
+    {
+        var copy = value
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        switch (_v2Gesture)
+        {
+            case V2Gesture.Double:
+                btn.DoublePressSignalRgbEffectNames = copy;
+                break;
+            case V2Gesture.Hold:
+                btn.HoldSignalRgbEffectNames = copy;
+                break;
+            default:
+                btn.SignalRgbEffectNames = copy;
+                break;
         }
     }
 

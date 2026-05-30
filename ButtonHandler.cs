@@ -54,6 +54,7 @@ public class ButtonHandler : IDisposable
 
     // Cycle state: tracks current index per button for cycle_output / cycle_input
     private readonly Dictionary<int, int> _cycleIndex = new();
+    private readonly Dictionary<string, int> _signalRgbCycleIndex = new(StringComparer.OrdinalIgnoreCase);
 
     // ── Events (forwarded from gesture engine) ──────────────────────
 
@@ -86,6 +87,8 @@ public class ButtonHandler : IDisposable
     public event Action<int>? OnQuickWheelClose;
     /// <summary>Fires with page delta (-1, +1) or absolute page (0-based) for SC page nav.</summary>
     public event Action<int, bool>? OnScPageChange;
+    /// <summary>Fires after a button action mutates an app group.</summary>
+    public event Action? OnAppGroupChanged;
 
     // Track which button opened the wheel (for release detection)
     private int _quickWheelActiveButton = -1;
@@ -219,6 +222,8 @@ public class ButtonHandler : IDisposable
                     MuteActiveWindow(); break;
                 case "mute_app_group":
                     MuteAppGroup(btn); break;
+                case "add_active_app_to_group":
+                    AddForegroundAppToGroup(btn); break;
                 case "mute_device":
                     MuteDevice(btn?.DeviceId ?? ""); break;
                 case "cycle_output":
@@ -375,6 +380,15 @@ public class ButtonHandler : IDisposable
                 case "signalrgb_effect":
                     SignalRgbEffectCatalog.ApplyEffect(path);
                     break;
+                case "signalrgb_effect_cycle":
+                    CycleSignalRgbEffect(btn, path);
+                    break;
+                case "signalrgb_blackout":
+                    SignalRgbEffectCatalog.ApplyBlackout();
+                    break;
+                case "signalrgb_restore":
+                    SignalRgbEffectCatalog.RestoreLastEffect(GetSignalRgbRestoreFallback(btn, path));
+                    break;
                 case "sc_page_next":
                     OnScPageChange?.Invoke(1, false);
                     break;
@@ -451,6 +465,50 @@ public class ButtonHandler : IDisposable
         var path = runB ? btn.TogglePathB : btn.TogglePathA;
         btn.ToggleStateIsB = !runB;
         ExecuteAction(action, path ?? "", btn);
+    }
+
+    private void CycleSignalRgbEffect(ButtonConfig? btn, string path)
+    {
+        var effects = GetSignalRgbEffectNames(btn, path);
+        if (effects.Count == 0) return;
+
+        string key = $"{btn?.Idx ?? -1}:{string.Join("|", effects)}";
+        int next = _signalRgbCycleIndex.GetValueOrDefault(key);
+        if (next < 0 || next >= effects.Count) next = 0;
+
+        SignalRgbEffectCatalog.ApplyEffect(effects[next]);
+        _signalRgbCycleIndex[key] = (next + 1) % effects.Count;
+    }
+
+    private static string GetSignalRgbRestoreFallback(ButtonConfig? btn, string path)
+    {
+        var effects = GetSignalRgbEffectNames(btn, path);
+        return effects.Count > 0 ? effects[0] : "";
+    }
+
+    private static List<string> GetSignalRgbEffectNames(ButtonConfig? btn, string path)
+    {
+        var names = btn?.SignalRgbEffectNames?
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Select(n => n.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<string>();
+
+        if (names.Count > 0)
+            return names;
+
+        return SplitSignalRgbEffectPath(path);
+    }
+
+    private static List<string> SplitSignalRgbEffectPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return new();
+
+        return path
+            .Split(new[] { '|', ';', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static void OpenUrl(string url)
@@ -786,6 +844,66 @@ public class ButtonHandler : IDisposable
         catch (Exception ex)
         {
             Logger.Log($"mute_app_group error: {ex.Message}");
+        }
+    }
+
+    // ── Add foreground app to a knob app group ───────────────────────
+
+    private void AddForegroundAppToGroup(ButtonConfig? btn)
+    {
+        if (btn == null || _lastConfig == null)
+        {
+            return;
+        }
+
+        int knobIdx = btn.LinkedKnobIdx;
+        if (knobIdx < 0 || knobIdx > 4)
+        {
+            return;
+        }
+
+        try
+        {
+            var hwnd = NativeMethods.GetForegroundWindow();
+            if (hwnd == IntPtr.Zero)
+            {
+                return;
+            }
+
+            NativeMethods.GetWindowThreadProcessId(hwnd, out uint pid);
+            if (pid == 0 || pid == Environment.ProcessId)
+            {
+                return;
+            }
+
+            using var proc = Process.GetProcessById((int)pid);
+            var processName = proc.ProcessName.Trim();
+            if (string.IsNullOrWhiteSpace(processName)
+                || processName.Equals("AmpUp", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var knob = _lastConfig.Knobs.FirstOrDefault(k => k.Idx == knobIdx);
+            if (knob == null)
+            {
+                return;
+            }
+
+            knob.Target = "apps";
+            knob.Apps ??= new List<string>();
+            if (knob.Apps.Any(a => a.Equals(processName, StringComparison.OrdinalIgnoreCase)))
+            {
+                return;
+            }
+
+            knob.Apps.Add(processName.ToLowerInvariant());
+            Logger.Log($"Added focused app '{processName}' to knob {knobIdx + 1} app group");
+            OnAppGroupChanged?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"add_active_app_to_group error: {ex.Message}");
         }
     }
 

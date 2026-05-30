@@ -78,6 +78,9 @@ public partial class ButtonsView
     private ListPicker? _scRoomEffectPicker;
     private StackPanel? _scSignalRgbEffectPanel;
     private ListPicker? _scSignalRgbEffectPicker;
+    private StackPanel? _scSignalRgbCyclePanel;
+    private StackPanel? _scSignalRgbCycleList;
+    private TextBlock? _scSignalRgbCycleStatus;
     private StackPanel? _scDevicePanel;
     private ListPicker? _scKnobPicker;
     private StackPanel? _scKnobPanel;
@@ -102,7 +105,7 @@ public partial class ButtonsView
     // Actions disallowed inside a multi-action step (no nesting)
     private static readonly HashSet<string> MultiActionExcluded = new()
     {
-        "multi_action", "toggle_action", "open_folder"
+        "multi_action", "toggle_action", "open_folder", "add_active_app_to_group"
     };
 
     // Which actions require a path-ish text field when used as a multi-action step
@@ -110,7 +113,7 @@ public partial class ButtonsView
     {
         "launch_exe", "close_program", "mute_program", "open_url", "sc_go_to_page",
         "ha_service", "govee_color", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus",
-        "signalrgb_effect"
+        "signalrgb_effect", "signalrgb_effect_cycle"
     };
 
     // Sidebar tabs
@@ -848,6 +851,7 @@ public partial class ButtonsView
         (_scGoveePanel, _scGoveePicker) = MakeStreamGoveeRow();
         (_scRoomEffectPanel, _scRoomEffectPicker) = MakeStreamRoomEffectRow();
         (_scSignalRgbEffectPanel, _scSignalRgbEffectPicker) = MakeStreamSignalRgbEffectRow();
+        _scSignalRgbCyclePanel = MakeStreamSignalRgbCycleRow();
         (_scKnobPanel, _scKnobPicker) = MakeStreamKnobRow();
         _scTogglePanel = MakeStreamToggleRow();
         _scMultiActionPanel = MakeStreamMultiActionPanel();
@@ -861,6 +865,7 @@ public partial class ButtonsView
         _scActionTabContent.Children.Add(_scGoveePanel);
         _scActionTabContent.Children.Add(_scRoomEffectPanel);
         _scActionTabContent.Children.Add(_scSignalRgbEffectPanel);
+        _scActionTabContent.Children.Add(_scSignalRgbCyclePanel);
         _scActionTabContent.Children.Add(_scKnobPanel);
         _scActionTabContent.Children.Add(_scTogglePanel);
         _scActionTabContent.Children.Add(_scMultiActionPanel);
@@ -1440,6 +1445,15 @@ public partial class ButtonsView
             QueueSave();
         };
         panel.Children.Add(picker);
+
+        var buttonRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        var refreshBtn = MakeEditorButton("Refresh", (_, _) => RefreshSignalRgbEffectPickerItems(GetCurrentGesturePath()));
+        var createPageBtn = MakeEditorButton("Create Effect Space", (_, _) => CreateSignalRgbEffectSpace());
+        createPageBtn.Margin = new Thickness(8, 0, 0, 0);
+        buttonRow.Children.Add(refreshBtn);
+        buttonRow.Children.Add(createPageBtn);
+        panel.Children.Add(buttonRow);
+
         return (panel, picker);
     }
 
@@ -1457,6 +1471,183 @@ public partial class ButtonsView
         {
             _scSignalRgbEffectPicker.AddItem(selectedEffect, selectedEffect);
         }
+    }
+
+    /// <summary>
+    /// SignalRGB effect-cycle picker. Stores one selected effect per line in
+    /// ButtonConfig.Path so the backend can cycle deterministically without
+    /// guessing around commas or punctuation in effect names.
+    /// </summary>
+    private StackPanel MakeStreamSignalRgbCycleRow()
+    {
+        var panel = new StackPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
+        panel.Children.Add(MakeEditorLabel("SIGNALRGB CYCLE"));
+
+        var buttonRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+        buttonRow.Children.Add(MakeEditorButton("Select All", (_, _) => SetSignalRgbCycleSelection(all: true)));
+        var clearBtn = MakeEditorButton("Clear", (_, _) => SetSignalRgbCycleSelection(all: false));
+        clearBtn.Margin = new Thickness(8, 0, 0, 0);
+        var createPageBtn = MakeEditorButton("Create Effect Space", (_, _) => CreateSignalRgbEffectSpace());
+        createPageBtn.Margin = new Thickness(8, 0, 0, 0);
+        buttonRow.Children.Add(clearBtn);
+        buttonRow.Children.Add(createPageBtn);
+        panel.Children.Add(buttonRow);
+
+        _scSignalRgbCycleStatus = new TextBlock
+        {
+            FontSize = 11,
+            Foreground = FindBrush("TextDimBrush"),
+            Margin = new Thickness(0, 0, 0, 8),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        panel.Children.Add(_scSignalRgbCycleStatus);
+
+        _scSignalRgbCycleList = new StackPanel();
+        panel.Children.Add(_scSignalRgbCycleList);
+
+        return panel;
+    }
+
+    private void RefreshSignalRgbCycleItems()
+    {
+        if (_scSignalRgbCycleList == null) return;
+        _scSignalRgbCycleList.Children.Clear();
+
+        var effects = AmpUp.Services.SignalRgbEffectCatalog.GetInstalledEffects();
+        var selected = ParseSignalRgbEffectList(GetCurrentGesturePath());
+
+        if (_scSignalRgbCycleStatus != null)
+        {
+            _scSignalRgbCycleStatus.Text = effects.Count == 0
+                ? "No installed SignalRGB effects were discovered."
+                : $"{selected.Count} of {effects.Count} effects selected";
+        }
+
+        foreach (var effect in effects)
+        {
+            var check = new CheckBox
+            {
+                Content = effect.Name,
+                IsChecked = selected.Contains(effect.Name),
+                Foreground = FindBrush("TextPrimaryBrush"),
+                Margin = new Thickness(0, 3, 0, 3),
+                Tag = effect.Name,
+            };
+            check.Checked += (_, _) => SaveSignalRgbCycleSelection();
+            check.Unchecked += (_, _) => SaveSignalRgbCycleSelection();
+            _scSignalRgbCycleList.Children.Add(check);
+        }
+    }
+
+    private static HashSet<string> ParseSignalRgbEffectList(string? raw)
+    {
+        return (raw ?? "")
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void SetSignalRgbCycleSelection(bool all)
+    {
+        if (_scSignalRgbCycleList == null) return;
+        bool prev = _loading;
+        _loading = true;
+        try
+        {
+            foreach (var child in _scSignalRgbCycleList.Children.OfType<CheckBox>())
+                child.IsChecked = all;
+        }
+        finally
+        {
+            _loading = prev;
+        }
+        SaveSignalRgbCycleSelection();
+    }
+
+    private void SaveSignalRgbCycleSelection()
+    {
+        if (_loading || _config == null || _scSignalRgbCycleList == null) return;
+
+        var effects = _scSignalRgbCycleList.Children
+            .OfType<CheckBox>()
+            .Where(c => c.IsChecked == true)
+            .Select(c => c.Tag as string ?? "")
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        var list = GetOwningButtonList();
+        var btn = list.FirstOrDefault(b => b.Idx == _scSelectedButtonIdx);
+        if (btn == null) return;
+
+        SetGesturePath(btn, string.Join(Environment.NewLine, effects));
+        SetGestureSignalRgbEffectNames(btn, effects);
+        if (_scSignalRgbCycleStatus != null)
+            _scSignalRgbCycleStatus.Text = $"{effects.Count} effect{(effects.Count == 1 ? "" : "s")} selected";
+        QueueSave();
+    }
+
+    private void CreateSignalRgbEffectSpace()
+    {
+        if (_config == null) return;
+
+        var effects = AmpUp.Services.SignalRgbEffectCatalog.GetInstalledEffects();
+        if (effects.Count == 0)
+        {
+            GlassDialog.ShowInfo("No installed SignalRGB effects were discovered.", owner: Window.GetWindow(this));
+            return;
+        }
+
+        const string baseName = "SignalRGB";
+        string name = baseName;
+        if (_config.N3.Folders.Any(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            int counter = 2;
+            do { name = $"{baseName} ({counter++})"; }
+            while (_config.N3.Folders.Any(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        int pageCount = Math.Max(1, (int)Math.Ceiling(effects.Count / (double)StreamControllerKeysPerPage));
+        var folder = new ButtonFolderConfig
+        {
+            Name = name,
+            PageCount = pageCount,
+            BackKeyEnabled = false,
+        };
+
+        for (int i = 0; i < pageCount * StreamControllerKeysPerPage; i++)
+        {
+            folder.DisplayKeys.Add(new StreamControllerDisplayKeyConfig { Idx = i });
+            folder.Buttons.Add(new ButtonConfig { Idx = StreamControllerDisplayKeyBase + i });
+        }
+
+        for (int i = 0; i < effects.Count; i++)
+        {
+            var effect = effects[i];
+            folder.DisplayKeys[i] = new StreamControllerDisplayKeyConfig
+            {
+                Idx = i,
+                Title = effect.Name,
+                PresetIconKind = "PaletteOutline",
+                AccentColor = "#FF9E55",
+                IconColor = "#FFFFFF",
+                TextColor = "#FFFFFF",
+                BackgroundColor = "#181818",
+                TextSize = effect.Name.Length > 14 ? 11 : 13,
+            };
+            folder.Buttons[i] = new ButtonConfig
+            {
+                Idx = StreamControllerDisplayKeyBase + i,
+                Action = "signalrgb_effect",
+                Path = effect.Name,
+            };
+        }
+
+        _config.N3.Folders.Add(folder);
+        QueueSave();
+        RefreshFolderPickerItems();
+        RefreshV2FoldersList();
+        NavigateToFolderInEditor(name);
     }
 
     private string GetCurrentGesturePath()
@@ -1738,7 +1929,7 @@ public partial class ButtonsView
     // Actions that cannot be chosen for Toggle A/B (prevent recursion / unsupported)
     private static readonly HashSet<string> ToggleSubActionBlocklist = new()
     {
-        "toggle_action", "multi_action", "open_folder",
+        "toggle_action", "multi_action", "open_folder", "add_active_app_to_group",
     };
 
     // Actions that require a path textbox inside Toggle A/B (same set as main picker)
@@ -1891,6 +2082,7 @@ public partial class ButtonsView
         "govee_color" => "HEX COLOR",
         "obs_scene" => "SCENE NAME",
         "signalrgb_effect" => "EFFECT NAME",
+        "signalrgb_effect_cycle" => "EFFECT LIST",
         "obs_mute" => "SOURCE NAME",
         "vm_mute_strip" => "STRIP INDEX",
         "vm_mute_bus" => "BUS INDEX",
@@ -2224,7 +2416,8 @@ public partial class ButtonsView
             return;
 
         var action = GetComboActionValue(_scActionPicker);
-        bool needsPath = (PathActions.Contains(action) && action != "signalrgb_effect") || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
+        bool needsPath = (PathActions.Contains(action) && action is not "signalrgb_effect" and not "signalrgb_effect_cycle")
+            || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
         _scPathPanel.Visibility = needsPath ? Visibility.Visible : Visibility.Collapsed;
         _scMacroPanel.Visibility = action == "macro" ? Visibility.Visible : Visibility.Collapsed;
         if (_scTextSnippetPanel != null)
@@ -2250,7 +2443,13 @@ public partial class ButtonsView
             _scSignalRgbEffectPanel.Visibility = showSignalRgbEffect ? Visibility.Visible : Visibility.Collapsed;
             if (showSignalRgbEffect) RefreshSignalRgbEffectPickerItems(GetCurrentGesturePath());
         }
-        _scKnobPanel.Visibility = action == "mute_app_group" ? Visibility.Visible : Visibility.Collapsed;
+        if (_scSignalRgbCyclePanel != null)
+        {
+            bool showSignalRgbCycle = action == "signalrgb_effect_cycle";
+            _scSignalRgbCyclePanel.Visibility = showSignalRgbCycle ? Visibility.Visible : Visibility.Collapsed;
+            if (showSignalRgbCycle) RefreshSignalRgbCycleItems();
+        }
+        _scKnobPanel.Visibility = UsesLinkedKnob(action) ? Visibility.Visible : Visibility.Collapsed;
         if (_scTogglePanel != null)
         {
             _scTogglePanel.Visibility = action == "toggle_action" ? Visibility.Visible : Visibility.Collapsed;
@@ -2354,6 +2553,18 @@ public partial class ButtonsView
                  && _scSignalRgbEffectPicker.SelectedTag is string signalRgbEffect && !string.IsNullOrEmpty(signalRgbEffect))
         {
             SetGesturePath(button, signalRgbEffect);
+        }
+        else if (uiAction == "signalrgb_effect_cycle"
+                 && _scSignalRgbCycleList != null)
+        {
+            var effects = _scSignalRgbCycleList.Children
+                .OfType<CheckBox>()
+                .Where(c => c.IsChecked == true)
+                .Select(c => c.Tag as string ?? "")
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList();
+            SetGesturePath(button, string.Join(Environment.NewLine, effects));
+            SetGestureSignalRgbEffectNames(button, effects);
         }
         SetGestureMacroKeys(button, GetTextBoxValue(_scMacroBox));
         // Checks against uiAction (the gesture-selected action) so options
@@ -2622,6 +2833,10 @@ public partial class ButtonsView
     private string GetStreamActionDisplay(string? action)
     {
         if (string.IsNullOrWhiteSpace(action) || action == "none") return "None";
+        if (action == "signalrgb_effect_cycle") return "SignalRGB: Cycle Effects";
+        if (action == "signalrgb_blackout") return "SignalRGB: Blackout";
+        if (action == "signalrgb_restore") return "SignalRGB: Restore";
+        if (action == "add_active_app_to_group") return "Add Focused App to Group";
         return Actions.FirstOrDefault(a => a.Value == action).Display ?? action;
     }
 
@@ -2645,8 +2860,14 @@ public partial class ButtonsView
                     return $"{baseLabel} › {btn.ProfileName}";
                 break;
             case "room_effect":
+            case "signalrgb_effect":
                 if (!string.IsNullOrWhiteSpace(btn.Path))
                     return $"{baseLabel} › {btn.Path}";
+                break;
+            case "signalrgb_effect_cycle":
+                int count = ParseSignalRgbEffectList(btn.Path).Count;
+                if (count > 0)
+                    return $"{baseLabel} > {count} effect{(count == 1 ? "" : "s")}";
                 break;
             case "launch_exe":
             case "close_program":
@@ -3595,6 +3816,7 @@ public partial class ButtonsView
                 "govee_color" => "DEVICE IP / NAME",
                 "obs_scene" => "SCENE NAME",
                 "signalrgb_effect" => "EFFECT NAME",
+                "signalrgb_effect_cycle" => "EFFECT LIST",
                 "obs_mute" => "SOURCE NAME",
                 "vm_mute_strip" or "vm_mute_bus" => "INDEX",
                 _ => "PATH"

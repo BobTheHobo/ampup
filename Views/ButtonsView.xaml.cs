@@ -32,6 +32,7 @@ public partial class ButtonsView : UserControl
         ("Mute Active Window", "mute_active_window"), ("Mute App Group", "mute_app_group"),
         ("Mute Device", "mute_device"),
         ("Launch App", "launch_exe"), ("Close App", "close_program"),
+        ("Add Focused App to Group", "add_active_app_to_group"),
         ("Cycle Output", "cycle_output"), ("Cycle Input", "cycle_input"),
         ("Set Output", "select_output"), ("Set Input", "select_input"),
         ("Keyboard Macro", "macro"), ("Switch Profile", "switch_profile"),
@@ -50,7 +51,8 @@ public partial class ButtonsView : UserControl
         ("OBS: Record", "obs_record"), ("OBS: Stream", "obs_stream"),
         ("OBS: Scene", "obs_scene"), ("OBS: Mute", "obs_mute"),
         ("VM: Mute Strip", "vm_mute_strip"), ("VM: Mute Bus", "vm_mute_bus"),
-        ("SignalRGB: Effect", "signalrgb_effect"),
+        ("SignalRGB: Effect", "signalrgb_effect"), ("SignalRGB: Cycle Effects", "signalrgb_effect_cycle"),
+        ("SignalRGB: Blackout", "signalrgb_blackout"), ("SignalRGB: Restore", "signalrgb_restore"),
         ("SC: Next Page", "sc_page_next"), ("SC: Prev Page", "sc_page_prev"),
         ("SC: Home Page", "sc_page_home"), ("SC: Go To Page", "sc_go_to_page"),
         ("Multi-Action",  "multi_action"),
@@ -61,7 +63,7 @@ public partial class ButtonsView : UserControl
         ("Screenshot",    "screenshot"),
     };
 
-    private static readonly string[] PathActions = { "mute_program", "launch_exe", "close_program", "sc_go_to_page", "open_url", "signalrgb_effect" };
+    private static readonly string[] PathActions = { "mute_program", "launch_exe", "close_program", "sc_go_to_page", "open_url", "signalrgb_effect", "signalrgb_effect_cycle", "signalrgb_restore" };
 
     private static readonly (string Display, string Value)[] PowerOptions =
     {
@@ -95,7 +97,9 @@ public partial class ButtonsView : UserControl
         { "type_text", "✎" }, { "screenshot", "📷" },
         { "spotify_play_pause", "▶" }, { "spotify_next", "⏭" }, { "spotify_prev", "⏮" },
         { "spotify_shuffle", "⇌" }, { "spotify_like", "♥" },
-        { "signalrgb_effect", "S" },
+        { "add_active_app_to_group", "+" },
+        { "signalrgb_effect", "S" }, { "signalrgb_effect_cycle", "S" },
+        { "signalrgb_blackout", "S" }, { "signalrgb_restore", "S" },
     };
 
     private static readonly Dictionary<string, Color> ActionColors = new()
@@ -143,7 +147,11 @@ public partial class ButtonsView : UserControl
         { "obs_mute",           Color.FromRgb(0xEF, 0x53, 0x50) },
         { "vm_mute_strip",      Color.FromRgb(0xFF, 0x8F, 0x00) },
         { "vm_mute_bus",        Color.FromRgb(0xFF, 0x8F, 0x00) },
+        { "add_active_app_to_group", Color.FromRgb(0x26, 0xC6, 0xDA) },
         { "signalrgb_effect",   Color.FromRgb(0xFF, 0x9E, 0x55) },
+        { "signalrgb_effect_cycle", Color.FromRgb(0xFF, 0xC1, 0x07) },
+        { "signalrgb_blackout", Color.FromRgb(0x55, 0x55, 0x66) },
+        { "signalrgb_restore",  Color.FromRgb(0x00, 0xE6, 0x76) },
         { "sc_page_next",       Color.FromRgb(0x26, 0xC6, 0xDA) },
         { "sc_page_prev",       Color.FromRgb(0x26, 0xC6, 0xDA) },
         { "sc_page_home",       Color.FromRgb(0x00, 0xE6, 0x76) },
@@ -311,6 +319,7 @@ public partial class ButtonsView : UserControl
                 btn.CycleDeviceType = copy.CycleDeviceType;
                 btn.ProfileName = copy.ProfileName; btn.PowerAction = copy.PowerAction;
                 btn.LinkedKnobIdx = copy.LinkedKnobIdx;
+                btn.SignalRgbEffectNames = copy.SignalRgbEffectNames ?? new List<string>();
 
                 btn.DoublePressAction = copy.DoublePressAction; btn.DoublePressPath = copy.DoublePressPath;
                 btn.DoublePressMacroKeys = copy.DoublePressMacroKeys; btn.DoublePressDeviceId = copy.DoublePressDeviceId;
@@ -318,12 +327,14 @@ public partial class ButtonsView : UserControl
                 btn.DoublePressCycleDeviceType = copy.DoublePressCycleDeviceType;
                 btn.DoublePressProfileName = copy.DoublePressProfileName; btn.DoublePressPowerAction = copy.DoublePressPowerAction;
                 btn.DoublePressLinkedKnobIdx = copy.DoublePressLinkedKnobIdx;
+                btn.DoublePressSignalRgbEffectNames = copy.DoublePressSignalRgbEffectNames ?? new List<string>();
 
                 btn.HoldAction = copy.HoldAction; btn.HoldPath = copy.HoldPath; btn.HoldMacroKeys = copy.HoldMacroKeys;
                 btn.HoldDeviceId = copy.HoldDeviceId; btn.HoldDeviceIds = copy.HoldDeviceIds ?? new List<string>();
                 btn.HoldCycleDeviceType = copy.HoldCycleDeviceType;
                 btn.HoldProfileName = copy.HoldProfileName; btn.HoldPowerAction = copy.HoldPowerAction;
                 btn.HoldLinkedKnobIdx = copy.HoldLinkedKnobIdx;
+                btn.HoldSignalRgbEffectNames = copy.HoldSignalRgbEffectNames ?? new List<string>();
 
                 ReloadButtonColumn(idx, btn);
                 QueueSave();
@@ -339,16 +350,19 @@ public partial class ButtonsView : UserControl
                 btn.DeviceId = ""; btn.DeviceIds = new List<string>();
                 btn.CycleDeviceType = CycleDeviceType.Both;
                 btn.ProfileName = ""; btn.PowerAction = ""; btn.LinkedKnobIdx = -1;
+                btn.SignalRgbEffectNames = new List<string>();
 
                 btn.DoublePressAction = "none"; btn.DoublePressPath = ""; btn.DoublePressMacroKeys = "";
                 btn.DoublePressDeviceId = ""; btn.DoublePressDeviceIds = new List<string>();
                 btn.DoublePressCycleDeviceType = CycleDeviceType.Both;
                 btn.DoublePressProfileName = ""; btn.DoublePressPowerAction = ""; btn.DoublePressLinkedKnobIdx = -1;
+                btn.DoublePressSignalRgbEffectNames = new List<string>();
 
                 btn.HoldAction = "none"; btn.HoldPath = ""; btn.HoldMacroKeys = "";
                 btn.HoldDeviceId = ""; btn.HoldDeviceIds = new List<string>();
                 btn.HoldCycleDeviceType = CycleDeviceType.Both;
                 btn.HoldProfileName = ""; btn.HoldPowerAction = ""; btn.HoldLinkedKnobIdx = -1;
+                btn.HoldSignalRgbEffectNames = new List<string>();
 
                 ReloadButtonColumn(idx, btn);
                 QueueSave();
@@ -397,13 +411,20 @@ public partial class ButtonsView : UserControl
         return path;
     }
 
+    private static string ExtractSignalRgbPathBoxValue(string action, string path, List<string>? effectNames)
+    {
+        if (action == "signalrgb_effect_cycle" && effectNames is { Count: > 0 })
+            return string.Join(" | ", effectNames.Where(e => !string.IsNullOrWhiteSpace(e)));
+        return ExtractPathBoxValue(action, path);
+    }
+
     private void ReloadButtonColumn(int idx, ButtonConfig btn)
     {
         _loading = true;
 
         // TAP
         SelectCombo(_tapCombos[idx], btn.Action);
-        SetTextBoxValue(_tapPathBoxes[idx], ExtractPathBoxValue(btn.Action, btn.Path));
+        SetTextBoxValue(_tapPathBoxes[idx], ExtractSignalRgbPathBoxValue(btn.Action, btn.Path, btn.SignalRgbEffectNames));
         SetTextBoxValue(_tapMacroBoxes[idx], btn.MacroKeys);
         SelectDevicePicker(_tapDevicePickers[idx], btn.DeviceId);
         SelectCycleType(_tapCycleTypePickers[idx], btn.CycleDeviceType);
@@ -422,7 +443,7 @@ public partial class ButtonsView : UserControl
 
         // DOUBLE
         SelectCombo(_dblCombos[idx], btn.DoublePressAction);
-        SetTextBoxValue(_dblPathBoxes[idx], ExtractPathBoxValue(btn.DoublePressAction, btn.DoublePressPath));
+        SetTextBoxValue(_dblPathBoxes[idx], ExtractSignalRgbPathBoxValue(btn.DoublePressAction, btn.DoublePressPath, btn.DoublePressSignalRgbEffectNames));
         SetTextBoxValue(_dblMacroBoxes[idx], btn.DoublePressMacroKeys);
         SelectDevicePicker(_dblDevicePickers[idx], btn.DoublePressDeviceId);
         SelectCycleType(_dblCycleTypePickers[idx], btn.DoublePressCycleDeviceType);
@@ -442,7 +463,7 @@ public partial class ButtonsView : UserControl
 
         // HOLD
         SelectCombo(_holdCombos[idx], btn.HoldAction);
-        SetTextBoxValue(_holdPathBoxes[idx], ExtractPathBoxValue(btn.HoldAction, btn.HoldPath));
+        SetTextBoxValue(_holdPathBoxes[idx], ExtractSignalRgbPathBoxValue(btn.HoldAction, btn.HoldPath, btn.HoldSignalRgbEffectNames));
         SetTextBoxValue(_holdMacroBoxes[idx], btn.HoldMacroKeys);
         SelectDevicePicker(_holdDevicePickers[idx], btn.HoldDeviceId);
         SelectCycleType(_holdCycleTypePickers[idx], btn.HoldCycleDeviceType);
@@ -526,7 +547,7 @@ public partial class ButtonsView : UserControl
 
             // TAP
             SelectCombo(_tapCombos[i], btn.Action);
-            SetTextBoxValue(_tapPathBoxes[i], ExtractPathBoxValue(btn.Action, btn.Path));
+            SetTextBoxValue(_tapPathBoxes[i], ExtractSignalRgbPathBoxValue(btn.Action, btn.Path, btn.SignalRgbEffectNames));
             SetTextBoxValue(_tapMacroBoxes[i], btn.MacroKeys);
             SelectDevicePicker(_tapDevicePickers[i], btn.DeviceId);
             SelectCycleType(_tapCycleTypePickers[i], btn.CycleDeviceType);
@@ -545,7 +566,7 @@ public partial class ButtonsView : UserControl
 
             // DOUBLE
             SelectCombo(_dblCombos[i], btn.DoublePressAction);
-            SetTextBoxValue(_dblPathBoxes[i], ExtractPathBoxValue(btn.DoublePressAction, btn.DoublePressPath));
+            SetTextBoxValue(_dblPathBoxes[i], ExtractSignalRgbPathBoxValue(btn.DoublePressAction, btn.DoublePressPath, btn.DoublePressSignalRgbEffectNames));
             SetTextBoxValue(_dblMacroBoxes[i], btn.DoublePressMacroKeys);
             SelectDevicePicker(_dblDevicePickers[i], btn.DoublePressDeviceId);
             SelectCycleType(_dblCycleTypePickers[i], btn.DoublePressCycleDeviceType);
@@ -565,7 +586,7 @@ public partial class ButtonsView : UserControl
 
             // HOLD
             SelectCombo(_holdCombos[i], btn.HoldAction);
-            SetTextBoxValue(_holdPathBoxes[i], ExtractPathBoxValue(btn.HoldAction, btn.HoldPath));
+            SetTextBoxValue(_holdPathBoxes[i], ExtractSignalRgbPathBoxValue(btn.HoldAction, btn.HoldPath, btn.HoldSignalRgbEffectNames));
             SetTextBoxValue(_holdMacroBoxes[i], btn.HoldMacroKeys);
             SelectDevicePicker(_holdDevicePickers[i], btn.HoldDeviceId);
             SelectCycleType(_holdCycleTypePickers[i], btn.HoldCycleDeviceType);
@@ -990,7 +1011,7 @@ public partial class ButtonsView : UserControl
         if (action is "cycle_output" or "cycle_input")
             PopulateCycleDevicePicker(_tapCycleDevicePickers[idx], action == "cycle_output");
         _tapPowerPanels[idx].Visibility = action == "system_power" ? Visibility.Visible : Visibility.Collapsed;
-        _tapKnobPanels[idx].Visibility = action == "mute_app_group" ? Visibility.Visible : Visibility.Collapsed;
+        _tapKnobPanels[idx].Visibility = UsesLinkedKnob(action) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateGestureVisibility(
@@ -1011,8 +1032,11 @@ public partial class ButtonsView : UserControl
         if (action is "cycle_output" or "cycle_input")
             PopulateCycleDevicePicker(cycleDevicePicker, action == "cycle_output");
         powerPanel.Visibility = action == "system_power" ? Visibility.Visible : Visibility.Collapsed;
-        knobPanel.Visibility = action == "mute_app_group" ? Visibility.Visible : Visibility.Collapsed;
+        knobPanel.Visibility = UsesLinkedKnob(action) ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    private static bool UsesLinkedKnob(string action) =>
+        action is "mute_app_group" or "add_active_app_to_group";
 
     private void ApplyPathLabelAndButtons(TextBlock label, TextBox? box, Button browseBtn, Button pickBtn, string action, System.Windows.Controls.Border? chip = null)
     {
@@ -1088,6 +1112,18 @@ public partial class ButtonsView : UserControl
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
+            case "signalrgb_effect_cycle":
+                label.Text = "EFFECT CYCLE";
+                if (box != null) box.ToolTip = "SignalRGB effect names separated with | or ;. Example: Dark Matter | Neon Shift | Aurora.";
+                browseBtn.Visibility = Visibility.Collapsed;
+                pickBtn.Visibility = Visibility.Collapsed;
+                break;
+            case "signalrgb_restore":
+                label.Text = "FALLBACK EFFECT";
+                if (box != null) box.ToolTip = "Optional fallback effect to apply when AmpUp has not applied a previous SignalRGB effect yet.";
+                browseBtn.Visibility = Visibility.Collapsed;
+                pickBtn.Visibility = Visibility.Collapsed;
+                break;
             default:
                 label.Text = "PROCESS NAME";
                 if (box != null) box.ToolTip = "Enter part of the process name";
@@ -1120,6 +1156,7 @@ public partial class ButtonsView : UserControl
 
             btn.Action = GetComboActionValue(_tapCombos[i]);
             btn.Path = GetActionPath(_tapCombos[i], _tapPathBoxes[i]);
+            btn.SignalRgbEffectNames = GetSignalRgbEffectNamesForAction(btn.Action, btn.Path);
             btn.MacroKeys = GetTextBoxValue(_tapMacroBoxes[i]);
             btn.DeviceId = GetDeviceIdForAction(btn.Action, _tapCombos[i], _tapDevicePickers[i]);
             btn.DeviceIds = _tapCycleDevicePickers[i].GetCheckedIds();
@@ -1130,6 +1167,7 @@ public partial class ButtonsView : UserControl
 
             btn.DoublePressAction = GetComboActionValue(_dblCombos[i]);
             btn.DoublePressPath = GetActionPath(_dblCombos[i], _dblPathBoxes[i]);
+            btn.DoublePressSignalRgbEffectNames = GetSignalRgbEffectNamesForAction(btn.DoublePressAction, btn.DoublePressPath);
             btn.DoublePressMacroKeys = GetTextBoxValue(_dblMacroBoxes[i]);
             btn.DoublePressDeviceId = GetDeviceIdForAction(btn.DoublePressAction, _dblCombos[i], _dblDevicePickers[i]);
             btn.DoublePressDeviceIds = _dblCycleDevicePickers[i].GetCheckedIds();
@@ -1140,6 +1178,7 @@ public partial class ButtonsView : UserControl
 
             btn.HoldAction = GetComboActionValue(_holdCombos[i]);
             btn.HoldPath = GetActionPath(_holdCombos[i], _holdPathBoxes[i]);
+            btn.HoldSignalRgbEffectNames = GetSignalRgbEffectNamesForAction(btn.HoldAction, btn.HoldPath);
             btn.HoldMacroKeys = GetTextBoxValue(_holdMacroBoxes[i]);
             btn.HoldDeviceId = GetDeviceIdForAction(btn.HoldAction, _holdCombos[i], _holdDevicePickers[i]);
             btn.HoldDeviceIds = _holdCycleDevicePickers[i].GetCheckedIds();
@@ -1247,6 +1286,7 @@ public partial class ButtonsView : UserControl
         { "mute_program",       "Toggle mute for a specific app" },
         { "mute_active_window", "Toggle mute for focused window" },
         { "mute_app_group",     "Toggle mute for all apps in linked knob group" },
+        { "add_active_app_to_group", "Add the focused app to the linked knob's app group" },
         { "mute_device",        "Toggle mute for a specific audio device" },
         { "launch_exe",         "Launch an application or script" },
         { "close_program",      "Force-close a running process" },
@@ -1287,6 +1327,9 @@ public partial class ButtonsView : UserControl
         { "spotify_shuffle",    "Toggle Spotify shuffle mode" },
         { "spotify_like",       "Like / unlike the currently-playing Spotify track" },
         { "signalrgb_effect",   "Switch to a SignalRGB lighting effect using the free signalrgb:// URL handler" },
+        { "signalrgb_effect_cycle", "Cycle through SignalRGB effects listed on this button" },
+        { "signalrgb_blackout", "Apply SignalRGB Solid Color black using the free signalrgb:// URL handler" },
+        { "signalrgb_restore",  "Restore the last SignalRGB effect AmpUp applied, or the configured fallback effect" },
         { "sc_page_next",       "Navigate to the next Stream Controller page" },
         { "sc_page_prev",       "Navigate to the previous Stream Controller page" },
         { "sc_page_home",       "Jump back to page 1 (home page)" },
@@ -1351,6 +1394,8 @@ public partial class ButtonsView : UserControl
                 // Profile sub-menu
                 picker.RegisterSubMenu("switch_profile", () => GetProfileSubItems());
                 picker.RegisterSubMenu("signalrgb_effect", GetSignalRgbEffectSubItems);
+                picker.RegisterSubMenu("signalrgb_effect_cycle", GetSignalRgbEffectSubItems);
+                picker.RegisterSubMenu("signalrgb_restore", GetSignalRgbEffectSubItems);
 
                 // Device group sub-menu
                 if (groupsExist || anyGroupConfigured)
@@ -1387,13 +1432,13 @@ public partial class ButtonsView : UserControl
     {
         ("Media",           new[] { "media_play_pause", "media_next", "media_prev" }),
         ("Mute",            new[] { "mute_master", "mute_mic", "mute_program", "mute_active_window", "mute_app_group", "mute_device" }),
-        ("App Control",     new[] { "launch_exe", "close_program", "open_url", "type_text", "screenshot" }),
+        ("App Control",     new[] { "launch_exe", "close_program", "add_active_app_to_group", "open_url", "type_text", "screenshot" }),
         ("Device",          new[] { "cycle_output", "cycle_input", "select_output", "select_input" }),
         ("System",          new[] { "none", "macro", "switch_profile", "cycle_profile", "cycle_brightness", "quick_wheel" }),
         ("Advanced",        new[] { "multi_action", "toggle_action", "open_folder" }),
         ("Power",           new[] { "power_sleep", "power_lock", "power_off", "power_restart", "power_logoff", "power_hibernate" }),
         ("Room",            new[] { "room_toggle", "room_effect" }),
-        ("Integrations",    new[] { "group_toggle", "ha_toggle", "ha_scene", "ha_service", "corsair_toggle", "govee_toggle", "govee_color", "govee_white_toggle", "obs_record", "obs_stream", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus", "spotify_play_pause", "spotify_next", "spotify_prev", "spotify_shuffle", "spotify_like", "signalrgb_effect" }),
+        ("Integrations",    new[] { "group_toggle", "ha_toggle", "ha_scene", "ha_service", "corsair_toggle", "govee_toggle", "govee_color", "govee_white_toggle", "obs_record", "obs_stream", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus", "spotify_play_pause", "spotify_next", "spotify_prev", "spotify_shuffle", "spotify_like", "signalrgb_effect", "signalrgb_effect_cycle", "signalrgb_blackout", "signalrgb_restore" }),
         ("Stream Controller", new[] { "sc_page_next", "sc_page_prev", "sc_page_home", "sc_go_to_page" }),
     };
 
@@ -2271,7 +2316,7 @@ public partial class ButtonsView : UserControl
 
     private void SelectSignalRgbEffectSubTag(ActionPicker picker, string action, string effectName)
     {
-        if (action != "signalrgb_effect" || string.IsNullOrEmpty(effectName))
+        if (action is not ("signalrgb_effect" or "signalrgb_effect_cycle" or "signalrgb_restore") || string.IsNullOrEmpty(effectName))
             return;
         picker.SelectWithSub(action, effectName);
     }
@@ -2282,7 +2327,7 @@ public partial class ButtonsView : UserControl
         if (action is "ha_toggle" or "ha_scene" or "select_output" or "select_input" or "mute_device" or "group_toggle"
             or "govee_toggle" or "govee_white_toggle")
             return combo.SelectedSubTag ?? "";
-        if (action is "signalrgb_effect")
+        if (action is "signalrgb_effect" or "signalrgb_effect_cycle" or "signalrgb_restore")
             return combo.SelectedSubTag ?? GetTextBoxValue(pathBox);
         if (action is "govee_color")
         {
@@ -2294,6 +2339,25 @@ public partial class ButtonsView : UserControl
             return ip; // fall back to just IP
         }
         return GetTextBoxValue(pathBox);
+    }
+
+    private static List<string> GetSignalRgbEffectNamesForAction(string action, string path)
+    {
+        if (action is not ("signalrgb_effect_cycle" or "signalrgb_restore"))
+            return new();
+
+        return SplitSignalRgbEffectNames(path);
+    }
+
+    private static List<string> SplitSignalRgbEffectNames(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return new();
+
+        return value
+            .Split(new[] { '|', ';', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private List<ActionPicker.SubItem> GetHASubItems(string action)
