@@ -25,6 +25,7 @@ public partial class ButtonsView
     private Border? _v2DeviceCard;
     private Border? _v2GoveeCard;
     private Border? _v2RoomEffectCard;
+    private Border? _v2SignalRgbEffectCard;
     private Border? _v2KnobCard;
     private Border? _v2ToggleCard;
     private Border? _v2MultiActionCard;
@@ -70,6 +71,9 @@ public partial class ButtonsView
 
         _v2RoomEffectCard = MakeV2SectionCard("ROOM EFFECT", out _, _scRoomEffectPanel);
         _v2ActionFieldsPanel.Children.Add(_v2RoomEffectCard);
+
+        _v2SignalRgbEffectCard = MakeV2SectionCard("SIGNALRGB EFFECT", out _, _scSignalRgbEffectPanel);
+        _v2ActionFieldsPanel.Children.Add(_v2SignalRgbEffectCard);
 
         // 6. Linked Turn Up knob (mute_app_group).
         _v2KnobCard = MakeV2SectionCard("LINKED TURN UP KNOB", out _, _scKnobPanel);
@@ -145,6 +149,7 @@ public partial class ButtonsView
         ShowInner(_scDevicePanel);
         ShowInner(_scGoveePanel);
         ShowInner(_scRoomEffectPanel);
+        ShowInner(_scSignalRgbEffectPanel);
         ShowInner(_scKnobPanel);
         ShowInner(_scTogglePanel);
         ShowInner(_scMultiActionPanel);
@@ -164,9 +169,9 @@ public partial class ButtonsView
         }
         if (string.IsNullOrEmpty(action)) action = GetComboActionValue(_scActionPicker);
 
-        bool needsPath = PathActions.Contains(action)
+        bool needsPath = (PathActions.Contains(action) && action != "signalrgb_effect")
             || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute"
-            or "vm_mute_strip" or "vm_mute_bus" or "signalrgb_effect";
+            or "vm_mute_strip" or "vm_mute_bus";
 
         SetCardVisible(_v2PathCard, needsPath);
         SetCardVisible(_v2MacroCard, action == "macro");
@@ -180,6 +185,8 @@ public partial class ButtonsView
             RefreshGoveePickerItems();
         SetCardVisible(_v2RoomEffectCard, action == "room_effect");
         if (action == "room_effect") RefreshRoomEffectPickerItems();
+        SetCardVisible(_v2SignalRgbEffectCard, action == "signalrgb_effect");
+        if (action == "signalrgb_effect") RefreshSignalRgbEffectPickerItems(GetCurrentGesturePath());
         SetCardVisible(_v2KnobCard, action == "mute_app_group");
         SetCardVisible(_v2ToggleCard, action == "toggle_action");
         SetCardVisible(_v2MultiActionCard, action == "multi_action");

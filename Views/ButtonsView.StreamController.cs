@@ -76,6 +76,8 @@ public partial class ButtonsView
     private ListPicker? _scGoveePicker;
     private StackPanel? _scRoomEffectPanel;
     private ListPicker? _scRoomEffectPicker;
+    private StackPanel? _scSignalRgbEffectPanel;
+    private ListPicker? _scSignalRgbEffectPicker;
     private StackPanel? _scDevicePanel;
     private ListPicker? _scKnobPicker;
     private StackPanel? _scKnobPanel;
@@ -845,6 +847,7 @@ public partial class ButtonsView
         (_scDevicePanel, _scDevicePicker) = MakeStreamDeviceRow();
         (_scGoveePanel, _scGoveePicker) = MakeStreamGoveeRow();
         (_scRoomEffectPanel, _scRoomEffectPicker) = MakeStreamRoomEffectRow();
+        (_scSignalRgbEffectPanel, _scSignalRgbEffectPicker) = MakeStreamSignalRgbEffectRow();
         (_scKnobPanel, _scKnobPicker) = MakeStreamKnobRow();
         _scTogglePanel = MakeStreamToggleRow();
         _scMultiActionPanel = MakeStreamMultiActionPanel();
@@ -857,6 +860,7 @@ public partial class ButtonsView
         _scActionTabContent.Children.Add(_scDevicePanel);
         _scActionTabContent.Children.Add(_scGoveePanel);
         _scActionTabContent.Children.Add(_scRoomEffectPanel);
+        _scActionTabContent.Children.Add(_scSignalRgbEffectPanel);
         _scActionTabContent.Children.Add(_scKnobPanel);
         _scActionTabContent.Children.Add(_scTogglePanel);
         _scActionTabContent.Children.Add(_scMultiActionPanel);
@@ -1416,6 +1420,53 @@ public partial class ButtonsView
             _scRoomEffectPicker.AddItem(val.ToString(), val.ToString());
     }
 
+    /// <summary>
+    /// SignalRGB effect picker. Selection saves the effect name into ButtonConfig.Path.
+    /// </summary>
+    private (StackPanel panel, ListPicker picker) MakeStreamSignalRgbEffectRow()
+    {
+        var panel = new StackPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
+        panel.Children.Add(MakeEditorLabel("SIGNALRGB EFFECT"));
+        var picker = new ListPicker();
+        picker.SelectionChanged += (_, _) =>
+        {
+            if (_loading || _config == null) return;
+            if (picker.SelectedIndex < 0 || picker.SelectedTag is not string effect
+                || string.IsNullOrEmpty(effect)) return;
+            var list = GetOwningButtonList();
+            var btn = list.FirstOrDefault(b => b.Idx == _scSelectedButtonIdx);
+            if (btn == null) return;
+            SetGesturePath(btn, effect);
+            QueueSave();
+        };
+        panel.Children.Add(picker);
+        return (panel, picker);
+    }
+
+    private void RefreshSignalRgbEffectPickerItems(string? selectedEffect = null)
+    {
+        if (_scSignalRgbEffectPicker == null) return;
+
+        _scSignalRgbEffectPicker.ClearItems();
+        var effects = AmpUp.Services.SignalRgbEffectCatalog.GetInstalledEffects();
+        foreach (var effect in effects)
+            _scSignalRgbEffectPicker.AddItem(effect.Name, effect.Name);
+
+        if (!string.IsNullOrWhiteSpace(selectedEffect)
+            && !effects.Any(e => string.Equals(e.Name, selectedEffect, StringComparison.OrdinalIgnoreCase)))
+        {
+            _scSignalRgbEffectPicker.AddItem(selectedEffect, selectedEffect);
+        }
+    }
+
+    private string GetCurrentGesturePath()
+    {
+        if (_config == null) return "";
+        var list = GetOwningButtonList();
+        var btn = list.FirstOrDefault(b => b.Idx == _scSelectedButtonIdx);
+        return btn == null ? "" : GetGesturePath(btn);
+    }
+
     private (StackPanel panel, ListPicker picker) MakeStreamKnobRow()
     {
         var panel = new StackPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
@@ -1692,7 +1743,7 @@ public partial class ButtonsView
 
     // Actions that require a path textbox inside Toggle A/B (same set as main picker)
     private static bool ToggleSubActionNeedsPath(string action) =>
-        PathActions.Contains(action) || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus" or "signalrgb_effect";
+        (PathActions.Contains(action) && action != "signalrgb_effect") || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
 
     private ActionPicker MakeFilteredActionCombo(HashSet<string> blocklist)
     {
@@ -1992,6 +2043,8 @@ public partial class ButtonsView
 
         string? pendingRoomEffect = (gAction == "room_effect" && !string.IsNullOrEmpty(gPath))
             ? gPath : null;
+        string? pendingSignalRgbEffect = (gAction == "signalrgb_effect" && !string.IsNullOrEmpty(gPath))
+            ? gPath : null;
 
         // Load Toggle (A/B) sub-actions
         if (_scToggleActionAPicker != null) SelectCombo(_scToggleActionAPicker, button.ToggleActionA);
@@ -2147,6 +2200,21 @@ public partial class ButtonsView
             }
             _scRoomEffectPicker.SelectedIndex = foundIdx;
         }
+
+        if (_scSignalRgbEffectPicker != null && pendingSignalRgbEffect != null)
+        {
+            RefreshSignalRgbEffectPickerItems(pendingSignalRgbEffect);
+            int foundIdx = -1;
+            for (int i = 0; i < _scSignalRgbEffectPicker.ItemCount; i++)
+            {
+                if (string.Equals(_scSignalRgbEffectPicker.GetTagAt(i) as string, pendingSignalRgbEffect, StringComparison.OrdinalIgnoreCase))
+                {
+                    foundIdx = i;
+                    break;
+                }
+            }
+            _scSignalRgbEffectPicker.SelectedIndex = foundIdx;
+        }
     }
 
     private void UpdateStreamControllerActionVisibility()
@@ -2156,7 +2224,7 @@ public partial class ButtonsView
             return;
 
         var action = GetComboActionValue(_scActionPicker);
-        bool needsPath = PathActions.Contains(action) || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus" or "signalrgb_effect";
+        bool needsPath = (PathActions.Contains(action) && action != "signalrgb_effect") || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
         _scPathPanel.Visibility = needsPath ? Visibility.Visible : Visibility.Collapsed;
         _scMacroPanel.Visibility = action == "macro" ? Visibility.Visible : Visibility.Collapsed;
         if (_scTextSnippetPanel != null)
@@ -2175,6 +2243,12 @@ public partial class ButtonsView
             bool showRoom = action == "room_effect";
             _scRoomEffectPanel.Visibility = showRoom ? Visibility.Visible : Visibility.Collapsed;
             if (showRoom) RefreshRoomEffectPickerItems();
+        }
+        if (_scSignalRgbEffectPanel != null)
+        {
+            bool showSignalRgbEffect = action == "signalrgb_effect";
+            _scSignalRgbEffectPanel.Visibility = showSignalRgbEffect ? Visibility.Visible : Visibility.Collapsed;
+            if (showSignalRgbEffect) RefreshSignalRgbEffectPickerItems(GetCurrentGesturePath());
         }
         _scKnobPanel.Visibility = action == "mute_app_group" ? Visibility.Visible : Visibility.Collapsed;
         if (_scTogglePanel != null)
@@ -2274,6 +2348,12 @@ public partial class ButtonsView
                  && _scRoomEffectPicker.SelectedTag is string roomEffect && !string.IsNullOrEmpty(roomEffect))
         {
             SetGesturePath(button, roomEffect);
+        }
+        else if (uiAction == "signalrgb_effect"
+                 && _scSignalRgbEffectPicker != null
+                 && _scSignalRgbEffectPicker.SelectedTag is string signalRgbEffect && !string.IsNullOrEmpty(signalRgbEffect))
+        {
+            SetGesturePath(button, signalRgbEffect);
         }
         SetGestureMacroKeys(button, GetTextBoxValue(_scMacroBox));
         // Checks against uiAction (the gesture-selected action) so options
