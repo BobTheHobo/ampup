@@ -1045,6 +1045,16 @@ public partial class ButtonsView : UserControl
 
     private void ApplyPathLabelAndButtons(TextBlock label, TextBox? box, Button browseBtn, Button pickBtn, string action, System.Windows.Controls.Border? chip = null)
     {
+        void SetPlaceholderText(string placeholder)
+        {
+            if (box == null) return;
+            var oldPlaceholder = box.Tag as string ?? "";
+            bool showingOldPlaceholder = box.Text == oldPlaceholder && Equals(box.Foreground, FindBrush("TextDimBrush"));
+            box.Tag = placeholder;
+            if (showingOldPlaceholder || string.IsNullOrWhiteSpace(box.Text))
+                SetTextBoxValue(box, "");
+        }
+
         // launch_exe shows the compact app chip; everything else shows the textbox input.
         bool showChip = action == "launch_exe" && chip != null;
         var inputBorder = box?.Parent as System.Windows.Controls.Border;
@@ -1059,84 +1069,98 @@ public partial class ButtonsView : UserControl
         {
             case "mute_program":
                 label.Text = "PROCESS NAME";
+                SetPlaceholderText("discord, spotify, chrome");
                 if (box != null) box.ToolTip = "Enter part of the process name (e.g. discord, spotify). No full path needed.";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Visible;
                 break;
             case "close_program":
                 label.Text = "PROCESS NAME";
+                SetPlaceholderText("notepad, chrome");
                 if (box != null) box.ToolTip = "Enter part of the process name to close (e.g. notepad, chrome)";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Visible;
                 break;
             case "launch_exe":
                 label.Text = "APP";
+                SetPlaceholderText("C:\\Path\\To\\App.exe");
                 if (box != null) box.ToolTip = "Full path to the executable to launch, or use the app picker";
                 browseBtn.Visibility = Visibility.Visible;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             case "ha_service":
                 label.Text = "SERVICE CALL";
+                SetPlaceholderText("light.turn_on:light.office");
                 if (box != null) box.ToolTip = "Format: domain.service:entity_id (e.g. light.turn_on:light.office)";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             case "ha_color":
                 label.Text = "HEX COLOR";
+                SetPlaceholderText("Optional hex color, e.g. FF0080");
                 if (box != null) box.ToolTip = "Hex color to set (e.g. FF0080 for pink, 00FF00 for green)";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             case "govee_color":
                 label.Text = "HEX COLOR";
+                SetPlaceholderText("FF0080");
                 if (box != null) box.ToolTip = "Hex color to set (e.g. FF0080 for pink, 00FF00 for green)";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             case "obs_scene":
                 label.Text = "SCENE NAME";
+                SetPlaceholderText("Gaming");
                 if (box != null) box.ToolTip = "OBS scene name to switch to (e.g. Gaming, Webcam)";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             case "obs_mute":
                 label.Text = "SOURCE NAME";
+                SetPlaceholderText("Mic/Aux");
                 if (box != null) box.ToolTip = "OBS audio source name to toggle mute (e.g. Mic/Aux, Desktop Audio)";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             case "vm_mute_strip":
                 label.Text = "STRIP INDEX";
+                SetPlaceholderText("0");
                 if (box != null) box.ToolTip = "VoiceMeeter strip index (0-4)";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             case "vm_mute_bus":
                 label.Text = "BUS INDEX";
+                SetPlaceholderText("0");
                 if (box != null) box.ToolTip = "VoiceMeeter bus index (0-2)";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             case "signalrgb_effect":
                 label.Text = "EFFECT NAME";
+                SetPlaceholderText("Dark Matter");
                 if (box != null) box.ToolTip = "SignalRGB effect name, e.g. Dark Matter. Installed effects may also appear in the action flyout.";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             case "signalrgb_effect_cycle":
                 label.Text = "EFFECT CYCLE";
+                SetPlaceholderText("Dark Matter | Neon Shift | Aurora");
                 if (box != null) box.ToolTip = "SignalRGB effect names separated with | or ;. Example: Dark Matter | Neon Shift | Aurora.";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             case "signalrgb_restore":
                 label.Text = "FALLBACK EFFECT";
+                SetPlaceholderText("Optional fallback effect");
                 if (box != null) box.ToolTip = "Optional fallback effect to apply when AmpUp has not applied a previous SignalRGB effect yet.";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             default:
                 label.Text = "PROCESS NAME";
+                SetPlaceholderText("Path or process");
                 if (box != null) box.ToolTip = "Enter part of the process name";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
