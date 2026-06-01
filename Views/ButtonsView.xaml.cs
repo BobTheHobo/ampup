@@ -40,7 +40,8 @@ public partial class ButtonsView : UserControl
         ("Cycle Brightness", "cycle_brightness"), ("Quick Wheel", "quick_wheel"),
         ("Sleep", "power_sleep"), ("Lock", "power_lock"), ("Off", "power_off"),
         ("Restart", "power_restart"), ("Logoff", "power_logoff"), ("Hibernate", "power_hibernate"),
-        ("Home Assistant: Toggle", "ha_toggle"), ("Home Assistant: Scene", "ha_scene"), ("Home Assistant: Service", "ha_service"),
+        ("Home Assistant: Toggle", "ha_toggle"), ("Home Assistant: Scene", "ha_scene"),
+        ("Home Assistant: Light Color", "ha_color"), ("Home Assistant: Service", "ha_service"),
         ("Room: Toggle All", "room_toggle"),
         ("Room: Set Effect", "room_effect"),
         ("Group: Toggle", "group_toggle"),
@@ -82,7 +83,7 @@ public partial class ButtonsView : UserControl
         { "mute_device", "🔇" },
         { "power_sleep", "😴" }, { "power_lock", "🔒" }, { "power_off", "⏻" },
         { "power_restart", "🔄" }, { "power_logoff", "🚪" }, { "power_hibernate", "❄" },
-        { "ha_toggle", "⚡" }, { "ha_scene", "🎬" }, { "ha_service", "⚙" },
+        { "ha_toggle", "⚡" }, { "ha_scene", "🎬" }, { "ha_color", "◉" }, { "ha_service", "⚙" },
         { "room_toggle", "💡" }, { "room_effect", "🎨" },
         { "group_toggle", "▣" },
         { "corsair_toggle", "✦" },
@@ -133,6 +134,7 @@ public partial class ButtonsView : UserControl
         { "power_hibernate",    Color.FromRgb(0x42, 0xA5, 0xF5) },
         { "ha_toggle",          Color.FromRgb(0x26, 0xC6, 0xDA) },
         { "ha_scene",           Color.FromRgb(0xFF, 0xA7, 0x26) },
+        { "ha_color",           Color.FromRgb(0xE8, 0x6F, 0xFF) },
         { "ha_service",         Color.FromRgb(0xAB, 0x47, 0xBC) },
         { "room_toggle",        Color.FromRgb(0x69, 0xF0, 0xAE) },
         { "room_effect",        Color.FromRgb(0xE8, 0x6F, 0xFF) },
@@ -399,6 +401,9 @@ public partial class ButtonsView : UserControl
 
     private static string ExtractPathBoxValue(string action, string path)
     {
+        // For ha_color, path is "entity_id|hexcolor" — only show hex in path box.
+        if (action == "ha_color" && path.Contains('|'))
+            return path.Split('|', 2)[1];
         // For govee_color, path is "ip|hexcolor" — only show hex in path box
         if (action == "govee_color" && path.Contains('|'))
             return path.Split('|', 2)[1];
@@ -999,7 +1004,7 @@ public partial class ButtonsView : UserControl
 
     private void UpdateTapVisibility(int idx, string action)
     {
-        bool isHaServiceAction = action == "ha_service";
+        bool isHaServiceAction = action is "ha_service" or "ha_color";
         bool isObsPathAction = action is "obs_scene" or "obs_mute";
         bool isVmPathAction = action is "vm_mute_strip" or "vm_mute_bus";
         _tapPathPanels[idx].Visibility = PathActions.Contains(action) || isHaServiceAction || action == "govee_color" || isObsPathAction || isVmPathAction ? Visibility.Visible : Visibility.Collapsed;
@@ -1020,7 +1025,7 @@ public partial class ButtonsView : UserControl
         StackPanel powerPanel, StackPanel knobPanel, string action,
         System.Windows.Controls.Border? chip = null, TextBox? box = null)
     {
-        bool isHaServiceAction = action == "ha_service";
+        bool isHaServiceAction = action is "ha_service" or "ha_color";
         bool isObsPathAction = action is "obs_scene" or "obs_mute";
         bool isVmPathAction = action is "vm_mute_strip" or "vm_mute_bus";
         pathPanel.Visibility = PathActions.Contains(action) || isHaServiceAction || action == "govee_color" || isObsPathAction || isVmPathAction ? Visibility.Visible : Visibility.Collapsed;
@@ -1073,6 +1078,12 @@ public partial class ButtonsView : UserControl
             case "ha_service":
                 label.Text = "SERVICE CALL";
                 if (box != null) box.ToolTip = "Format: domain.service:entity_id (e.g. light.turn_on:light.office)";
+                browseBtn.Visibility = Visibility.Collapsed;
+                pickBtn.Visibility = Visibility.Collapsed;
+                break;
+            case "ha_color":
+                label.Text = "HEX COLOR";
+                if (box != null) box.ToolTip = "Hex color to set (e.g. FF0080 for pink, 00FF00 for green)";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
@@ -1307,6 +1318,7 @@ public partial class ButtonsView : UserControl
         { "power_hibernate",    "Hibernate the PC" },
         { "ha_toggle",          "Toggle a Home Assistant entity on/off" },
         { "ha_scene",           "Activate a Home Assistant scene" },
+        { "ha_color",           "Set a Home Assistant light to a hex color" },
         { "ha_service",         "Call any Home Assistant service (format: domain.service:entity_id)" },
         { "room_toggle",        "Toggle all room lights on/off (Govee + Corsair)" },
         { "room_effect",        "Switch the active room effect (Fire, Ocean, Aurora, etc.)" },
@@ -1384,6 +1396,7 @@ public partial class ButtonsView : UserControl
                 {
                     picker.RegisterSubMenu("ha_toggle", () => GetHASubItems("ha_toggle"));
                     picker.RegisterSubMenu("ha_scene", () => GetHASubItems("ha_scene"));
+                    picker.RegisterSubMenu("ha_color", () => GetHASubItems("ha_color"));
                 }
 
                 // Device sub-menus (filtered by direction)
@@ -1413,7 +1426,7 @@ public partial class ButtonsView : UserControl
     }
 
     private static bool IsHaAction(string? action)
-        => action is "ha_toggle" or "ha_scene" or "ha_service";
+        => action is "ha_toggle" or "ha_scene" or "ha_color" or "ha_service";
 
     private static bool IsGoveeAction(string? action)
         => action is "govee_toggle" or "govee_color" or "govee_white_toggle";
@@ -1438,7 +1451,7 @@ public partial class ButtonsView : UserControl
         ("Advanced",        new[] { "multi_action", "toggle_action", "open_folder" }),
         ("Power",           new[] { "power_sleep", "power_lock", "power_off", "power_restart", "power_logoff", "power_hibernate" }),
         ("Room",            new[] { "room_toggle", "room_effect" }),
-        ("Integrations",    new[] { "group_toggle", "ha_toggle", "ha_scene", "ha_service", "corsair_toggle", "govee_toggle", "govee_color", "govee_white_toggle", "obs_record", "obs_stream", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus", "spotify_play_pause", "spotify_next", "spotify_prev", "spotify_shuffle", "spotify_like", "signalrgb_effect", "signalrgb_effect_cycle", "signalrgb_blackout", "signalrgb_restore" }),
+        ("Integrations",    new[] { "group_toggle", "ha_toggle", "ha_scene", "ha_color", "ha_service", "corsair_toggle", "govee_toggle", "govee_color", "govee_white_toggle", "obs_record", "obs_stream", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus", "spotify_play_pause", "spotify_next", "spotify_prev", "spotify_shuffle", "spotify_like", "signalrgb_effect", "signalrgb_effect_cycle", "signalrgb_blackout", "signalrgb_restore" }),
         ("Stream Controller", new[] { "sc_page_next", "sc_page_prev", "sc_page_home", "sc_go_to_page" }),
     };
 
@@ -1497,7 +1510,7 @@ public partial class ButtonsView : UserControl
         // Integrations section scannable.
         picker.AddActionGroup("group_ha", "Home Assistant", "⚡",
             Color.FromRgb(0x26, 0xC6, 0xDA),
-            new[] { "ha_toggle", "ha_scene", "ha_service" });
+            new[] { "ha_toggle", "ha_scene", "ha_color", "ha_service" });
         picker.AddActionGroup("group_govee", "Govee", "◈",
             Color.FromRgb(0x66, 0xBB, 0x6A),
             new[] { "govee_toggle", "govee_color", "govee_white_toggle" });
@@ -2302,8 +2315,10 @@ public partial class ButtonsView : UserControl
 
     private void SelectHaSubTag(ActionPicker picker, string action, string entityId)
     {
-        if (action is not ("ha_toggle" or "ha_scene") || string.IsNullOrEmpty(entityId))
+        if (action is not ("ha_toggle" or "ha_scene" or "ha_color") || string.IsNullOrEmpty(entityId))
             return;
+        if (action == "ha_color" && entityId.Contains('|'))
+            entityId = entityId.Split('|', 2)[0];
         picker.SelectWithSub(action, entityId);
     }
 
@@ -2327,6 +2342,14 @@ public partial class ButtonsView : UserControl
         if (action is "ha_toggle" or "ha_scene" or "select_output" or "select_input" or "mute_device" or "group_toggle"
             or "govee_toggle" or "govee_white_toggle")
             return combo.SelectedSubTag ?? "";
+        if (action is "ha_color")
+        {
+            var entityId = combo.SelectedSubTag ?? "";
+            var hex = GetTextBoxValue(pathBox);
+            if (!string.IsNullOrEmpty(entityId) && !string.IsNullOrEmpty(hex))
+                return $"{entityId}|{hex}";
+            return entityId;
+        }
         if (action is "signalrgb_effect" or "signalrgb_effect_cycle" or "signalrgb_restore")
             return combo.SelectedSubTag ?? GetTextBoxValue(pathBox);
         if (action is "govee_color")
@@ -2365,7 +2388,7 @@ public partial class ButtonsView : UserControl
         if (_ha == null) return new();
 
         // Determine domain filter based on action
-        string? domain = action == "ha_scene" ? "scene" : null;
+        string? domain = action == "ha_scene" ? "scene" : action == "ha_color" ? "light" : null;
         var entities = domain != null
             ? _ha.CachedEntities.Where(e => e.Domain == domain)
             : _ha.CachedEntities;

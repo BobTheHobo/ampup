@@ -267,6 +267,10 @@ public class ButtonHandler : IDisposable
                     if (_ha != null && !string.IsNullOrEmpty(path))
                         _ = _ha.ActivateSceneAsync(path);
                     break;
+                case "ha_color":
+                    if (_ha != null && !string.IsNullOrEmpty(path))
+                        _ = SetHomeAssistantLightColorAsync(path);
+                    break;
                 case "ha_service":
                     if (_ha != null && !string.IsNullOrEmpty(path))
                     {
@@ -904,6 +908,32 @@ public class ButtonHandler : IDisposable
         catch (Exception ex)
         {
             Logger.Log($"add_active_app_to_group error: {ex.Message}");
+        }
+    }
+
+    private async Task SetHomeAssistantLightColorAsync(string path)
+    {
+        try
+        {
+            var parts = path.Split('|', 2);
+            if (parts.Length != 2) return;
+
+            var entityId = parts[0].Trim();
+            var hex = parts[1].Trim().TrimStart('#');
+            if (string.IsNullOrWhiteSpace(entityId) || hex.Length != 6)
+                return;
+
+            if (!int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out int rgb))
+                return;
+
+            byte r = (byte)((rgb >> 16) & 0xFF);
+            byte g = (byte)((rgb >> 8) & 0xFF);
+            byte b = (byte)(rgb & 0xFF);
+            await _ha!.SetLightColorAsync(entityId, r, g, b);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"ha_color error: {ex.Message}");
         }
     }
 

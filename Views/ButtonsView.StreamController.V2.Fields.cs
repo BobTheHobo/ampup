@@ -23,6 +23,7 @@ public partial class ButtonsView
     private Border? _v2TextSnippetCard;
     private Border? _v2ScreenshotCard;
     private Border? _v2DeviceCard;
+    private Border? _v2HaCard;
     private Border? _v2GoveeCard;
     private Border? _v2RoomEffectCard;
     private Border? _v2SignalRgbEffectCard;
@@ -65,6 +66,9 @@ public partial class ButtonsView
         // 5. Device picker (select_output / select_input / mute_device).
         _v2DeviceCard = MakeV2SectionCard("DEVICE", out _, _scDevicePanel);
         _v2ActionFieldsPanel.Children.Add(_v2DeviceCard);
+
+        _v2HaCard = MakeV2SectionCard("HOME ASSISTANT ENTITY", out _, _scHaPanel);
+        _v2ActionFieldsPanel.Children.Add(_v2HaCard);
 
         // Govee device picker (govee_toggle / govee_white_toggle / govee_color)
         _v2GoveeCard = MakeV2SectionCard("GOVEE DEVICE", out _, _scGoveePanel);
@@ -151,6 +155,7 @@ public partial class ButtonsView
         ShowInner(_scTextSnippetPanel);
         ShowInner(_scScreenshotInfoPanel);
         ShowInner(_scDevicePanel);
+        ShowInner(_scHaPanel);
         ShowInner(_scGoveePanel);
         ShowInner(_scRoomEffectPanel);
         ShowInner(_scSignalRgbEffectPanel);
@@ -175,7 +180,7 @@ public partial class ButtonsView
         if (string.IsNullOrEmpty(action)) action = GetComboActionValue(_scActionPicker);
 
         bool needsPath = (PathActions.Contains(action) && action is not "signalrgb_effect" and not "signalrgb_effect_cycle")
-            || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute"
+            || action is "ha_service" or "ha_color" or "govee_color" or "obs_scene" or "obs_mute"
             or "vm_mute_strip" or "vm_mute_bus";
 
         SetCardVisible(_v2PathCard, needsPath);
@@ -183,6 +188,9 @@ public partial class ButtonsView
         SetCardVisible(_v2TextSnippetCard, action == "type_text");
         SetCardVisible(_v2ScreenshotCard, action == "screenshot");
         SetCardVisible(_v2DeviceCard, action is "select_output" or "select_input" or "mute_device");
+        SetCardVisible(_v2HaCard, action is "ha_toggle" or "ha_scene" or "ha_color");
+        if (action is "ha_toggle" or "ha_scene" or "ha_color")
+            RefreshHaPickerItems(action);
         // govee_white_toggle used to pick a single device but is now room-wide,
         // so it no longer shows the device picker card.
         SetCardVisible(_v2GoveeCard, action is "govee_toggle" or "govee_color");
@@ -435,6 +443,7 @@ public partial class ButtonsView
         "open_url"       => "URL",
         "sc_go_to_page"  => "PAGE NUMBER",
         "ha_service"     => "SERVICE CALL",
+        "ha_color"       => "ENTITY / COLOR",
         "govee_color"    => "DEVICE / COLOR",
         "obs_scene"      => "OBS SCENE",
         "signalrgb_effect" => "SIGNALRGB EFFECT",

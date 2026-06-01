@@ -72,6 +72,8 @@ public partial class ButtonsView
     private StackPanel? _scTextSnippetPanel;
     private Border? _scScreenshotInfoPanel;
     private ListPicker? _scDevicePicker;
+    private StackPanel? _scHaPanel;
+    private ListPicker? _scHaPicker;
     private StackPanel? _scGoveePanel;
     private ListPicker? _scGoveePicker;
     private StackPanel? _scRoomEffectPanel;
@@ -112,7 +114,7 @@ public partial class ButtonsView
     private static readonly HashSet<string> MultiActionStepPathActions = new()
     {
         "launch_exe", "close_program", "mute_program", "open_url", "sc_go_to_page",
-        "ha_service", "govee_color", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus",
+        "ha_service", "ha_color", "govee_color", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus",
         "signalrgb_effect", "signalrgb_effect_cycle"
     };
 
@@ -132,6 +134,7 @@ public partial class ButtonsView
     private Button? _scPageLeft;
     private Button? _scPageRight;
     private Button? _scAddPageButton;
+    private bool _haEntityRefreshInFlight;
 
     private int _scSelectedButtonIdx = StreamControllerDisplayKeyBase;
 
@@ -848,6 +851,7 @@ public partial class ButtonsView
         (_scTextSnippetPanel, _scTextSnippetBox) = MakeStreamTextSnippetRow();
         _scScreenshotInfoPanel = MakeStreamScreenshotInfo();
         (_scDevicePanel, _scDevicePicker) = MakeStreamDeviceRow();
+        (_scHaPanel, _scHaPicker) = MakeStreamHaRow();
         (_scGoveePanel, _scGoveePicker) = MakeStreamGoveeRow();
         (_scRoomEffectPanel, _scRoomEffectPicker) = MakeStreamRoomEffectRow();
         (_scSignalRgbEffectPanel, _scSignalRgbEffectPicker) = MakeStreamSignalRgbEffectRow();
@@ -862,6 +866,7 @@ public partial class ButtonsView
         _scActionTabContent.Children.Add(_scTextSnippetPanel);
         _scActionTabContent.Children.Add(_scScreenshotInfoPanel);
         _scActionTabContent.Children.Add(_scDevicePanel);
+        _scActionTabContent.Children.Add(_scHaPanel);
         _scActionTabContent.Children.Add(_scGoveePanel);
         _scActionTabContent.Children.Add(_scRoomEffectPanel);
         _scActionTabContent.Children.Add(_scSignalRgbEffectPanel);
@@ -1331,6 +1336,80 @@ public partial class ButtonsView
         picker.SelectionChanged += (_, _) => { if (!_loading) QueueSave(); };
         panel.Children.Add(picker);
         return (panel, picker);
+    }
+
+    /// <summary>
+    /// Home Assistant entity picker for HA toggle / scene actions.
+    /// Selection saves the entity id into the active gesture path.
+    /// </summary>
+    private (StackPanel panel, ListPicker picker) MakeStreamHaRow()
+    {
+        var panel = new StackPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
+        panel.Children.Add(MakeEditorLabel("HOME ASSISTANT ENTITY"));
+        var picker = new ListPicker();
+        picker.SelectionChanged += (_, _) =>
+        {
+            if (_loading || _config == null) return;
+            if (picker.SelectedIndex < 0 || picker.SelectedTag is not string entityId
+                || string.IsNullOrEmpty(entityId)) return;
+
+            var list = GetOwningButtonList();
+            var btn = list.FirstOrDefault(b => b.Idx == _scSelectedButtonIdx);
+            if (btn == null) return;
+
+            var action = GetGestureAction(btn);
+            if (action is not ("ha_toggle" or "ha_scene" or "ha_color"))
+                action = _v2ActionPicker?.SelectedValue ?? GetComboActionValue(_scActionPicker!);
+            if (action is not ("ha_toggle" or "ha_scene" or "ha_color"))
+                action = "ha_toggle";
+
+            SetGestureAction(btn, action);
+            if (action == "ha_color")
+            {
+                var existingHex = GetGesturePath(btn).Contains('|') ? GetGesturePath(btn).Split('|', 2)[1] : "";
+                SetGesturePath(btn, string.IsNullOrEmpty(existingHex) ? entityId : $"{entityId}|{existingHex}");
+            }
+            else
+            {
+                SetGesturePath(btn, entityId);
+            }
+
+            if (_scActionPicker != null)
+            {
+                bool prev = _loading;
+                _loading = true;
+                try { SelectHaSubTag(_scActionPicker, action, entityId); }
+                finally { _loading = prev; }
+            }
+
+            QueueSave();
+            RefreshV2LeftPanel();
+        };
+        panel.Children.Add(picker);
+        return (panel, picker);
+    }
+
+    private void RefreshHaPickerItems(string action)
+    {
+        if (_scHaPicker == null) return;
+        _scHaPicker.ClearItems();
+        foreach (var item in GetHASubItems(action))
+            _scHaPicker.AddItem(item.Display, item.Tag);
+
+        if (_scHaPicker.ItemCount == 0 && _ha != null && !_haEntityRefreshInFlight)
+        {
+            _haEntityRefreshInFlight = true;
+            _ = _ha.RefreshEntitiesAsync().ContinueWith(t =>
+            {
+                Dispatcher.BeginInvoke(() =>
+                {
+                    _haEntityRefreshInFlight = false;
+                    var currentAction = _v2ActionPicker?.SelectedValue ?? GetComboActionValue(_scActionPicker!);
+                    if (currentAction is "ha_toggle" or "ha_scene")
+                        RefreshHaPickerItems(currentAction);
+                });
+            });
+        }
     }
 
     /// <summary>
@@ -1936,7 +2015,7 @@ public partial class ButtonsView
 
     // Actions that require a path textbox inside Toggle A/B (same set as main picker)
     private static bool ToggleSubActionNeedsPath(string action) =>
-        (PathActions.Contains(action) && action != "signalrgb_effect") || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
+        (PathActions.Contains(action) && action != "signalrgb_effect") || action is "ha_service" or "ha_color" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
 
     private ActionPicker MakeFilteredActionCombo(HashSet<string> blocklist)
     {
@@ -2081,6 +2160,7 @@ public partial class ButtonsView
         "sc_go_to_page" => "PAGE NUMBER",
         "open_url" => "URL",
         "ha_service" => "SERVICE CALL",
+        "ha_color" => "HEX COLOR",
         "govee_color" => "HEX COLOR",
         "obs_scene" => "SCENE NAME",
         "signalrgb_effect" => "EFFECT NAME",
@@ -2226,6 +2306,10 @@ public partial class ButtonsView
         SelectProfileSubTag(_scActionPicker, gAction, button.ProfileName);
         SelectGroupSubTag(_scActionPicker, gAction, gPath);
         SelectGoveeSubTag(_scActionPicker, gAction, gPath);
+
+        string? pendingHaEntity = (gAction is "ha_toggle" or "ha_scene" or "ha_color" && !string.IsNullOrEmpty(gPath))
+            ? (gPath.Contains('|') ? gPath.Split('|', 2)[0] : gPath)
+            : null;
 
         // Govee picker selection happens AFTER UpdateStreamControllerActionVisibility
         // below — that method calls RefreshGoveePickerItems which clears + refills
@@ -2381,6 +2465,20 @@ public partial class ButtonsView
             _scGoveePicker.SelectedIndex = foundIdx;
         }
 
+        if (_scHaPicker != null && pendingHaEntity != null)
+        {
+            int foundIdx = -1;
+            for (int i = 0; i < _scHaPicker.ItemCount; i++)
+            {
+                if (string.Equals(_scHaPicker.GetTagAt(i) as string, pendingHaEntity, StringComparison.OrdinalIgnoreCase))
+                {
+                    foundIdx = i;
+                    break;
+                }
+            }
+            _scHaPicker.SelectedIndex = foundIdx;
+        }
+
         if (_scRoomEffectPicker != null && pendingRoomEffect != null)
         {
             int foundIdx = -1;
@@ -2419,7 +2517,7 @@ public partial class ButtonsView
 
         var action = GetComboActionValue(_scActionPicker);
         bool needsPath = (PathActions.Contains(action) && action is not "signalrgb_effect" and not "signalrgb_effect_cycle")
-            || action is "ha_service" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
+            || action is "ha_service" or "ha_color" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
         _scPathPanel.Visibility = needsPath ? Visibility.Visible : Visibility.Collapsed;
         _scMacroPanel.Visibility = action == "macro" ? Visibility.Visible : Visibility.Collapsed;
         if (_scTextSnippetPanel != null)
@@ -2427,6 +2525,12 @@ public partial class ButtonsView
         if (_scScreenshotInfoPanel != null)
             _scScreenshotInfoPanel.Visibility = action == "screenshot" ? Visibility.Visible : Visibility.Collapsed;
         _scDevicePanel.Visibility = action is "select_output" or "select_input" or "mute_device" ? Visibility.Visible : Visibility.Collapsed;
+        if (_scHaPanel != null)
+        {
+            bool showHa = action is "ha_toggle" or "ha_scene" or "ha_color";
+            _scHaPanel.Visibility = showHa ? Visibility.Visible : Visibility.Collapsed;
+            if (showHa) RefreshHaPickerItems(action);
+        }
         if (_scGoveePanel != null)
         {
             bool showGovee = action is "govee_toggle" or "govee_white_toggle" or "govee_color";
@@ -2542,6 +2646,21 @@ public partial class ButtonsView
             else
             {
                 SetGesturePath(button, goveeIp);
+            }
+        }
+        else if (uiAction is "ha_toggle" or "ha_scene" or "ha_color"
+                 && _scHaPicker != null
+                 && _scHaPicker.SelectedTag is string haEntityId && !string.IsNullOrEmpty(haEntityId))
+        {
+            if (uiAction == "ha_color")
+            {
+                var current = GetGesturePath(button);
+                var existingHex = current.Contains('|') ? current.Split('|', 2)[1] : GetTextBoxValue(_scPathBox);
+                SetGesturePath(button, string.IsNullOrEmpty(existingHex) ? haEntityId : $"{haEntityId}|{existingHex}");
+            }
+            else
+            {
+                SetGesturePath(button, haEntityId);
             }
         }
         else if (uiAction == "room_effect"
@@ -3815,6 +3934,7 @@ public partial class ButtonsView
                 "open_url" => "URL",
                 "sc_go_to_page" => "PAGE NUMBER",
                 "ha_service" => "ENTITY ID",
+                "ha_color" => "ENTITY|HEX",
                 "govee_color" => "DEVICE IP / NAME",
                 "obs_scene" => "SCENE NAME",
                 "signalrgb_effect" => "EFFECT NAME",

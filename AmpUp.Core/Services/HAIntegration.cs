@@ -236,6 +236,16 @@ public class HAIntegration : IDisposable
         });
     }
 
+    public async Task SetLightColorAsync(string entityId, byte r, byte g, byte b, int brightness = 255)
+    {
+        await CallServiceInternalAsync("light", "turn_on", new
+        {
+            entity_id = entityId,
+            rgb_color = new[] { (int)r, (int)g, (int)b },
+            brightness = Math.Clamp(brightness, 1, 255),
+        });
+    }
+
     public async Task CallServiceAsync(string domain, string service, string entityId)
     {
         await CallServiceInternalAsync(domain, service, new

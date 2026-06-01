@@ -961,6 +961,7 @@ public partial class MixerView : UserControl
         bool hasIntegrations = haEnabled || goveeEnabled || vmEnabled || corsairEnabled;
 
         picker.AddCategory("Audio");
+        picker.AddItem("None",          "none",          "-",  Color.FromRgb(0x88, 0x88, 0x88));
         picker.AddItem("Master",        "master",        "♪",  clrGreen);
         picker.AddItem("Mic",           "mic",           "◎",  clrRed);
         picker.AddItem("System",        "system",        "◆",  clrBlue);

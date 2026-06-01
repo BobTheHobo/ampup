@@ -50,6 +50,8 @@ public static class SignalRgbEffectCatalog
             if (string.IsNullOrWhiteSpace(name)) continue;
 
             name = name.Trim();
+            if (string.Equals(name, "rule", StringComparison.Ordinal))
+                continue;
             if (IsUnresolvedHashName(name, id)) continue;
 
             effects[name] = new SignalRgbEffectInfo(name, id, ResolveEffectImageUrl(id, name));

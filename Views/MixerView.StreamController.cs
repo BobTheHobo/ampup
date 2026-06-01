@@ -391,7 +391,12 @@ public partial class MixerView
 
         if (!string.IsNullOrEmpty(picker.SelectedSubTag))
         {
-            if (target is "output_device" or "input_device")
+            if (HATargetDomains.ContainsKey(target))
+            {
+                var entity = _haEntities.FirstOrDefault(e => e.EntityId == picker.SelectedSubTag);
+                display.Text = entity?.FriendlyName ?? picker.SelectedSubTag;
+            }
+            else if (target is "output_device" or "input_device")
             {
                 var device = _audioDevices.FirstOrDefault(d => d.Id == picker.SelectedSubTag);
                 display.Text = device.Name ?? picker.SelectedSubTag;
@@ -416,10 +421,28 @@ public partial class MixerView
         var picker = _scTargetPickers[idx];
         var target = GetSelectedTarget(picker);
 
-        if (target is "output_device" or "input_device" && !string.IsNullOrEmpty(picker.SelectedSubTag))
+        if (HATargetDomains.ContainsKey(target))
+        {
+            var entityId = picker.SelectedSubTag ?? "";
+            knob.Target = !string.IsNullOrEmpty(entityId) ? $"{target}:{entityId}" : target;
+            knob.DeviceId = "";
+        }
+        else if (target is "output_device" or "input_device" && !string.IsNullOrEmpty(picker.SelectedSubTag))
         {
             knob.Target = target;
             knob.DeviceId = picker.SelectedSubTag;
+        }
+        else if (target == "monitor")
+        {
+            var tags = picker.SelectedSubTags;
+            knob.Target = target;
+            knob.DeviceId = tags.Count > 0 ? string.Join(";", tags) : "";
+        }
+        else if (target == "govee")
+        {
+            var deviceIp = picker.SelectedSubTag ?? "";
+            knob.Target = !string.IsNullOrEmpty(deviceIp) ? $"govee:{deviceIp}" : "govee";
+            knob.DeviceId = "";
         }
         else
         {
