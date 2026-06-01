@@ -3606,6 +3606,12 @@ public partial class ButtonsView
     {
         if (_scPathBox == null || _scActionPicker == null) return;
         var action = GetComboActionValue(_scActionPicker);
+        if (IsColorPathAction(action))
+        {
+            PickColorIntoPathBox(_scPathBox);
+            return;
+        }
+
         if (action == "launch_exe")
         {
             var dialog = new OpenFileDialog

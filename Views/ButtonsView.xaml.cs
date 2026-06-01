@@ -773,7 +773,7 @@ public partial class ButtonsView : UserControl
             _tapBrowseButtons[i] = browseBtn;
             _tapPickButtons[i] = pickBtn;
             _tapAppChips[i] = appChip;
-            browseBtn.Click += (_, _) => BrowseForFile(pathBox, appChip);
+            browseBtn.Click += (_, _) => BrowseForFileOrColor(pathBox, appChip, GetComboActionValue(_tapCombos[idx]));
             pickBtn.Click += (_, _) => ShowProcessPicker(pickBtn, pathBox, GetComboActionValue(_tapCombos[idx]));
             appChip.MouseLeftButtonDown += (_, _) => OnAppChipClick(pathBox, appChip);
             tapSection.Children.Add(pathPanel);
@@ -838,7 +838,7 @@ public partial class ButtonsView : UserControl
             _dblBrowseButtons[i] = dblBrowseBtn;
             _dblPickButtons[i] = dblPickBtn;
             _dblAppChips[i] = dblAppChip;
-            dblBrowseBtn.Click += (_, _) => BrowseForFile(dblPathBox, dblAppChip);
+            dblBrowseBtn.Click += (_, _) => BrowseForFileOrColor(dblPathBox, dblAppChip, GetComboActionValue(_dblCombos[idx]));
             dblPickBtn.Click += (_, _) => ShowProcessPicker(dblPickBtn, dblPathBox, GetComboActionValue(_dblCombos[idx]));
             dblAppChip.MouseLeftButtonDown += (_, _) => OnAppChipClick(dblPathBox, dblAppChip);
             dblSection.Children.Add(dblPathPanel);
@@ -913,7 +913,7 @@ public partial class ButtonsView : UserControl
             _holdBrowseButtons[i] = holdBrowseBtn;
             _holdPickButtons[i] = holdPickBtn;
             _holdAppChips[i] = holdAppChip;
-            holdBrowseBtn.Click += (_, _) => BrowseForFile(holdPathBox, holdAppChip);
+            holdBrowseBtn.Click += (_, _) => BrowseForFileOrColor(holdPathBox, holdAppChip, GetComboActionValue(_holdCombos[idx]));
             holdPickBtn.Click += (_, _) => ShowProcessPicker(holdPickBtn, holdPathBox, GetComboActionValue(_holdCombos[idx]));
             holdAppChip.MouseLeftButtonDown += (_, _) => OnAppChipClick(holdPathBox, holdAppChip);
             holdSection.Children.Add(holdPathPanel);
@@ -1043,6 +1043,16 @@ public partial class ButtonsView : UserControl
     private static bool UsesLinkedKnob(string action) =>
         action is "mute_app_group" or "add_active_app_to_group";
 
+    private static bool IsColorPathAction(string action) =>
+        action is "ha_color" or "govee_color";
+
+    private static void SetBrowseButtonMode(Button browseBtn, bool isColorPicker)
+    {
+        if (browseBtn.Content is string)
+            browseBtn.Content = isColorPicker ? "Pick Color" : "Browse";
+        browseBtn.ToolTip = isColorPicker ? "Pick color" : "Browse for file";
+    }
+
     private void ApplyPathLabelAndButtons(TextBlock label, TextBox? box, Button browseBtn, Button pickBtn, string action, System.Windows.Controls.Border? chip = null)
     {
         void SetPlaceholderText(string placeholder)
@@ -1064,6 +1074,8 @@ public partial class ButtonsView : UserControl
             inputBorder.Visibility = showChip ? Visibility.Collapsed : Visibility.Visible;
         if (showChip && box != null)
             UpdateAppChipDisplay(chip!, GetTextBoxValue(box));
+
+        SetBrowseButtonMode(browseBtn, IsColorPathAction(action));
 
         switch (action)
         {
@@ -1099,14 +1111,14 @@ public partial class ButtonsView : UserControl
                 label.Text = "HEX COLOR";
                 SetPlaceholderText("Optional hex color, e.g. FF0080");
                 if (box != null) box.ToolTip = "Hex color to set (e.g. FF0080 for pink, 00FF00 for green)";
-                browseBtn.Visibility = Visibility.Collapsed;
+                browseBtn.Visibility = Visibility.Visible;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             case "govee_color":
                 label.Text = "HEX COLOR";
                 SetPlaceholderText("FF0080");
                 if (box != null) box.ToolTip = "Hex color to set (e.g. FF0080 for pink, 00FF00 for green)";
-                browseBtn.Visibility = Visibility.Collapsed;
+                browseBtn.Visibility = Visibility.Visible;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;
             case "obs_scene":
@@ -1921,6 +1933,41 @@ public partial class ButtonsView : UserControl
             targetBox.Text = dlg.FileName;
             targetBox.Foreground = FindBrush("TextPrimaryBrush");
             if (chip != null) UpdateAppChipDisplay(chip, dlg.FileName);
+            QueueSave();
+        }
+    }
+
+    private void BrowseForFileOrColor(TextBox targetBox, System.Windows.Controls.Border? chip, string action)
+    {
+        if (IsColorPathAction(action))
+        {
+            PickColorIntoPathBox(targetBox);
+            return;
+        }
+
+        BrowseForFile(targetBox, chip);
+    }
+
+    private void PickColorIntoPathBox(TextBox targetBox)
+    {
+        var initial = ThemeManager.Accent;
+        var current = GetTextBoxValue(targetBox).Trim();
+        if (!string.IsNullOrEmpty(current))
+        {
+            try
+            {
+                initial = (Color)ColorConverter.ConvertFromString(current.StartsWith("#") ? current : $"#{current}");
+            }
+            catch
+            {
+                // Keep the accent color as a friendly default when the box has partial or invalid input.
+            }
+        }
+
+        var dialog = new ColorPickerDialog(initial) { Owner = Window.GetWindow(this) };
+        if (dialog.ShowDialog() == true)
+        {
+            SetTextBoxValue(targetBox, $"{dialog.SelectedColor.R:X2}{dialog.SelectedColor.G:X2}{dialog.SelectedColor.B:X2}");
             QueueSave();
         }
     }
