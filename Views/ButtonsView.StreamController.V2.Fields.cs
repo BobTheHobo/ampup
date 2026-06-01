@@ -443,7 +443,7 @@ public partial class ButtonsView
         "open_url"       => "URL",
         "sc_go_to_page"  => "PAGE NUMBER",
         "ha_service"     => "SERVICE CALL",
-        "ha_color"       => "ENTITY / COLOR",
+        "ha_color"       => "COLOR",
         "govee_color"    => "DEVICE / COLOR",
         "obs_scene"      => "OBS SCENE",
         "signalrgb_effect" => "SIGNALRGB EFFECT",

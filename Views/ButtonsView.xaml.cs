@@ -402,8 +402,8 @@ public partial class ButtonsView : UserControl
     private static string ExtractPathBoxValue(string action, string path)
     {
         // For ha_color, path is "entity_id|hexcolor" — only show hex in path box.
-        if (action == "ha_color" && path.Contains('|'))
-            return path.Split('|', 2)[1];
+        if (action == "ha_color")
+            return path.Contains('|') ? path.Split('|', 2)[1] : "";
         // For govee_color, path is "ip|hexcolor" — only show hex in path box
         if (action == "govee_color" && path.Contains('|'))
             return path.Split('|', 2)[1];
