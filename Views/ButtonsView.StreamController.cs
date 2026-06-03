@@ -74,6 +74,9 @@ public partial class ButtonsView
     private ListPicker? _scDevicePicker;
     private StackPanel? _scHaPanel;
     private ListPicker? _scHaPicker;
+    private StackPanel? _scHaColorTempPanel;
+    private StyledSlider? _scHaColorTempSlider;
+    private TextBlock? _scHaColorTempLabel;
     private StackPanel? _scGoveePanel;
     private ListPicker? _scGoveePicker;
     private StackPanel? _scRoomEffectPanel;
@@ -114,7 +117,7 @@ public partial class ButtonsView
     private static readonly HashSet<string> MultiActionStepPathActions = new()
     {
         "launch_exe", "close_program", "mute_program", "open_url", "sc_go_to_page",
-        "ha_service", "ha_color", "govee_color", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus",
+        "ha_service", "ha_color", "ha_color_temp", "govee_color", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus",
         "signalrgb_effect", "signalrgb_effect_cycle"
     };
 
@@ -1358,9 +1361,9 @@ public partial class ButtonsView
             if (btn == null) return;
 
             var action = GetGestureAction(btn);
-            if (action is not ("ha_toggle" or "ha_scene" or "ha_color"))
+            if (action is not ("ha_toggle" or "ha_scene" or "ha_color" or "ha_color_temp"))
                 action = _v2ActionPicker?.SelectedValue ?? GetComboActionValue(_scActionPicker!);
-            if (action is not ("ha_toggle" or "ha_scene" or "ha_color"))
+            if (action is not ("ha_toggle" or "ha_scene" or "ha_color" or "ha_color_temp"))
                 action = "ha_toggle";
 
             SetGestureAction(btn, action);
@@ -1368,6 +1371,11 @@ public partial class ButtonsView
             {
                 var existingHex = GetGesturePath(btn).Contains('|') ? GetGesturePath(btn).Split('|', 2)[1] : "";
                 SetGesturePath(btn, string.IsNullOrEmpty(existingHex) ? entityId : $"{entityId}|{existingHex}");
+            }
+            else if (action == "ha_color_temp")
+            {
+                int kelvin = GetSelectedHaKelvin();
+                SetGesturePath(btn, $"{entityId}|temp:{kelvin}");
             }
             else
             {
@@ -1386,6 +1394,31 @@ public partial class ButtonsView
             RefreshV2LeftPanel();
         };
         panel.Children.Add(picker);
+
+        _scHaColorTempPanel = new StackPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
+        _scHaColorTempLabel = MakeEditorLabel("COLOR TEMPERATURE: 2700K");
+        _scHaColorTempPanel.Children.Add(_scHaColorTempLabel);
+        _scHaColorTempSlider = new StyledSlider
+        {
+            Minimum = 2000,
+            Maximum = 9000,
+            Value = 2700,
+            Step = 100,
+            LabelFormat = "F0",
+            Suffix = "K",
+            Height = 28,
+            ToolTip = "White color temperature in Kelvin",
+        };
+        _scHaColorTempSlider.ValueChanged += (_, _) =>
+        {
+            if (_scHaColorTempLabel != null)
+                _scHaColorTempLabel.Text = $"COLOR TEMPERATURE: {GetSelectedHaKelvin()}K";
+            if (_loading || _config == null) return;
+            SaveSelectedHaColorTemperature();
+        };
+        _scHaColorTempPanel.Children.Add(_scHaColorTempSlider);
+        panel.Children.Add(_scHaColorTempPanel);
+
         return (panel, picker);
     }
 
@@ -1405,11 +1438,43 @@ public partial class ButtonsView
                 {
                     _haEntityRefreshInFlight = false;
                     var currentAction = _v2ActionPicker?.SelectedValue ?? GetComboActionValue(_scActionPicker!);
-                    if (currentAction is "ha_toggle" or "ha_scene")
+                    if (currentAction is "ha_toggle" or "ha_scene" or "ha_color" or "ha_color_temp")
                         RefreshHaPickerItems(currentAction);
                 });
             });
         }
+    }
+
+    private int GetSelectedHaKelvin()
+        => _scHaColorTempSlider == null ? 2700 : Math.Clamp((int)Math.Round(_scHaColorTempSlider.Value / 100.0) * 100, 2000, 9000);
+
+    private static int ExtractHaKelvin(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !path.Contains('|')) return 2700;
+        var raw = path.Split('|', 2)[1].Trim();
+        if (raw.StartsWith("temp:", StringComparison.OrdinalIgnoreCase))
+            raw = raw.Substring(5);
+        return int.TryParse(raw, out int kelvin) ? Math.Clamp(kelvin, 2000, 9000) : 2700;
+    }
+
+    private void SaveSelectedHaColorTemperature()
+    {
+        if (_config == null || _scHaPicker == null) return;
+        var list = GetOwningButtonList();
+        var btn = list.FirstOrDefault(b => b.Idx == _scSelectedButtonIdx);
+        if (btn == null || GetGestureAction(btn) != "ha_color_temp") return;
+
+        var entityId = _scHaPicker.SelectedTag as string;
+        if (string.IsNullOrWhiteSpace(entityId))
+        {
+            var existing = GetGesturePath(btn);
+            entityId = existing.Contains('|') ? existing.Split('|', 2)[0] : existing;
+        }
+
+        if (string.IsNullOrWhiteSpace(entityId)) return;
+        SetGesturePath(btn, $"{entityId}|temp:{GetSelectedHaKelvin()}");
+        QueueSave();
+        RefreshV2LeftPanel();
     }
 
     /// <summary>
@@ -2015,7 +2080,7 @@ public partial class ButtonsView
 
     // Actions that require a path textbox inside Toggle A/B (same set as main picker)
     private static bool ToggleSubActionNeedsPath(string action) =>
-        (PathActions.Contains(action) && action != "signalrgb_effect") || action is "ha_service" or "ha_color" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
+        (PathActions.Contains(action) && action != "signalrgb_effect") || action is "ha_service" or "ha_color" or "ha_color_temp" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
 
     private ActionPicker MakeFilteredActionCombo(HashSet<string> blocklist)
     {
@@ -2161,6 +2226,7 @@ public partial class ButtonsView
         "open_url" => "URL",
         "ha_service" => "SERVICE CALL",
         "ha_color" => "HEX COLOR",
+        "ha_color_temp" => "KELVIN",
         "govee_color" => "HEX COLOR",
         "obs_scene" => "SCENE NAME",
         "signalrgb_effect" => "EFFECT NAME",
@@ -2277,7 +2343,7 @@ public partial class ButtonsView
         // then fall back to root — that way an LCD click on idx 106 inside
         // "Room Effects" loads the folder's Fire key, while a Home-level
         // side-button click still loads the root binding.
-        var buttonList = InFolderContext ? GetActiveN3ButtonList() : _config.N3.Buttons;
+        var buttonList = GetOwningButtonList();
         var button = buttonList.FirstOrDefault(b => b.Idx == _scSelectedButtonIdx)
                      ?? _config.N3.Buttons.FirstOrDefault(b => b.Idx == _scSelectedButtonIdx)
                      ?? new ButtonConfig { Idx = _scSelectedButtonIdx };
@@ -2307,9 +2373,10 @@ public partial class ButtonsView
         SelectGroupSubTag(_scActionPicker, gAction, gPath);
         SelectGoveeSubTag(_scActionPicker, gAction, gPath);
 
-        string? pendingHaEntity = (gAction is "ha_toggle" or "ha_scene" or "ha_color" && !string.IsNullOrEmpty(gPath))
+        string? pendingHaEntity = (gAction is "ha_toggle" or "ha_scene" or "ha_color" or "ha_color_temp" && !string.IsNullOrEmpty(gPath))
             ? (gPath.Contains('|') ? gPath.Split('|', 2)[0] : gPath)
             : null;
+        int pendingHaKelvin = gAction == "ha_color_temp" ? ExtractHaKelvin(gPath) : 2700;
 
         // Govee picker selection happens AFTER UpdateStreamControllerActionVisibility
         // below — that method calls RefreshGoveePickerItems which clears + refills
@@ -2478,6 +2545,21 @@ public partial class ButtonsView
             }
             _scHaPicker.SelectedIndex = foundIdx;
         }
+        if (_scHaColorTempSlider != null)
+        {
+            bool prevLoading = _loading;
+            _loading = true;
+            try
+            {
+                _scHaColorTempSlider.Value = pendingHaKelvin;
+                if (_scHaColorTempLabel != null)
+                    _scHaColorTempLabel.Text = $"COLOR TEMPERATURE: {pendingHaKelvin}K";
+            }
+            finally
+            {
+                _loading = prevLoading;
+            }
+        }
 
         if (_scRoomEffectPicker != null && pendingRoomEffect != null)
         {
@@ -2517,7 +2599,7 @@ public partial class ButtonsView
 
         var action = GetComboActionValue(_scActionPicker);
         bool needsPath = (PathActions.Contains(action) && action is not "signalrgb_effect" and not "signalrgb_effect_cycle")
-            || action is "ha_service" or "ha_color" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
+            || action is "ha_service" or "ha_color" or "ha_color_temp" or "govee_color" or "obs_scene" or "obs_mute" or "vm_mute_strip" or "vm_mute_bus";
         _scPathPanel.Visibility = needsPath ? Visibility.Visible : Visibility.Collapsed;
         _scMacroPanel.Visibility = action == "macro" ? Visibility.Visible : Visibility.Collapsed;
         if (_scTextSnippetPanel != null)
@@ -2527,9 +2609,11 @@ public partial class ButtonsView
         _scDevicePanel.Visibility = action is "select_output" or "select_input" or "mute_device" ? Visibility.Visible : Visibility.Collapsed;
         if (_scHaPanel != null)
         {
-            bool showHa = action is "ha_toggle" or "ha_scene" or "ha_color";
+            bool showHa = action is "ha_toggle" or "ha_scene" or "ha_color" or "ha_color_temp";
             _scHaPanel.Visibility = showHa ? Visibility.Visible : Visibility.Collapsed;
             if (showHa) RefreshHaPickerItems(action);
+            if (_scHaColorTempPanel != null)
+                _scHaColorTempPanel.Visibility = action == "ha_color_temp" ? Visibility.Visible : Visibility.Collapsed;
         }
         if (_scGoveePanel != null)
         {
@@ -2648,7 +2732,7 @@ public partial class ButtonsView
                 SetGesturePath(button, goveeIp);
             }
         }
-        else if (uiAction is "ha_toggle" or "ha_scene" or "ha_color"
+        else if (uiAction is "ha_toggle" or "ha_scene" or "ha_color" or "ha_color_temp"
                  && _scHaPicker != null
                  && _scHaPicker.SelectedTag is string haEntityId && !string.IsNullOrEmpty(haEntityId))
         {
@@ -2657,6 +2741,10 @@ public partial class ButtonsView
                 var current = GetGesturePath(button);
                 var existingHex = current.Contains('|') ? current.Split('|', 2)[1] : GetTextBoxValue(_scPathBox);
                 SetGesturePath(button, string.IsNullOrEmpty(existingHex) ? haEntityId : $"{haEntityId}|{existingHex}");
+            }
+            else if (uiAction == "ha_color_temp")
+            {
+                SetGesturePath(button, $"{haEntityId}|temp:{GetSelectedHaKelvin()}");
             }
             else
             {
@@ -3941,6 +4029,7 @@ public partial class ButtonsView
                 "sc_go_to_page" => "PAGE NUMBER",
                 "ha_service" => "ENTITY ID",
                 "ha_color" => "ENTITY|HEX",
+                "ha_color_temp" => "ENTITY|KELVIN",
                 "govee_color" => "DEVICE IP / NAME",
                 "obs_scene" => "SCENE NAME",
                 "signalrgb_effect" => "EFFECT NAME",

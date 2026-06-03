@@ -246,6 +246,16 @@ public class HAIntegration : IDisposable
         });
     }
 
+    public async Task SetLightColorTemperatureAsync(string entityId, int kelvin, int brightness = 255)
+    {
+        await CallServiceInternalAsync("light", "turn_on", new
+        {
+            entity_id = entityId,
+            color_temp_kelvin = Math.Clamp(kelvin, 2000, 9000),
+            brightness = Math.Clamp(brightness, 1, 255),
+        });
+    }
+
     public async Task CallServiceAsync(string domain, string service, string entityId)
     {
         await CallServiceInternalAsync(domain, service, new

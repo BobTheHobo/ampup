@@ -27,7 +27,7 @@ public class BindingsView : UserControl
         { "mute_device", "🔇" },
         { "power_sleep", "😴" }, { "power_lock", "🔒" }, { "power_off", "⏻" },
         { "power_restart", "🔄" }, { "power_logoff", "🚪" }, { "power_hibernate", "❄" },
-        { "ha_toggle", "⚡" }, { "ha_scene", "🎬" }, { "ha_color", "◉" }, { "ha_service", "⚙" },
+        { "ha_toggle", "⚡" }, { "ha_scene", "🎬" }, { "ha_color", "◉" }, { "ha_color_temp", "●" }, { "ha_service", "⚙" },
         { "group_toggle", "▣" },
         { "corsair_toggle", "✦" },
         { "vm_mute_strip", "🔇" }, { "vm_mute_bus", "🔇" },
@@ -63,6 +63,7 @@ public class BindingsView : UserControl
         { "ha_toggle",          Color.FromRgb(0x26, 0xC6, 0xDA) },
         { "ha_scene",           Color.FromRgb(0xFF, 0xA7, 0x26) },
         { "ha_color",           Color.FromRgb(0xE8, 0x6F, 0xFF) },
+        { "ha_color_temp",      Color.FromRgb(0xFF, 0xD6, 0x8A) },
         { "ha_service",         Color.FromRgb(0xAB, 0x47, 0xBC) },
         { "group_toggle",      Color.FromRgb(0x69, 0xF0, 0xAE) },
         { "corsair_toggle",     Color.FromRgb(0xFF, 0xD5, 0x4F) },
@@ -83,7 +84,7 @@ public class BindingsView : UserControl
         { "cycle_brightness", "Brightness" },
         { "power_sleep", "Sleep" }, { "power_lock", "Lock" }, { "power_off", "Off" },
         { "power_restart", "Restart" }, { "power_logoff", "Logoff" }, { "power_hibernate", "Hibernate" },
-        { "ha_toggle", "HA Toggle" }, { "ha_scene", "HA Scene" }, { "ha_color", "HA Color" }, { "ha_service", "HA Service" },
+        { "ha_toggle", "HA Toggle" }, { "ha_scene", "HA Scene" }, { "ha_color", "HA Color" }, { "ha_color_temp", "HA Temp" }, { "ha_service", "HA Service" },
         { "corsair_toggle", "iCUE Toggle" },
         { "vm_mute_strip", "VM Mute Strip" }, { "vm_mute_bus", "VM Mute Bus" },
     };
@@ -999,7 +1000,7 @@ public class BindingsView : UserControl
             "switch_profile" when !string.IsNullOrEmpty(profileName) => profileName,
             "mute_program" or "launch_exe" or "close_program" or "mute_active_window"
                 when !string.IsNullOrEmpty(path) => System.IO.Path.GetFileName(path),
-            "ha_toggle" or "ha_scene" or "ha_color" or "ha_service"
+            "ha_toggle" or "ha_scene" or "ha_color" or "ha_color_temp" or "ha_service"
                 when !string.IsNullOrEmpty(path) => path.Length > 20 ? path[..20] + "…" : path,
             "vm_mute_strip" when !string.IsNullOrEmpty(path) => $"Strip {path}",
             "vm_mute_bus" when !string.IsNullOrEmpty(path) => $"Bus {path}",

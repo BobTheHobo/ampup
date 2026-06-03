@@ -446,6 +446,19 @@ public class GridPicker : Border
         RebuildPopupItems();
     }
 
+    public void RefreshOpenSubMenu()
+    {
+        if (_activeSubParentTag is not string parentTag
+            || !_subMenuProviders.TryGetValue(parentTag, out var provider))
+            return;
+
+        var items = provider();
+        if (items.Count == 0) return;
+
+        _activeSubItems = items;
+        RebuildSubItems();
+    }
+
     public int SelectedIndex
     {
         get => _selectedIndex;

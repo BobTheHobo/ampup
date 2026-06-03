@@ -180,7 +180,7 @@ public partial class ButtonsView
         if (string.IsNullOrEmpty(action)) action = GetComboActionValue(_scActionPicker);
 
         bool needsPath = (PathActions.Contains(action) && action is not "signalrgb_effect" and not "signalrgb_effect_cycle")
-            || action is "ha_service" or "ha_color" or "govee_color" or "obs_scene" or "obs_mute"
+            || action is "ha_service" or "ha_color" or "ha_color_temp" or "govee_color" or "obs_scene" or "obs_mute"
             or "vm_mute_strip" or "vm_mute_bus";
 
         SetCardVisible(_v2PathCard, needsPath);
@@ -188,9 +188,11 @@ public partial class ButtonsView
         SetCardVisible(_v2TextSnippetCard, action == "type_text");
         SetCardVisible(_v2ScreenshotCard, action == "screenshot");
         SetCardVisible(_v2DeviceCard, action is "select_output" or "select_input" or "mute_device");
-        SetCardVisible(_v2HaCard, action is "ha_toggle" or "ha_scene" or "ha_color");
-        if (action is "ha_toggle" or "ha_scene" or "ha_color")
+        SetCardVisible(_v2HaCard, action is "ha_toggle" or "ha_scene" or "ha_color" or "ha_color_temp");
+        if (action is "ha_toggle" or "ha_scene" or "ha_color" or "ha_color_temp")
             RefreshHaPickerItems(action);
+        if (_scHaColorTempPanel != null)
+            _scHaColorTempPanel.Visibility = action == "ha_color_temp" ? Visibility.Visible : Visibility.Collapsed;
         // govee_white_toggle used to pick a single device but is now room-wide,
         // so it no longer shows the device picker card.
         SetCardVisible(_v2GoveeCard, action is "govee_toggle" or "govee_color");
@@ -444,6 +446,7 @@ public partial class ButtonsView
         "sc_go_to_page"  => "PAGE NUMBER",
         "ha_service"     => "SERVICE CALL",
         "ha_color"       => "COLOR",
+        "ha_color_temp"  => "COLOR TEMPERATURE",
         "govee_color"    => "DEVICE / COLOR",
         "obs_scene"      => "OBS SCENE",
         "signalrgb_effect" => "SIGNALRGB EFFECT",

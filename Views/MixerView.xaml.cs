@@ -110,6 +110,7 @@ public partial class MixerView : UserControl
     // HA entities cache
     private List<HAEntity> _haEntities = new();
     private HAIntegration? _ha;
+    private bool _haEntityRefreshInFlight;
 
     public MixerView()
     {
@@ -407,9 +408,11 @@ public partial class MixerView : UserControl
     private async Task FetchHAEntitiesAsync()
     {
         if (_ha == null) return;
+        if (_haEntityRefreshInFlight) return;
 
         try
         {
+            _haEntityRefreshInFlight = true;
             var connected = await _ha.TestConnectionAsync();
             if (!connected) return;
 
@@ -428,12 +431,26 @@ public partial class MixerView : UserControl
                         SelectTarget(_targetPickers[i], knob.Target);
                 }
 
-                // SC mixer panel removed — no target pickers to update
+                for (int i = 0; i < ScChannelCount; i++)
+                {
+                    var knob = _config.N3.Knobs.FirstOrDefault(k => k.Idx == i);
+                    if (knob == null) continue;
+                    var baseTarget = knob.Target.Contains(':') ? knob.Target.Split(':')[0] : knob.Target;
+                    if (HATargetDomains.ContainsKey(baseTarget))
+                        SelectTarget(_scTargetPickers[i], knob.Target);
+                }
+
+                foreach (var picker in _targetPickers.Concat(_scTargetPickers).Where(p => p != null))
+                    picker.RefreshOpenSubMenu();
             });
         }
         catch (Exception ex)
         {
             Logger.Log($"MixerView HA fetch: {ex.Message}");
+        }
+        finally
+        {
+            _haEntityRefreshInFlight = false;
         }
     }
 
@@ -870,7 +887,7 @@ public partial class MixerView : UserControl
         if (!HATargetDomains.TryGetValue(haTarget, out var domain))
             return new();
 
-        return _haEntities
+        var items = _haEntities
             .Where(e => e.Domain == domain)
             .OrderBy(e => e.FriendlyName)
             .Select(e =>
@@ -879,6 +896,11 @@ public partial class MixerView : UserControl
                 return new GridPicker.SubItem(e.FriendlyName, e.EntityId, icon, color);
             })
             .ToList();
+
+        if (items.Count == 0 && _ha != null && !_haEntityRefreshInFlight)
+            _ = FetchHAEntitiesAsync();
+
+        return items;
     }
 
     private List<GridPicker.SubItem> GetDeviceSubItems(bool isOutput)

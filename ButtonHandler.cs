@@ -271,6 +271,10 @@ public class ButtonHandler : IDisposable
                     if (_ha != null && !string.IsNullOrEmpty(path))
                         _ = SetHomeAssistantLightColorAsync(path);
                     break;
+                case "ha_color_temp":
+                    if (_ha != null && !string.IsNullOrEmpty(path))
+                        _ = SetHomeAssistantLightTemperatureAsync(path);
+                    break;
                 case "ha_service":
                     if (_ha != null && !string.IsNullOrEmpty(path))
                     {
@@ -938,6 +942,29 @@ public class ButtonHandler : IDisposable
     }
 
     // ── Mute specific audio device by DeviceId ───────────────────────
+
+    private async Task SetHomeAssistantLightTemperatureAsync(string path)
+    {
+        try
+        {
+            var parts = path.Split('|', 2);
+            if (parts.Length != 2) return;
+
+            var entityId = parts[0].Trim();
+            var rawKelvin = parts[1].Trim();
+            if (rawKelvin.StartsWith("temp:", StringComparison.OrdinalIgnoreCase))
+                rawKelvin = rawKelvin.Substring(5);
+
+            if (string.IsNullOrWhiteSpace(entityId) || !int.TryParse(rawKelvin, out int kelvin))
+                return;
+
+            await _ha!.SetLightColorTemperatureAsync(entityId, kelvin);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"ha_color_temp error: {ex.Message}");
+        }
+    }
 
     private void MuteDevice(string deviceId)
     {

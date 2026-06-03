@@ -576,7 +576,7 @@ public partial class ButtonsView
         // Keeps the Integrations accordion scannable instead of showing 5+
         // rows for one service.
         var spotifyChildren = new[] { "spotify_play_pause", "spotify_next", "spotify_prev", "spotify_shuffle", "spotify_like" };
-        var haChildren      = new[] { "ha_toggle", "ha_scene", "ha_color", "ha_service" };
+        var haChildren      = new[] { "ha_toggle", "ha_scene", "ha_color", "ha_color_temp", "ha_service" };
         var goveeChildren   = new[] { "govee_toggle", "govee_color", "govee_white_toggle" };
         var foldedChildren = new HashSet<string>(spotifyChildren.Concat(haChildren).Concat(goveeChildren));
 

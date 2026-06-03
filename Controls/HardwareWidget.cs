@@ -438,7 +438,7 @@ namespace AmpUp.Controls
             { "cycle_profile", "Cycle Profiles" }, { "cycle_brightness", "Cycle Brightness" },
             { "power_sleep", "Sleep" }, { "power_lock", "Lock" }, { "power_off", "Shut Down" },
             { "power_restart", "Restart" }, { "power_logoff", "Log Off" }, { "power_hibernate", "Hibernate" },
-            { "ha_toggle", "HA Toggle" }, { "ha_scene", "HA Scene" }, { "ha_color", "HA Color" }, { "ha_service", "HA Service" },
+            { "ha_toggle", "HA Toggle" }, { "ha_scene", "HA Scene" }, { "ha_color", "HA Color" }, { "ha_color_temp", "HA Temp" }, { "ha_service", "HA Service" },
             { "govee_toggle", "Govee Toggle" }, { "govee_scene", "Govee Scene" },
         };
 
