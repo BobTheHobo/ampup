@@ -5203,7 +5203,10 @@ public partial class RoomView : UserControl
                         .ToArray();
                     _ = Task.Run(async () =>
                     {
+                        AmbienceSync.ResumeSync(ip);
                         await AmbienceSync.SendBrightnessAsync(ip, brightness);
+                        _sync?.SendSegmentFrame(ip, segmentColors);
+                        await Task.Delay(180);
                         _sync?.SendSegmentFrame(ip, segmentColors);
                     });
                     continue;
