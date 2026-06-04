@@ -1115,6 +1115,7 @@ public partial class RoomView : UserControl
             Minimum = 2000,
             Maximum = 9000,
             Value = _roomTemperatureKelvin,
+            Step = 50,
             Height = 32,
             AccentColor = accent,
             ShowLabel = false,
@@ -1148,11 +1149,15 @@ public partial class RoomView : UserControl
         var presets = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
         foreach (var (label, kelvin) in new[]
         {
+            ("CANDLE", 2200),
             ("WARM", 2700),
             ("SOFT", 3000),
             ("NEUTRAL", 3500),
+            ("BRIGHT", 4000),
             ("DAYLIGHT", 5000),
+            ("STUDIO", 5600),
             ("COOL", 6500),
+            ("CRISP", 7500),
         })
         {
             presets.Children.Add(MakeTemperaturePreset(label, kelvin, slider));
@@ -1166,6 +1171,7 @@ public partial class RoomView : UserControl
             preview.Background = new SolidColorBrush(rgb);
             preview.BorderBrush = new SolidColorBrush(Color.FromArgb(0x88, rgb.R, rgb.G, rgb.B));
             valueLabel.Text = $"{_roomTemperatureKelvin:N0}K";
+            UpdateTemperaturePresetSelection(presets);
             if (!_loading)
                 SendRoomTemperature(_roomTemperatureKelvin);
         }
@@ -1173,7 +1179,9 @@ public partial class RoomView : UserControl
         slider.ValueChanged += (_, _) =>
         {
             if (_loading) return;
-            ApplyTemperature((int)Math.Round(slider.Value / 50.0) * 50);
+            int snapped = (int)Math.Round(slider.Value / 50.0) * 50;
+            if (snapped == _roomTemperatureKelvin) return;
+            ApplyTemperature(snapped);
         };
 
         return panel;
@@ -1197,6 +1205,7 @@ public partial class RoomView : UserControl
                 : FindBrush("InputBorderBrush"),
             BorderThickness = new Thickness(1),
             ToolTip = $"{kelvin:N0}K",
+            Tag = kelvin,
         };
 
         var row = new StackPanel { Orientation = Orientation.Horizontal };
@@ -1220,6 +1229,32 @@ public partial class RoomView : UserControl
         pill.Child = row;
         pill.MouseLeftButtonUp += (_, _) => slider.Value = kelvin;
         return pill;
+    }
+
+    private void UpdateTemperaturePresetSelection(WrapPanel presets)
+    {
+        foreach (var child in presets.Children.OfType<Border>())
+        {
+            if (child.Tag is not int kelvin) continue;
+
+            var color = KelvinToRgb(kelvin);
+            bool active = Math.Abs(_roomTemperatureKelvin - kelvin) <= 100;
+            child.Background = active
+                ? new SolidColorBrush(Color.FromArgb(0x2F, color.R, color.G, color.B))
+                : FindBrush("CardBgBrush");
+            child.BorderBrush = active
+                ? new SolidColorBrush(Color.FromArgb(0xAA, color.R, color.G, color.B))
+                : FindBrush("InputBorderBrush");
+
+            if (child.Child is StackPanel rowPanel
+                && rowPanel.Children.Count > 1
+                && rowPanel.Children[1] is TextBlock labelBlock)
+            {
+                labelBlock.Foreground = active
+                    ? new SolidColorBrush(color)
+                    : FindBrush("TextSecBrush");
+            }
+        }
     }
 
     // ── LAYOUT TAB (room canvas, device placement, dimensions) ──────────
