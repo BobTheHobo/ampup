@@ -5,8 +5,8 @@
 <h1 align="center">Amp Up</h1>
 
 <p align="center">
-  <strong>A modern Windows control center for Turn Up mixers and the TreasLin / VSDinside N3 stream controller.</strong><br/>
-  Per-app audio, profiles, RGB lighting, room sync, tray mixing, macros, and stream-controller workflows.
+  <strong>A modern Windows control center for Turn Up mixers, SignalRGB, and the TreasLin / VSDinside N3 stream controller.</strong><br/>
+  Per-app audio, profiles, RGB lighting, room sync, SignalRGB bridge control, tray mixing, macros, and stream-controller workflows.
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@ The 1.0 beta also adds native support for the **TreasLin / VSDinside N3** stream
 
 ## Install
 
-1. Download **`AmpUp-Setup-1.0.7-beta.exe`** from [Releases](https://github.com/audioslayer/ampup/releases).
+1. Download **`AmpUp-Setup-1.0.9.2.exe`** from [Releases](https://github.com/audioslayer/ampup/releases).
 2. Run the installer.
 3. Launch Amp Up, then connect your Turn Up mixer or N3 controller.
 
@@ -44,6 +44,7 @@ The experimental macOS alpha has been discontinued and removed from the reposito
 |-|-|-|
 | **Turn Up USB Volume Mixer** | Stable | 5 knobs, 5 buttons, 15 RGB LEDs, profiles, per-app volume, lighting, macros, tray mixer |
 | **TreasLin / VSDinside N3 Stream Controller** | Beta | 6 LCD keys, 3 tap buttons, 3 rotary encoders with press, pages, spaces, icons, actions, sleep/wake |
+| **SignalRGB** | Beta bridge | Free local UDP bridge, Turn Up LED layout, effect actions, effect cycling, blackout/restore, profile sync |
 
 ### Turn Up Mixer
 
@@ -54,6 +55,12 @@ Amp Up speaks the Turn Up serial protocol directly over the CH343 USB-to-serial 
 Amp Up includes native beta support for the [TreasLin / VSDinside N3 stream controller](https://www.amazon.com/dp/B0FM3NP9ZB?ref=ppx_yo2ov_dt_b_fed_asin_title&th=1). The N3 has **6 visual LCD buttons, 3 tap buttons, and 3 rotary buttons**, making it a great compact companion surface for audio, macros, media, apps, and stream controls.
 
 N3 support is designed to be self-contained, with no long-term dependency on VSD Craft for day-to-day use.
+
+### SignalRGB
+
+Amp Up can bridge SignalRGB into the Turn Up LEDs without letting SignalRGB steal the Turn Up serial port. Enable the bridge in **Settings -> Integrations -> SignalRGB**, install/update the bundled SignalRGB plugin, then let SignalRGB render effects into Amp Up over localhost UDP.
+
+SignalRGB actions are available for Turn Up buttons and N3 keys, including apply effect, cycle effects, blackout, restore, and profile-to-effect/layout sync.
 
 ## Highlights
 
@@ -95,6 +102,8 @@ N3 support is designed to be self-contained, with no long-term dependency on VSD
 - Corsair iCUE room effects, device sync, and fan/pump controls.
 - Room layout canvas with device placement.
 - Music Reactive, VU Fill, Screen Sync, and Game Mode.
+- Temperature mode for normal white room lighting, with warm amber presets through crisp daylight/cool options.
+- Stronger RGBIC segment handling for Govee wall lights, rope lights, and Flow Plus light bars.
 - Per-device sync toggles so global actions respect devices you intentionally excluded.
 
 ### Tray Mixer
@@ -108,7 +117,7 @@ N3 support is designed to be self-contained, with no long-term dependency on VSD
 
 - Lower idle CPU and memory pressure from reduced polling and smarter timers.
 - Safer shutdown and update flow.
-- More resilient Govee, Corsair, audio-session, OSD, and N3 disconnect handling.
+- More resilient Govee, Corsair, SignalRGB, Home Assistant, audio-session, OSD, and N3 disconnect handling.
 - Start with Windows is enabled by default for new installs and can be changed in Settings.
 - Manual installer packaging and GitHub release notes are ready for beta distribution.
 
@@ -134,7 +143,7 @@ Amp Up is a .NET 8 WPF application using WPF-UI, NAudio, Newtonsoft.Json, System
 - [x] Per-app Windows audio control
 - [x] Profiles, buttons, actions, macros, and Quick Wheel
 - [x] Turn Up RGB effects and audio-reactive lighting
-- [x] Govee, Corsair iCUE, OBS, VoiceMeeter, and Home Assistant integrations
+- [x] Govee, Corsair iCUE, SignalRGB, OBS, VoiceMeeter, and Home Assistant integrations
 - [x] TreasLin / VSDinside N3 native beta support
 - [x] Tray mixer and release-ready Windows installer
 - [x] Retire unsupported macOS alpha port
@@ -148,6 +157,9 @@ Amp Up is a .NET 8 WPF application using WPF-UI, NAudio, Newtonsoft.Json, System
 
 | Version | Highlights |
 |-|-|
+| **v1.0.9.2** | SignalRGB bridge/actions/profile sync, expanded N3 integration actions, Home Assistant action fixes, Room Temperature mode, warmer Govee temperature presets, and RGBIC segment reliability fixes. |
+| **v1.0.6-beta** | SignalRGB beta work, N3 sensitivity refinements, and integration polish. |
+| **v1.0.5-beta** | Stream-controller and integration reliability pass. |
 | **v1.0.4-beta** | Govee hotfix: added Restore Removed for hidden devices and clarified scan status when removed devices are filtered out. |
 | **v1.0.3-beta** | Reliability patch: retired the unsupported macOS alpha, hardened Govee startup power handling, and added recovery/telemetry for stalled Turn Up and N3 hardware input. |
 | **v1.0.2-beta** | Quick lighting patch: added **Dev+Pos** / `DevicePositionFill` mode and fixed position-fill LEDs briefly showing 100% on startup when a saved knob position is zero. |

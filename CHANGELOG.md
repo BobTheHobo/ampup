@@ -10,6 +10,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.9.2] - 2026-06-04
+
+### Added
+- Added SignalRGB bridge support for driving Turn Up LEDs through a bundled local SignalRGB plugin.
+- Added SignalRGB button/N3 actions for applying effects, cycling effects, blackout, restore, and profile-to-effect/layout sync.
+- Added Room Temperature mode with a Kelvin slider and expanded warm-to-cool preset pills.
+
+### Changed
+- Tuned warm room-temperature colors to better match Govee-style amber/candle lighting.
+- Expanded N3 integration actions and effect/template helpers.
+
+### Fixed
+- Improved Govee RGBIC segment handling for wall lights, rope lights, and Flow Plus light bars in Temperature mode.
+- Fixed Home Assistant light color actions for stream-controller workflows.
+
+---
+
 ## [1.0.4-beta] - 2026-05-17
 
 ### Fixed
