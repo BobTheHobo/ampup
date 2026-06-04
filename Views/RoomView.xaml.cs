@@ -5250,6 +5250,24 @@ public partial class RoomView : UserControl
         });
         _roomRgb.OnFrameReady += OnRoomFrame;
         _roomRgb.SetOutput((_, _, _) => { }, () => true, 30);
+
+        var firstFrame = CreateSolidRoomFrame(color);
+        Logger.Log($"[Room] Temperature frame #{color.R:X2}{color.G:X2}{color.B:X2}; " +
+            $"LAN Govee: {string.Join(", ", _config?.Ambience.GoveeDevices.Where(d => !string.IsNullOrWhiteSpace(d.Ip)).Select(d => $"{d.Name}/{d.Sku}/{d.Ip}/segs={AmbienceSync.GetSegmentCount(d)}") ?? Array.Empty<string>())}");
+        OnRoomFrame(firstFrame);
+    }
+
+    private static byte[] CreateSolidRoomFrame(Color color)
+    {
+        var frame = new byte[45];
+        for (int i = 0; i < 15; i++)
+        {
+            int offset = i * 3;
+            frame[offset] = color.R;
+            frame[offset + 1] = color.G;
+            frame[offset + 2] = color.B;
+        }
+        return frame;
     }
 
     private static Color KelvinToRgb(int kelvin)
