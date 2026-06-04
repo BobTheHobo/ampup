@@ -5190,6 +5190,7 @@ public partial class RoomView : UserControl
             foreach (var dev in _config.Ambience.GoveeDevices)
             {
                 if (string.IsNullOrWhiteSpace(dev.Ip) || !dev.PoweredOn || !dev.SyncWithAmpUp) continue;
+                var deviceRgb = ApplyGoveeTemperatureCalibration(rgb, dev.Sku, _roomTemperatureKelvin);
                 bool inSegmentMode = AmbienceSync.GetSegmentCount(dev) > 0;
                 string ip = dev.Ip;
                 _ = Task.Run(async () =>
@@ -5200,7 +5201,7 @@ public partial class RoomView : UserControl
                         _sync?.ClearSegmentMode(ip);
                         await Task.Delay(120);
                     }
-                    await AmbienceSync.SendColorAsync(ip, rgb.R, rgb.G, rgb.B);
+                    await AmbienceSync.SendColorAsync(ip, deviceRgb.R, deviceRgb.G, deviceRgb.B);
                     await AmbienceSync.SendBrightnessAsync(ip, brightness);
                 });
             }
@@ -5256,6 +5257,31 @@ public partial class RoomView : UserControl
             (byte)Math.Clamp((int)Math.Round(red), 0, 255),
             (byte)Math.Clamp((int)Math.Round(green), 0, 255),
             (byte)Math.Clamp((int)Math.Round(blue), 0, 255));
+    }
+
+    private static Color ApplyGoveeTemperatureCalibration(Color color, string? sku, int kelvin)
+    {
+        var normalizedSku = sku?.Trim().ToUpperInvariant() ?? "";
+        var calibrated = normalizedSku switch
+        {
+            // RGBIC-only accents render warm whites more saturated than RGBWW/RGBICWW fixtures.
+            "H610A" or "H610B" => ScaleColor(color, 0.96, 1.03, 1.14),
+            "H61A0" => ScaleColor(color, 0.98, 1.02, 1.10),
+            _ => color,
+        };
+
+        if (kelvin >= 5000 && normalizedSku is "H610A" or "H610B" or "H61A0")
+            calibrated = ScaleColor(calibrated, 1.0, 1.0, 0.96);
+
+        return calibrated;
+    }
+
+    private static Color ScaleColor(Color color, double rScale, double gScale, double bScale)
+    {
+        return Color.FromRgb(
+            (byte)Math.Clamp((int)Math.Round(color.R * rScale), 0, 255),
+            (byte)Math.Clamp((int)Math.Round(color.G * gScale), 0, 255),
+            (byte)Math.Clamp((int)Math.Round(color.B * bScale), 0, 255));
     }
 
     // Saved state for game mode restore

@@ -1405,8 +1405,8 @@ public class AmbienceSync : IDisposable
         // Common Govee LAN-enabled models
         return sku.ToUpperInvariant() switch
         {
-            "H6056" => "Glide Wall Light",
-            "H6057" => "Glide Wall Light",
+            "H6056" => "Flow Plus Light Bars",
+            "H6057" => "Flow Plus Light Bars",
             "H6058" => "Glide Hexa Panels",
             "H6059" => "Glide Hexa Panels",
             "H6061" => "Glide Y Lights",
@@ -1434,7 +1434,7 @@ public class AmbienceSync : IDisposable
             "H6049" => "DreamView G1 Gaming Light",
             "H6199" => "LED Bulb",
             "H6003" => "Table Lamp",
-            "H6008" => "Table Lamp",
+            "H6008" => "RGBWW Smart Bulb",
             "H6052" => "Floor Lamp",
             "H6053" => "Floor Lamp",
             "H6054" => "Floor Lamp",
