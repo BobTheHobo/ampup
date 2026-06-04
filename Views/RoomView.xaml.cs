@@ -5191,8 +5191,24 @@ public partial class RoomView : UserControl
             {
                 if (string.IsNullOrWhiteSpace(dev.Ip) || !dev.PoweredOn || !dev.SyncWithAmpUp) continue;
                 var deviceRgb = ApplyGoveeTemperatureCalibration(rgb, dev.Sku, _roomTemperatureKelvin);
-                bool inSegmentMode = AmbienceSync.GetSegmentCount(dev) > 0;
+                int segmentCount = AmbienceSync.GetSegmentCount(dev);
+                bool useSegmentFrame = UsesTemperatureSegmentFrame(dev, segmentCount) && _sync != null;
+                bool inSegmentMode = segmentCount > 0;
                 string ip = dev.Ip;
+
+                if (useSegmentFrame)
+                {
+                    var segmentColors = Enumerable
+                        .Repeat((deviceRgb.R, deviceRgb.G, deviceRgb.B), segmentCount)
+                        .ToArray();
+                    _ = Task.Run(async () =>
+                    {
+                        await AmbienceSync.SendBrightnessAsync(ip, brightness);
+                        _sync?.SendSegmentFrame(ip, segmentColors);
+                    });
+                    continue;
+                }
+
                 _ = Task.Run(async () =>
                 {
                     if (inSegmentMode)
@@ -5274,6 +5290,12 @@ public partial class RoomView : UserControl
             calibrated = ScaleColor(calibrated, 1.0, 1.0, 0.96);
 
         return calibrated;
+    }
+
+    private static bool UsesTemperatureSegmentFrame(GoveeDeviceConfig dev, int segmentCount)
+    {
+        if (segmentCount <= 0 || !dev.UseSegmentProtocol) return false;
+        return dev.Sku?.Trim().ToUpperInvariant() is "H610A" or "H610B" or "H61A0";
     }
 
     private static Color ScaleColor(Color color, double rScale, double gScale, double bScale)
