@@ -67,6 +67,7 @@ public partial class RoomView : UserControl
     private string? _activePattern;
     private bool _roomPatternCorsairOnly;
     private DateTime _lastCloudRoomSend = DateTime.MinValue;
+    private int? _lastSentRoomTemperatureKelvin;
     private const string RoomTemperaturePatternId = "__temperature__";
 
     // Room layout
@@ -5162,9 +5163,14 @@ public partial class RoomView : UserControl
 
     private void SendRoomTemperature(int kelvin)
     {
+        _roomTemperatureKelvin = Math.Clamp(kelvin, 2000, 9000);
+        if (_activePattern == RoomTemperaturePatternId
+            && _lastSentRoomTemperatureKelvin == _roomTemperatureKelvin)
+            return;
+
         StopRoomPattern();
         _activePattern = RoomTemperaturePatternId;
-        _roomTemperatureKelvin = Math.Clamp(kelvin, 2000, 9000);
+        _lastSentRoomTemperatureKelvin = _roomTemperatureKelvin;
         int brightness = _config?.Ambience.BrightnessScale ?? 100;
         var rgb = KelvinToRgb(_roomTemperatureKelvin);
 
@@ -5194,20 +5200,9 @@ public partial class RoomView : UserControl
                         _sync?.ClearSegmentMode(ip);
                         await Task.Delay(120);
                     }
-                    await AmbienceSync.SendColorTempAsync(ip, _roomTemperatureKelvin);
+                    await AmbienceSync.SendColorAsync(ip, rgb.R, rgb.G, rgb.B);
                     await AmbienceSync.SendBrightnessAsync(ip, brightness);
                 });
-            }
-        }
-
-        if (_cloudApi != null)
-        {
-            foreach (var dev in _cloudDevices)
-            {
-                var devConfig = FindGoveeDeviceConfig(dev);
-                if (devConfig != null && !devConfig.SyncWithAmpUp) continue;
-                _ = SafeCloudCall(() => _cloudApi.ControlDeviceAsync(
-                    dev.Device, dev.Sku, GoveeCloudApi.SetColorTemp(_roomTemperatureKelvin)));
             }
         }
 
@@ -5645,6 +5640,7 @@ public partial class RoomView : UserControl
         }
         _activePattern = null;
         _roomPatternCorsairOnly = false;
+        _lastSentRoomTemperatureKelvin = null;
         App.Rgb?.SetScreenSyncColors(null); // restore Lights tab effect on Turn Up
     }
 
