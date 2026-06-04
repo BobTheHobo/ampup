@@ -5169,7 +5169,7 @@ public partial class RoomView : UserControl
             && _lastSentRoomTemperatureKelvin == _roomTemperatureKelvin)
         {
             int currentBrightness = _config?.Ambience.BrightnessScale ?? 100;
-            SendRgbicTemperatureFallback(KelvinToRgb(_roomTemperatureKelvin), currentBrightness, "same-temp");
+            SendRgbicTemperatureFallback(KelvinToRgb(_roomTemperatureKelvin), currentBrightness);
             return;
         }
 
@@ -5191,7 +5191,7 @@ public partial class RoomView : UserControl
         }
 
         StartRoomTemperatureFrameLoop(rgb);
-        SendRgbicTemperatureFallback(rgb, brightness, "temperature-start");
+        SendRgbicTemperatureFallback(rgb, brightness);
 
         if (_corsairSync?.IsAvailable == true && _config?.Corsair.Enabled == true)
             _ = _corsairSync.SetStaticColorAllAsync(rgb.R, rgb.G, rgb.B);
@@ -5257,12 +5257,10 @@ public partial class RoomView : UserControl
         _roomRgb.SetOutput((_, _, _) => { }, () => true, 30);
 
         var firstFrame = CreateSolidRoomFrame(color);
-        Logger.Log($"[Room] Temperature frame #{color.R:X2}{color.G:X2}{color.B:X2}; " +
-            $"LAN Govee: {string.Join(", ", _config?.Ambience.GoveeDevices.Where(d => !string.IsNullOrWhiteSpace(d.Ip)).Select(d => $"{d.Name}/{d.Sku}/{d.Ip}/segs={AmbienceSync.GetSegmentCount(d)}") ?? Array.Empty<string>())}");
         OnRoomFrame(firstFrame);
     }
 
-    private void SendRgbicTemperatureFallback(Color color, int brightness, string reason)
+    private void SendRgbicTemperatureFallback(Color color, int brightness)
     {
         if (_config?.Ambience.GoveeEnabled != true || _sync == null) return;
 
@@ -5282,27 +5280,19 @@ public partial class RoomView : UserControl
                 .Repeat((color.R, color.G, color.B), segmentCount)
                 .ToArray();
 
-            Logger.Log($"[Room] Temperature RGBIC fallback ({reason}) {dev.Name}/{dev.Sku}/{ip}: segs={segmentCount}, color=#{color.R:X2}{color.G:X2}{color.B:X2}");
             _ = Task.Run(async () =>
             {
-                try
-                {
-                    AmbienceSync.ResumeSync(ip);
-                    await AmbienceSync.DisableSegmentMode(ip);
-                    _sync.ClearSegmentTracking(ip);
-                    await Task.Delay(160);
-                    await AmbienceSync.SendColorAsync(ip, color.R, color.G, color.B);
-                    await AmbienceSync.SendBrightnessAsync(ip, brightness);
-                    await Task.Delay(260);
-                    _sync.SendSegmentFrame(ip, segmentColors);
-                    await Task.Delay(220);
-                    _sync.ClearSegmentTracking(ip);
-                    _sync.SendSegmentFrame(ip, segmentColors);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"[Room] Temperature RGBIC fallback failed for {dev.Name}/{dev.Sku}/{ip}: {ex.Message}");
-                }
+                AmbienceSync.ResumeSync(ip);
+                await AmbienceSync.DisableSegmentMode(ip);
+                _sync.ClearSegmentTracking(ip);
+                await Task.Delay(160);
+                await AmbienceSync.SendColorAsync(ip, color.R, color.G, color.B);
+                await AmbienceSync.SendBrightnessAsync(ip, brightness);
+                await Task.Delay(260);
+                _sync.SendSegmentFrame(ip, segmentColors);
+                await Task.Delay(220);
+                _sync.ClearSegmentTracking(ip);
+                _sync.SendSegmentFrame(ip, segmentColors);
             });
         }
     }
