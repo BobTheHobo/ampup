@@ -1238,6 +1238,13 @@ public class AmbienceSync : IDisposable
         _segmentKeepAliveTick.Clear();
     }
 
+    public void ClearSegmentTracking(string ip)
+    {
+        if (string.IsNullOrWhiteSpace(ip)) return;
+        _segmentEnabled.TryRemove(ip, out _);
+        _segmentKeepAliveTick.TryRemove(ip, out _);
+    }
+
     public static async Task DisableSegmentMode(string ip)
     {
         await SendSegmentEnable(ip, false);
