@@ -613,6 +613,7 @@ public class AmbienceConfig
     public string? RoomEffect { get; set; } = null; // null = not active
     public string RoomColor1 { get; set; } = "#00E676";
     public string RoomColor2 { get; set; } = "#FFFFFF";
+    public int RoomTemperatureKelvin { get; set; } = 3500;
     public int RoomEffectSpeed { get; set; } = 50;
 }
 

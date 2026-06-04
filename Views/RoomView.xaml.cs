@@ -67,6 +67,7 @@ public partial class RoomView : UserControl
     private string? _activePattern;
     private bool _roomPatternCorsairOnly;
     private DateTime _lastCloudRoomSend = DateTime.MinValue;
+    private const string RoomTemperaturePatternId = "__temperature__";
 
     // Room layout
     private AmpUp.Core.Engine.SpatialMapper? _spatialMapper;
@@ -148,6 +149,7 @@ public partial class RoomView : UserControl
             if (!string.IsNullOrEmpty(config.Ambience.RoomColor2))
                 _roomColor2 = (Color)ColorConverter.ConvertFromString(config.Ambience.RoomColor2);
             _roomEffectSpeed = config.Ambience.RoomEffectSpeed > 0 ? config.Ambience.RoomEffectSpeed : 50;
+            _roomTemperatureKelvin = Math.Clamp(config.Ambience.RoomTemperatureKelvin, 2000, 9000);
         }
         catch { }
 
@@ -791,8 +793,9 @@ public partial class RoomView : UserControl
         }
     }
 
-    // Tab index: 0=Favorites, 1=Static, 2=Animated, 3=Reactive, 4=Global Span
+    // Tab index: 0=Favorites, 1=Static, 2=Animated, 3=Reactive, 4=Global Span, 5=Temperature
     private int _effectCategory = 4; // default to Global Span
+    private const int TemperatureCategoryIndex = 5;
 
     /// <summary>
     /// Map our room-tab index (0=Favorites, 1=Static...4=Global) to the EffectPickerControl's
@@ -801,6 +804,7 @@ public partial class RoomView : UserControl
     private static int TabIndexToPickerCategory(int tabIdx)
     {
         if (tabIdx == 0) return Controls.EffectPickerControl.FavoritesCategoryIndex;
+        if (tabIdx == TemperatureCategoryIndex) return 0;
         return tabIdx - 1;
     }
 
@@ -852,8 +856,8 @@ public partial class RoomView : UserControl
         var categoryTabBar = new StackPanel { Orientation = Orientation.Horizontal };
         // Tab index → visible-category index in EffectPickerControl:
         //   0 → 4 (favorites), 1 → 0 (static), 2 → 1 (anim), 3 → 2 (react), 4 → 3 (global)
-        var categoryNames = new[] { "FAVORITES", "STATIC", "ANIMATED", "REACTIVE", "GLOBAL SPAN" };
-        var categoryTabs = new Border[5];
+        var categoryNames = new[] { "FAVORITES", "STATIC", "ANIMATED", "REACTIVE", "GLOBAL SPAN", "TEMPERATURE" };
+        var categoryTabs = new Border[categoryNames.Length];
 
         var effectPicker = new Controls.EffectPickerControl(showGlobal: true)
         {
@@ -879,15 +883,28 @@ public partial class RoomView : UserControl
             QueueSave();
         };
 
-        if (_activePattern != null && _activePattern != "__sync__")
+        if (_activePattern != null && _activePattern != "__sync__" && _activePattern != RoomTemperaturePatternId)
             effectPicker.SelectedEffect = Enum.TryParse<LightEffect>(_activePattern, true, out var eff) ? eff : LightEffect.SingleColor;
 
         // Auto-detect category from selected effect (maps static=0..global=3 → tab index 1..4)
-        if (_activePattern != null && _activePattern != "__sync__" && Enum.TryParse<LightEffect>(_activePattern, true, out var selEff))
+        if (_activePattern == RoomTemperaturePatternId)
+        {
+            _effectCategory = TemperatureCategoryIndex;
+        }
+        else if (_activePattern != null && _activePattern != "__sync__" && Enum.TryParse<LightEffect>(_activePattern, true, out var selEff))
         {
             int detectedCat = GetEffectCategory(selEff);
             if (detectedCat >= 0) _effectCategory = detectedCat + 1;
         }
+
+        var temperaturePanel = BuildTemperaturePanel();
+        temperaturePanel.Visibility = _effectCategory == TemperatureCategoryIndex ? Visibility.Visible : Visibility.Collapsed;
+        effectPicker.Visibility = _effectCategory == TemperatureCategoryIndex ? Visibility.Collapsed : Visibility.Visible;
+
+        // Forward-declared so tab clicks and SelectionChanged can toggle the lower color controls.
+        Border? paletteSection = null;
+        PaletteEditorControl? paletteEditorRef = null;
+        Border? singleColorSwatchRef = null;
 
         for (int ci = 0; ci < categoryNames.Length; ci++)
         {
@@ -925,7 +942,15 @@ public partial class RoomView : UserControl
             tab.MouseLeftButtonUp += (_, _) =>
             {
                 _effectCategory = capturedCat;
-                effectPicker.SetVisibleCategory(TabIndexToPickerCategory(capturedCat));
+                bool showTemperature = capturedCat == TemperatureCategoryIndex;
+                effectPicker.Visibility = showTemperature ? Visibility.Collapsed : Visibility.Visible;
+                temperaturePanel.Visibility = showTemperature ? Visibility.Visible : Visibility.Collapsed;
+                if (paletteSection != null)
+                    paletteSection.Visibility = showTemperature ? Visibility.Collapsed : Visibility.Visible;
+                if (!showTemperature)
+                    effectPicker.SetVisibleCategory(TabIndexToPickerCategory(capturedCat));
+                else
+                    SendRoomTemperature(_roomTemperatureKelvin);
                 // Update tab visuals
                 var ac = ThemeManager.Accent;
                 for (int j = 0; j < categoryTabs.Length; j++)
@@ -942,16 +967,10 @@ public partial class RoomView : UserControl
         categoryBarContainer.Child = categoryTabBar;
 
         // Set initial visible category
-        effectPicker.SetVisibleCategory(TabIndexToPickerCategory(_effectCategory));
+        if (_effectCategory != TemperatureCategoryIndex)
+            effectPicker.SetVisibleCategory(TabIndexToPickerCategory(_effectCategory));
 
-        stack.Children.Add(MakeSectionCard("EFFECT", categoryBarContainer, effectPicker));
-
-        // Forward-declared so the SelectionChanged closure can reference it; assigned below.
-        Border? paletteSection = null;
-
-        // Forward-declared so SelectionChanged can toggle them without forward reference.
-        PaletteEditorControl? paletteEditorRef = null;
-        Border? singleColorSwatchRef = null;
+        stack.Children.Add(MakeSectionCard("EFFECT", categoryBarContainer, effectPicker, temperaturePanel));
 
         effectPicker.SelectionChanged += (_, _) =>
         {
@@ -1053,7 +1072,11 @@ public partial class RoomView : UserControl
         stack.Children.Add(paletteSection);
 
         // Hide palette section if the currently-selected effect ignores palette colors
-        if (_activePattern != null && _activePattern != "__sync__" &&
+        if (_effectCategory == TemperatureCategoryIndex)
+        {
+            paletteSection.Visibility = Visibility.Collapsed;
+        }
+        else if (_activePattern != null && _activePattern != "__sync__" &&
             Enum.TryParse<LightEffect>(_activePattern, true, out var curEff) &&
             EffectIgnoresPalette(curEff))
         {
@@ -1065,6 +1088,137 @@ public partial class RoomView : UserControl
         // Screen Sync settings (if enabled) — below the cards
         if (_screenSyncSettingsPanel != null)
             stack.Children.Add(_screenSyncSettingsPanel);
+    }
+
+    // ── TEMPERATURE TAB (normal white room lighting) ──────────
+    private StackPanel BuildTemperaturePanel()
+    {
+        var panel = new StackPanel { Margin = new Thickness(0, 2, 0, 2) };
+        var accent = ThemeManager.Accent;
+        var current = KelvinToRgb(_roomTemperatureKelvin);
+
+        var preview = new Border
+        {
+            Width = 36,
+            Height = 36,
+            CornerRadius = new CornerRadius(18),
+            Background = new SolidColorBrush(current),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x88, current.R, current.G, current.B)),
+            BorderThickness = new Thickness(1),
+            Margin = new Thickness(0, 0, 12, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var slider = new StyledSlider
+        {
+            Minimum = 2000,
+            Maximum = 9000,
+            Value = _roomTemperatureKelvin,
+            Height = 32,
+            AccentColor = accent,
+            ShowLabel = false,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+
+        var valueLabel = new TextBlock
+        {
+            Text = $"{_roomTemperatureKelvin:N0}K",
+            FontSize = 12,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(accent),
+            Width = 56,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextAlignment = TextAlignment.Right,
+            Margin = new Thickness(10, 0, 0, 0),
+        };
+
+        var sliderRow = new Grid { Margin = new Thickness(0, 2, 0, 10) };
+        sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(preview, 0);
+        Grid.SetColumn(slider, 1);
+        Grid.SetColumn(valueLabel, 2);
+        sliderRow.Children.Add(preview);
+        sliderRow.Children.Add(slider);
+        sliderRow.Children.Add(valueLabel);
+        panel.Children.Add(sliderRow);
+
+        var presets = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
+        foreach (var (label, kelvin) in new[]
+        {
+            ("WARM", 2700),
+            ("SOFT", 3000),
+            ("NEUTRAL", 3500),
+            ("DAYLIGHT", 5000),
+            ("COOL", 6500),
+        })
+        {
+            presets.Children.Add(MakeTemperaturePreset(label, kelvin, slider));
+        }
+        panel.Children.Add(presets);
+
+        void ApplyTemperature(int kelvin)
+        {
+            _roomTemperatureKelvin = Math.Clamp(kelvin, 2000, 9000);
+            var rgb = KelvinToRgb(_roomTemperatureKelvin);
+            preview.Background = new SolidColorBrush(rgb);
+            preview.BorderBrush = new SolidColorBrush(Color.FromArgb(0x88, rgb.R, rgb.G, rgb.B));
+            valueLabel.Text = $"{_roomTemperatureKelvin:N0}K";
+            if (!_loading)
+                SendRoomTemperature(_roomTemperatureKelvin);
+        }
+
+        slider.ValueChanged += (_, _) =>
+        {
+            if (_loading) return;
+            ApplyTemperature((int)Math.Round(slider.Value / 50.0) * 50);
+        };
+
+        return panel;
+    }
+
+    private Border MakeTemperaturePreset(string label, int kelvin, StyledSlider slider)
+    {
+        var color = KelvinToRgb(kelvin);
+        var active = Math.Abs(_roomTemperatureKelvin - kelvin) <= 100;
+        var pill = new Border
+        {
+            CornerRadius = new CornerRadius(14),
+            Padding = new Thickness(10, 5, 10, 5),
+            Margin = new Thickness(0, 0, 8, 6),
+            Cursor = Cursors.Hand,
+            Background = active
+                ? new SolidColorBrush(Color.FromArgb(0x2F, color.R, color.G, color.B))
+                : FindBrush("CardBgBrush"),
+            BorderBrush = active
+                ? new SolidColorBrush(Color.FromArgb(0xAA, color.R, color.G, color.B))
+                : FindBrush("InputBorderBrush"),
+            BorderThickness = new Thickness(1),
+            ToolTip = $"{kelvin:N0}K",
+        };
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(new Border
+        {
+            Width = 12,
+            Height = 12,
+            CornerRadius = new CornerRadius(6),
+            Background = new SolidColorBrush(color),
+            Margin = new Thickness(0, 0, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        row.Children.Add(new TextBlock
+        {
+            Text = label,
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = active ? new SolidColorBrush(color) : FindBrush("TextSecBrush"),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        pill.Child = row;
+        pill.MouseLeftButtonUp += (_, _) => slider.Value = kelvin;
+        return pill;
     }
 
     // ── LAYOUT TAB (room canvas, device placement, dimensions) ──────────
@@ -4334,6 +4488,7 @@ public partial class RoomView : UserControl
     private ColorPalette _roomPalette = BuiltInPalettes.Fire;
     private string? _roomActivePreset;
     private int _roomEffectSpeed = 50;
+    private int _roomTemperatureKelvin = 3500;
     private Color[]? _paletteColors;
     private System.Windows.Threading.DispatcherTimer? _paletteCycleTimer;
     private int _paletteIndex;
@@ -5005,6 +5160,109 @@ public partial class RoomView : UserControl
             }
     }
 
+    private void SendRoomTemperature(int kelvin)
+    {
+        StopRoomPattern();
+        _activePattern = RoomTemperaturePatternId;
+        _roomTemperatureKelvin = Math.Clamp(kelvin, 2000, 9000);
+        int brightness = _config?.Ambience.BrightnessScale ?? 100;
+        var rgb = KelvinToRgb(_roomTemperatureKelvin);
+
+        if (_config != null)
+        {
+            _config.Ambience.RoomEffect = RoomTemperaturePatternId;
+            _config.Ambience.RoomTemperatureKelvin = _roomTemperatureKelvin;
+            _config.Ambience.RoomColor1 = $"#{rgb.R:X2}{rgb.G:X2}{rgb.B:X2}";
+            _config.Ambience.RoomColor2 = _config.Ambience.RoomColor1;
+            _config.Ambience.LinkToLights = false;
+            _config.Corsair.LightSyncMode = "static";
+            _onSave?.Invoke(_config);
+        }
+
+        if (_config?.Ambience.GoveeEnabled == true)
+        {
+            foreach (var dev in _config.Ambience.GoveeDevices)
+            {
+                if (string.IsNullOrWhiteSpace(dev.Ip) || !dev.PoweredOn || !dev.SyncWithAmpUp) continue;
+                bool inSegmentMode = AmbienceSync.GetSegmentCount(dev) > 0;
+                string ip = dev.Ip;
+                _ = Task.Run(async () =>
+                {
+                    if (inSegmentMode)
+                    {
+                        await AmbienceSync.DisableSegmentMode(ip);
+                        _sync?.ClearSegmentMode(ip);
+                        await Task.Delay(120);
+                    }
+                    await AmbienceSync.SendColorTempAsync(ip, _roomTemperatureKelvin);
+                    await AmbienceSync.SendBrightnessAsync(ip, brightness);
+                });
+            }
+        }
+
+        if (_cloudApi != null)
+        {
+            foreach (var dev in _cloudDevices)
+            {
+                var devConfig = FindGoveeDeviceConfig(dev);
+                if (devConfig != null && !devConfig.SyncWithAmpUp) continue;
+                _ = SafeCloudCall(() => _cloudApi.ControlDeviceAsync(
+                    dev.Device, dev.Sku, GoveeCloudApi.SetColorTemp(_roomTemperatureKelvin)));
+            }
+        }
+
+        if (_corsairSync?.IsAvailable == true && _config?.Corsair.Enabled == true)
+            _ = _corsairSync.SetStaticColorAllAsync(rgb.R, rgb.G, rgb.B);
+
+        if (_config?.Ambience.SyncRoomToTurnUp == true)
+        {
+            var frame = new byte[45];
+            for (int i = 0; i < 15; i++)
+            {
+                int offset = i * 3;
+                frame[offset] = rgb.R;
+                frame[offset + 1] = rgb.G;
+                frame[offset + 2] = rgb.B;
+            }
+            App.Rgb?.SetScreenSyncColors(frame);
+        }
+
+        if (_ha != null && _config?.HomeAssistant.Enabled == true)
+        {
+            int scaledBrightness = Math.Clamp(brightness * 255 / 100, 1, 255);
+            foreach (var dev in _config.RoomLayout.Devices)
+            {
+                if (dev.DeviceType != "ha") continue;
+                _ha.SetLightColorFireAndForget(dev.DeviceId, rgb.R, rgb.G, rgb.B, scaledBrightness);
+            }
+        }
+    }
+
+    private static Color KelvinToRgb(int kelvin)
+    {
+        kelvin = Math.Clamp(kelvin, 1000, 40000);
+        double temp = kelvin / 100.0;
+
+        double red = temp <= 66
+            ? 255
+            : 329.698727446 * Math.Pow(temp - 60, -0.1332047592);
+
+        double green = temp <= 66
+            ? 99.4708025861 * Math.Log(temp) - 161.1195681661
+            : 288.1221695283 * Math.Pow(temp - 60, -0.0755148492);
+
+        double blue = temp >= 66
+            ? 255
+            : temp <= 19
+                ? 0
+                : 138.5177312231 * Math.Log(temp - 10) - 305.0447927307;
+
+        return Color.FromRgb(
+            (byte)Math.Clamp((int)Math.Round(red), 0, 255),
+            (byte)Math.Clamp((int)Math.Round(green), 0, 255),
+            (byte)Math.Clamp((int)Math.Round(blue), 0, 255));
+    }
+
     // Saved state for game mode restore
     private string? _savedPatternForGameMode;
     private bool _savedMusicReactive;
@@ -5070,6 +5328,12 @@ public partial class RoomView : UserControl
             if (_roomRgb != null
                 && string.Equals(_activePattern, config.Ambience.RoomEffect, StringComparison.OrdinalIgnoreCase))
                 return;
+
+            if (string.Equals(config.Ambience.RoomEffect, RoomTemperaturePatternId, StringComparison.OrdinalIgnoreCase))
+            {
+                SendRoomTemperature(config.Ambience.RoomTemperatureKelvin);
+                return;
+            }
 
             StartRoomPattern(config.Ambience.RoomEffect);
         }
@@ -5209,7 +5473,9 @@ public partial class RoomView : UserControl
             var pattern = _activePattern != null && _activePattern != "__sync__"
                 ? _activePattern
                 : _config?.Ambience.RoomEffect;
-            if (!string.IsNullOrWhiteSpace(pattern) && pattern != "__sync__")
+            if (pattern == RoomTemperaturePatternId)
+                SendRoomTemperature(_config?.Ambience.RoomTemperatureKelvin ?? _roomTemperatureKelvin);
+            else if (!string.IsNullOrWhiteSpace(pattern) && pattern != "__sync__")
                 StartRoomPattern(pattern);
         });
     }
@@ -5243,7 +5509,9 @@ public partial class RoomView : UserControl
         {
             // Restore room effect
             var pattern = _savedPatternForGameMode;
-            if (!string.IsNullOrEmpty(pattern))
+            if (pattern == RoomTemperaturePatternId)
+                SendRoomTemperature(_config?.Ambience.RoomTemperatureKelvin ?? _roomTemperatureKelvin);
+            else if (!string.IsNullOrEmpty(pattern))
                 StartRoomPattern(pattern);
 
             // Restore Music Reactive / VU Fill

@@ -622,8 +622,16 @@ public class ActionPicker : Border
                     if (childIdx >= 0)
                     {
                         _selectedSubTag = null;
-                        CloseFlyout();
                         SetSelectedIndex(childIdx, fireEvent: true);
+                        if (_subMenuProviders.TryGetValue(subItem.Tag, out var childProvider)
+                            && childProvider().Count > 0)
+                        {
+                            OpenSubMenu(subItem.Tag);
+                        }
+                        else
+                        {
+                            CloseFlyout();
+                        }
                     }
                     e.Handled = true;
                     return;
