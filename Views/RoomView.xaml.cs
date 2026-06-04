@@ -5187,6 +5187,7 @@ public partial class RoomView : UserControl
         }
 
         StartRoomTemperatureFrameLoop(rgb);
+        SendRgbicTemperatureFallback(rgb, brightness);
 
         if (_corsairSync?.IsAvailable == true && _config?.Corsair.Enabled == true)
             _ = _corsairSync.SetStaticColorAllAsync(rgb.R, rgb.G, rgb.B);
@@ -5256,6 +5257,45 @@ public partial class RoomView : UserControl
             $"LAN Govee: {string.Join(", ", _config?.Ambience.GoveeDevices.Where(d => !string.IsNullOrWhiteSpace(d.Ip)).Select(d => $"{d.Name}/{d.Sku}/{d.Ip}/segs={AmbienceSync.GetSegmentCount(d)}") ?? Array.Empty<string>())}");
         OnRoomFrame(firstFrame);
     }
+
+    private void SendRgbicTemperatureFallback(Color color, int brightness)
+    {
+        if (_config?.Ambience.GoveeEnabled != true || _sync == null) return;
+
+        foreach (var dev in _config.Ambience.GoveeDevices)
+        {
+            if (!IsRgbicTemperatureFallbackDevice(dev)
+                || string.IsNullOrWhiteSpace(dev.Ip)
+                || !dev.PoweredOn
+                || !dev.SyncWithAmpUp)
+                continue;
+
+            string ip = dev.Ip;
+            int segmentCount = AmbienceSync.GetSegmentCount(dev);
+            if (segmentCount <= 0) continue;
+
+            var segmentColors = Enumerable
+                .Repeat((color.R, color.G, color.B), segmentCount)
+                .ToArray();
+
+            Logger.Log($"[Room] Temperature RGBIC fallback {dev.Name}/{dev.Sku}/{ip}: segs={segmentCount}, color=#{color.R:X2}{color.G:X2}{color.B:X2}");
+            _ = Task.Run(async () =>
+            {
+                AmbienceSync.ResumeSync(ip);
+                await AmbienceSync.DisableSegmentMode(ip);
+                await Task.Delay(160);
+                await AmbienceSync.SendColorAsync(ip, color.R, color.G, color.B);
+                await AmbienceSync.SendBrightnessAsync(ip, brightness);
+                await Task.Delay(260);
+                _sync.SendSegmentFrame(ip, segmentColors);
+                await Task.Delay(220);
+                _sync.SendSegmentFrame(ip, segmentColors);
+            });
+        }
+    }
+
+    private static bool IsRgbicTemperatureFallbackDevice(GoveeDeviceConfig dev)
+        => dev.Sku?.Trim().ToUpperInvariant() is "H610A" or "H610B" or "H61A0";
 
     private static byte[] CreateSolidRoomFrame(Color color)
     {
