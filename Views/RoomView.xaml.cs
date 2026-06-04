@@ -150,7 +150,7 @@ public partial class RoomView : UserControl
             if (!string.IsNullOrEmpty(config.Ambience.RoomColor2))
                 _roomColor2 = (Color)ColorConverter.ConvertFromString(config.Ambience.RoomColor2);
             _roomEffectSpeed = config.Ambience.RoomEffectSpeed > 0 ? config.Ambience.RoomEffectSpeed : 50;
-            _roomTemperatureKelvin = Math.Clamp(config.Ambience.RoomTemperatureKelvin, 2000, 9000);
+            _roomTemperatureKelvin = Math.Clamp(config.Ambience.RoomTemperatureKelvin, 1500, 9000);
         }
         catch { }
 
@@ -1112,7 +1112,7 @@ public partial class RoomView : UserControl
 
         var slider = new StyledSlider
         {
-            Minimum = 2000,
+            Minimum = 1500,
             Maximum = 9000,
             Value = _roomTemperatureKelvin,
             Step = 50,
@@ -1149,15 +1149,23 @@ public partial class RoomView : UserControl
         var presets = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
         foreach (var (label, kelvin) in new[]
         {
+            ("EMBER", 1600),
+            ("FLAME", 1800),
+            ("AMBER", 2000),
             ("CANDLE", 2200),
+            ("COZY", 2400),
             ("WARM", 2700),
             ("SOFT", 3000),
+            ("LAMP", 3200),
             ("NEUTRAL", 3500),
+            ("CLEAR", 3800),
             ("BRIGHT", 4000),
+            ("WORK", 4500),
             ("DAYLIGHT", 5000),
             ("STUDIO", 5600),
             ("COOL", 6500),
             ("CRISP", 7500),
+            ("SKY", 8500),
         })
         {
             presets.Children.Add(MakeTemperaturePreset(label, kelvin, slider));
@@ -1166,7 +1174,7 @@ public partial class RoomView : UserControl
 
         void ApplyTemperature(int kelvin)
         {
-            _roomTemperatureKelvin = Math.Clamp(kelvin, 2000, 9000);
+            _roomTemperatureKelvin = Math.Clamp(kelvin, 1500, 9000);
             var rgb = KelvinToRgb(_roomTemperatureKelvin);
             preview.Background = new SolidColorBrush(rgb);
             preview.BorderBrush = new SolidColorBrush(Color.FromArgb(0x88, rgb.R, rgb.G, rgb.B));
@@ -5198,7 +5206,7 @@ public partial class RoomView : UserControl
 
     private void SendRoomTemperature(int kelvin)
     {
-        _roomTemperatureKelvin = Math.Clamp(kelvin, 2000, 9000);
+        _roomTemperatureKelvin = Math.Clamp(kelvin, 1500, 9000);
         if (_activePattern == RoomTemperaturePatternId
             && _roomRgb != null
             && _lastSentRoomTemperatureKelvin == _roomTemperatureKelvin)
@@ -5303,7 +5311,6 @@ public partial class RoomView : UserControl
         {
             if (!IsRgbicTemperatureFallbackDevice(dev)
                 || string.IsNullOrWhiteSpace(dev.Ip)
-                || !dev.PoweredOn
                 || !dev.SyncWithAmpUp)
                 continue;
 
@@ -5333,7 +5340,7 @@ public partial class RoomView : UserControl
     }
 
     private static bool IsRgbicTemperatureFallbackDevice(GoveeDeviceConfig dev)
-        => dev.Sku?.Trim().ToUpperInvariant() is "H610A" or "H610B" or "H61A0";
+        => dev.Sku?.Trim().ToUpperInvariant() is "H610A" or "H610B" or "H61A0" or "H6056";
 
     private static byte[] CreateSolidRoomFrame(Color color)
     {
@@ -5350,7 +5357,7 @@ public partial class RoomView : UserControl
 
     private static Color KelvinToRgb(int kelvin)
     {
-        kelvin = Math.Clamp(kelvin, 1000, 40000);
+        kelvin = Math.Clamp(kelvin, 1500, 40000);
         double temp = kelvin / 100.0;
 
         double red = temp <= 66
@@ -5366,6 +5373,16 @@ public partial class RoomView : UserControl
             : temp <= 19
                 ? 0
                 : 138.5177312231 * Math.Log(temp - 10) - 305.0447927307;
+
+        if (kelvin <= 2600)
+        {
+            double t = (2600 - kelvin) / 1100.0;
+            t = Math.Clamp(t, 0, 1);
+            var amber = (R: 255.0, G: 82.0, B: 0.0);
+            red = red * (1 - t) + amber.R * t;
+            green = green * (1 - t) + amber.G * t;
+            blue *= 1 - t;
+        }
 
         return Color.FromRgb(
             (byte)Math.Clamp((int)Math.Round(red), 0, 255),
