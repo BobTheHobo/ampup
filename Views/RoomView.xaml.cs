@@ -5165,6 +5165,7 @@ public partial class RoomView : UserControl
     {
         _roomTemperatureKelvin = Math.Clamp(kelvin, 2000, 9000);
         if (_activePattern == RoomTemperaturePatternId
+            && _roomRgb != null
             && _lastSentRoomTemperatureKelvin == _roomTemperatureKelvin)
             return;
 
@@ -5185,46 +5186,7 @@ public partial class RoomView : UserControl
             _onSave?.Invoke(_config);
         }
 
-        if (_config?.Ambience.GoveeEnabled == true)
-        {
-            foreach (var dev in _config.Ambience.GoveeDevices)
-            {
-                if (string.IsNullOrWhiteSpace(dev.Ip) || !dev.PoweredOn || !dev.SyncWithAmpUp) continue;
-                var deviceRgb = ApplyGoveeTemperatureCalibration(rgb, dev.Sku, _roomTemperatureKelvin);
-                int segmentCount = AmbienceSync.GetSegmentCount(dev);
-                bool useSegmentFrame = UsesTemperatureSegmentFrame(dev, segmentCount) && _sync != null;
-                bool inSegmentMode = segmentCount > 0;
-                string ip = dev.Ip;
-
-                if (useSegmentFrame)
-                {
-                    var segmentColors = Enumerable
-                        .Repeat((deviceRgb.R, deviceRgb.G, deviceRgb.B), segmentCount)
-                        .ToArray();
-                    _ = Task.Run(async () =>
-                    {
-                        AmbienceSync.ResumeSync(ip);
-                        await AmbienceSync.SendBrightnessAsync(ip, brightness);
-                        _sync?.SendSegmentFrame(ip, segmentColors);
-                        await Task.Delay(180);
-                        _sync?.SendSegmentFrame(ip, segmentColors);
-                    });
-                    continue;
-                }
-
-                _ = Task.Run(async () =>
-                {
-                    if (inSegmentMode)
-                    {
-                        await AmbienceSync.DisableSegmentMode(ip);
-                        _sync?.ClearSegmentMode(ip);
-                        await Task.Delay(120);
-                    }
-                    await AmbienceSync.SendColorAsync(ip, deviceRgb.R, deviceRgb.G, deviceRgb.B);
-                    await AmbienceSync.SendBrightnessAsync(ip, brightness);
-                });
-            }
-        }
+        StartRoomTemperatureFrameLoop(rgb);
 
         if (_corsairSync?.IsAvailable == true && _config?.Corsair.Enabled == true)
             _ = _corsairSync.SetStaticColorAllAsync(rgb.R, rgb.G, rgb.B);
@@ -5253,6 +5215,43 @@ public partial class RoomView : UserControl
         }
     }
 
+    private void StartRoomTemperatureFrameLoop(Color color)
+    {
+        StopRoomPattern();
+        _activePattern = RoomTemperaturePatternId;
+        _lastSentRoomTemperatureKelvin = _roomTemperatureKelvin;
+        _roomPatternCorsairOnly = false;
+
+        if (_config?.Ambience.GoveeEnabled == true)
+        {
+            foreach (var dev in _config.Ambience.GoveeDevices)
+                if (!string.IsNullOrWhiteSpace(dev.Ip))
+                    AmbienceSync.ResumeSync(dev.Ip);
+        }
+
+        _roomFrameCount = 0;
+        _roomRgb = new RgbController();
+        _roomRgb.SetBrightness(100);
+        for (int k = 0; k < 5; k++)
+            _roomRgb.SetKnobPosition(k, 1.0f);
+
+        _roomRgb.UpdateGlobalConfig(new GlobalLightConfig
+        {
+            Enabled = true,
+            Effect = LightEffect.SingleColor,
+            R = color.R,
+            G = color.G,
+            B = color.B,
+            R2 = color.R,
+            G2 = color.G,
+            B2 = color.B,
+            EffectSpeed = _roomEffectSpeed,
+            PaletteName = "",
+        });
+        _roomRgb.OnFrameReady += OnRoomFrame;
+        _roomRgb.SetOutput((_, _, _) => { }, () => true, 30);
+    }
+
     private static Color KelvinToRgb(int kelvin)
     {
         kelvin = Math.Clamp(kelvin, 1000, 40000);
@@ -5276,37 +5275,6 @@ public partial class RoomView : UserControl
             (byte)Math.Clamp((int)Math.Round(red), 0, 255),
             (byte)Math.Clamp((int)Math.Round(green), 0, 255),
             (byte)Math.Clamp((int)Math.Round(blue), 0, 255));
-    }
-
-    private static Color ApplyGoveeTemperatureCalibration(Color color, string? sku, int kelvin)
-    {
-        var normalizedSku = sku?.Trim().ToUpperInvariant() ?? "";
-        var calibrated = normalizedSku switch
-        {
-            // RGBIC-only accents render warm whites more saturated than RGBWW/RGBICWW fixtures.
-            "H610A" or "H610B" => ScaleColor(color, 0.96, 1.03, 1.14),
-            "H61A0" => ScaleColor(color, 0.98, 1.02, 1.10),
-            _ => color,
-        };
-
-        if (kelvin >= 5000 && normalizedSku is "H610A" or "H610B" or "H61A0")
-            calibrated = ScaleColor(calibrated, 1.0, 1.0, 0.96);
-
-        return calibrated;
-    }
-
-    private static bool UsesTemperatureSegmentFrame(GoveeDeviceConfig dev, int segmentCount)
-    {
-        if (segmentCount <= 0 || !dev.UseSegmentProtocol) return false;
-        return dev.Sku?.Trim().ToUpperInvariant() is "H610A" or "H610B" or "H61A0";
-    }
-
-    private static Color ScaleColor(Color color, double rScale, double gScale, double bScale)
-    {
-        return Color.FromRgb(
-            (byte)Math.Clamp((int)Math.Round(color.R * rScale), 0, 255),
-            (byte)Math.Clamp((int)Math.Round(color.G * gScale), 0, 255),
-            (byte)Math.Clamp((int)Math.Round(color.B * bScale), 0, 255));
     }
 
     // Saved state for game mode restore
@@ -5721,6 +5689,7 @@ public partial class RoomView : UserControl
         var musicBands = _globalMusicBands ?? App.AudioAnalyzer?.SmoothedBands;
         float musicBrightness = 1f;
         bool isAudioReactivePattern = _activePattern == "AudioReactive" || _activePattern == "AudioPositionBlend";
+        bool isTemperaturePattern = _activePattern == RoomTemperaturePatternId;
         if (_corsairMusicTimer?.IsEnabled == true && !isAudioReactivePattern
             && musicBands != null && musicBands.Length >= 5)
         {
@@ -5769,6 +5738,7 @@ public partial class RoomView : UserControl
 
             // Cloud-only devices (no LAN IP) — throttle to ~1/sec (Cloud API rate limit)
             if (config.Ambience.GoveeCloudEnabled
+                && !isTemperaturePattern
                 && _cloudApi != null
                 && (DateTime.UtcNow - _lastCloudRoomSend).TotalMilliseconds >= 1000)
             {
