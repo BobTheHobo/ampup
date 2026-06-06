@@ -12,12 +12,12 @@
 
     <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                   Background="Transparent">
-        <StackPanel Margin="24,16,24,24">
+        <StackPanel Margin="20,12,20,18">
 
             <!-- ── CONNECTION ──────────────────────────────────────── -->
-            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,12">
+            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,8">
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Border Width="3" CornerRadius="2" Background="{DynamicResource AccentBrush}" Margin="0,0,10,0" />
                         <TextBlock Text="CONNECTION" Style="{StaticResource HeaderText}" Margin="0" />
                     </StackPanel>
@@ -146,25 +146,31 @@
             </Border>
 
             <!-- ── STARTUP ─────────────────────────────────────────── -->
-            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,12">
+            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,8">
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Border Width="3" CornerRadius="2" Background="{DynamicResource AccentBrush}" Margin="0,0,10,0" />
-                        <TextBlock Text="STARTUP" Style="{StaticResource HeaderText}" Margin="0" />
+                        <TextBlock Text="GENERAL" Style="{StaticResource HeaderText}" Margin="0" />
                     </StackPanel>
                     <CheckBox x:Name="ChkStartWithWindows"
                               Content="Start with Windows"
                               Foreground="{StaticResource TextPrimaryBrush}"
                               VerticalContentAlignment="Center"
                               ToolTip="Launch Amp Up automatically when you log in" />
+                    <CheckBox x:Name="ChkAutoSuggestLayout"
+                              Content="Auto-suggest knob layout"
+                              Foreground="{StaticResource TextPrimaryBrush}"
+                              VerticalContentAlignment="Center"
+                              Margin="0,6,0,0"
+                              ToolTip="Show a banner in Mixer when known apps are detected and knobs are unassigned" />
 
                 </StackPanel>
             </Border>
 
             <!-- ── APPEARANCE ────────────────────────────────────────── -->
-            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,12">
+            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,8">
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Border Width="3" CornerRadius="2" Background="{DynamicResource AccentBrush}" Margin="0,0,10,0" />
                         <TextBlock Text="APPEARANCE" Style="{StaticResource HeaderText}" Margin="0" />
                     </StackPanel>
@@ -177,25 +183,10 @@
                 </StackPanel>
             </Border>
 
-            <!-- ── PREFERENCES ───────────────────────────────────── -->
-            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,12">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                        <Border Width="3" CornerRadius="2" Background="{DynamicResource AccentBrush}" Margin="0,0,10,0" />
-                        <TextBlock Text="PREFERENCES" Style="{StaticResource HeaderText}" Margin="0" />
-                    </StackPanel>
-                    <CheckBox x:Name="ChkAutoSuggestLayout"
-                              Content="Auto-suggest knob layout"
-                              Foreground="{StaticResource TextPrimaryBrush}"
-                              VerticalContentAlignment="Center"
-                              ToolTip="Show a banner in Mixer when known apps are detected and knobs are unassigned" />
-                </StackPanel>
-            </Border>
-
             <!-- ── PROFILES ────────────────────────────────────────── -->
-            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,12">
+            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,8">
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Border Width="3" CornerRadius="2" Background="{DynamicResource AccentBrush}" Margin="0,0,10,0" />
                         <TextBlock Text="PROFILES" Style="{StaticResource HeaderText}" Margin="0" />
                     </StackPanel>
@@ -232,9 +223,9 @@
 
                     <!-- Export / Import profile files -->
                     <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
-                            Margin="0,14,0,0" Padding="0,14,0,0">
+                            Margin="0,10,0,0" Padding="0,10,0,0">
                         <StackPanel>
-                            <TextBlock Text="Export or import profile files to share between machines."
+                            <TextBlock Text="Profile files"
                                        Style="{StaticResource SecondaryText}" Margin="0,0,0,8" TextWrapping="Wrap" />
                             <StackPanel Orientation="Horizontal">
                                 <ui:Button x:Name="BtnExportProfile" Content="Export Profile"
@@ -249,9 +240,9 @@
 
                     <!-- Import from Turn Up -->
                     <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
-                            Margin="0,14,0,0" Padding="0,14,0,0">
+                            Margin="0,10,0,0" Padding="0,10,0,0">
                         <StackPanel>
-                            <TextBlock Text="Have an existing Turn Up configuration? Import your knob, button, and light settings."
+                            <TextBlock Text="Turn Up import"
                                        Style="{StaticResource SecondaryText}" Margin="0,0,0,8" TextWrapping="Wrap" />
                             <ui:Button x:Name="BtnImportTurnUp" Content="Import from Turn Up"
                                        Appearance="Secondary" />
@@ -261,14 +252,12 @@
             </Border>
 
             <!-- BACKUP & RESTORE -->
-            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,12">
+            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,8">
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Border Width="3" CornerRadius="2" Background="{DynamicResource AccentBrush}" Margin="0,0,10,0" />
                         <TextBlock Text="BACKUP &amp; RESTORE" Style="{StaticResource HeaderText}" Margin="0" />
                     </StackPanel>
-                    <TextBlock Text="Save a full copy of your Amp Up settings before trying test builds. Restore brings back app settings and saved profiles."
-                               Style="{StaticResource SecondaryText}" Margin="0,0,0,10" TextWrapping="Wrap" />
                     <StackPanel Orientation="Horizontal">
                         <ui:Button x:Name="BtnBackupSettings" Content="Backup Settings"
                                    Appearance="Secondary" Margin="0,0,8,0"
@@ -277,23 +266,23 @@
                                    Appearance="Danger"
                                    ToolTip="Restore app settings and profiles from a backup file" />
                     </StackPanel>
-                    <TextBlock Text="Backup files may include integration tokens or API keys. Keep them private."
-                               Style="{StaticResource SecondaryText}" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap" />
+                    <TextBlock Text="Backups include tokens/API keys."
+                               Style="{StaticResource SecondaryText}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
 
             <!-- LED Calibration moved to the Lights tab (CALIBRATION sub-tab) -->
 
             <!-- ── INTEGRATIONS ────────────────────────────────────── -->
-            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,12">
+            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,8">
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Border Width="3" CornerRadius="2" Background="{DynamicResource AccentBrush}" Margin="0,0,10,0" />
                         <TextBlock Text="INTEGRATIONS" Style="{StaticResource HeaderText}" Margin="0" />
                     </StackPanel>
 
                     <!-- Home Assistant -->
-                    <StackPanel Margin="0,0,0,16">
+                    <StackPanel Margin="0,0,0,10">
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <TextBlock Text="Home Assistant" Style="{StaticResource BodyText}" FontWeight="SemiBold" />
                             <Ellipse x:Name="HaStatusDotHeader" Width="8" Height="8"
@@ -336,7 +325,7 @@
 
                     <!-- OBS Studio -->
                     <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
-                            Margin="0,14,0,0" Padding="0,14,0,0">
+                            Margin="0,10,0,0" Padding="0,10,0,0">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                 <TextBlock Text="OBS Studio" Style="{StaticResource BodyText}" FontWeight="SemiBold" />
@@ -387,7 +376,7 @@
 
                     <!-- Govee -->
                     <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
-                            Margin="0,14,0,0" Padding="0,14,0,0">
+                            Margin="0,10,0,0" Padding="0,10,0,0">
                         <StackPanel>
                             <TextBlock Text="Govee" Style="{StaticResource BodyText}" FontWeight="SemiBold" Margin="0,0,0,8" />
 
@@ -477,7 +466,7 @@
 
                     <!-- VoiceMeeter -->
                     <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
-                            Margin="0,14,0,0" Padding="0,14,0,0">
+                            Margin="0,10,0,0" Padding="0,10,0,0">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                 <TextBlock Text="VoiceMeeter" Style="{StaticResource BodyText}" FontWeight="SemiBold" />
@@ -490,15 +479,12 @@
                                       Content="Enabled"
                                       Foreground="{StaticResource TextPrimaryBrush}"
                                       Margin="0,0,0,4" />
-                            <TextBlock Text="Auto-connects to running VoiceMeeter instance via DLL"
-                                       Style="{StaticResource SecondaryText}" FontSize="11"
-                                       Margin="0,0,0,0" />
                         </StackPanel>
                     </Border>
 
                     <!-- Corsair iCUE -->
                     <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
-                            Margin="0,14,0,0" Padding="0,14,0,0">
+                            Margin="0,10,0,0" Padding="0,10,0,0">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                 <TextBlock Text="Corsair iCUE" Style="{StaticResource BodyText}" FontWeight="SemiBold" />
@@ -511,16 +497,13 @@
                                       Content="Enabled"
                                       Foreground="{StaticResource TextPrimaryBrush}"
                                       Margin="0,0,0,4" />
-                            <TextBlock Text="Syncs LED colors to iCUE devices via the official iCUE SDK"
-                                       Style="{StaticResource SecondaryText}" FontSize="11"
-                                       Margin="0,0,0,4" />
                             <StackPanel x:Name="CorsairDeviceList" Margin="0,4,0,0" />
                         </StackPanel>
                     </Border>
 
                     <!-- SignalRGB -->
                     <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
-                            Margin="0,14,0,0" Padding="0,14,0,0">
+                            Margin="0,10,0,0" Padding="0,10,0,0">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                 <TextBlock Text="SignalRGB" Style="{StaticResource BodyText}" FontWeight="SemiBold" />
@@ -625,7 +608,7 @@
 
                     <!-- Discord -->
                     <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
-                            Margin="0,14,0,0" Padding="0,14,0,0">
+                            Margin="0,10,0,0" Padding="0,10,0,0">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                 <TextBlock Text="Discord" Style="{StaticResource BodyText}" FontWeight="SemiBold" />
@@ -634,24 +617,21 @@
                                 <TextBlock x:Name="TxtDiscordStatus" Text="Not connected"
                                            Style="{StaticResource SecondaryText}" VerticalAlignment="Center" />
                             </StackPanel>
-                            <TextBlock Text="Authorize the Discord desktop app so button actions can toggle self mute, deafen, and leave voice."
-                                       Style="{StaticResource SecondaryText}" FontSize="11"
-                                       TextWrapping="Wrap" Margin="0,0,0,10" />
                             <StackPanel Orientation="Horizontal">
                                 <ui:Button x:Name="BtnDiscordConnect" Content="Connect"
                                            Appearance="Secondary" Margin="0,0,8,0" />
                                 <ui:Button x:Name="BtnDiscordDisconnect" Content="Disconnect"
                                            Appearance="Secondary" IsEnabled="False" />
                             </StackPanel>
-                            <TextBlock Text="Discord must be running. If authorization fails, enable Public OAuth2 Client for the Amp Up Discord application."
+                            <TextBlock Text="Discord must be running."
                                        Style="{StaticResource SecondaryText}" FontSize="11"
-                                       TextWrapping="Wrap" Margin="0,8,0,0" />
+                                       TextWrapping="Wrap" Margin="0,6,0,0" />
                         </StackPanel>
                     </Border>
 
                     <!-- Spotify -->
                     <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
-                            Margin="0,14,0,0" Padding="0,14,0,0">
+                            Margin="0,10,0,0" Padding="0,10,0,0">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                 <TextBlock Text="Spotify" Style="{StaticResource BodyText}" FontWeight="SemiBold" />
@@ -660,9 +640,9 @@
                                 <TextBlock x:Name="TxtSpotifyStatus" Text="Not connected"
                                            Style="{StaticResource SecondaryText}" VerticalAlignment="Center" />
                             </StackPanel>
-                            <TextBlock Text="Control playback, show the album art on an LCD key, like tracks, shuffle — all powered by your own Spotify app."
+                            <TextBlock Text="Playback, likes, shuffle, LCD album art."
                                        Style="{StaticResource SecondaryText}" FontSize="11"
-                                       TextWrapping="Wrap" Margin="0,0,0,10" />
+                                       TextWrapping="Wrap" Margin="0,0,0,8" />
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                 <ui:Button x:Name="BtnSpotifySetupGuide" Content="Setup Guide"
                                            Appearance="Primary" Margin="0,0,8,0" />
@@ -692,7 +672,7 @@
             <!-- ── ABOUT ─────────────────────────────────────────── -->
             <Border Style="{StaticResource CardPanel}" Margin="0,0,0,0">
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Border Width="3" CornerRadius="2" Background="{DynamicResource AccentBrush}" Margin="0,0,10,0" />
                         <TextBlock Text="ABOUT" Style="{StaticResource HeaderText}" Margin="0" />
                     </StackPanel>
