@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -37,6 +38,29 @@ public sealed class DiscordRpcIntegration : IDisposable
     public bool IsReady => _authenticated && _pipe?.IsConnected == true;
     public bool? LastKnownMute { get; private set; }
     public bool? LastKnownDeafen { get; private set; }
+
+    public async Task ConnectAsync(CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            await EnsureAuthenticatedAsync(ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public void Disconnect()
+    {
+        ClosePipe();
+        _config.AccessToken = "";
+        _config.RefreshToken = "";
+        _config.TokenExpiresAtUtc = DateTime.MinValue;
+        _config.ConnectedUser = "";
+        _persist(_config);
+    }
 
     public async Task ToggleMuteAsync(CancellationToken ct = default)
         => await ToggleVoiceFlagAsync("mute", ct);
@@ -201,8 +225,8 @@ public sealed class DiscordRpcIntegration : IDisposable
             }
         }
 
-        var code = await AuthorizeAsync(clientId, ct);
-        var token = await ExchangeCodeAsync(code, ct);
+        var auth = await AuthorizeAsync(clientId, ct);
+        var token = await ExchangeCodeAsync(auth.Code, auth.CodeVerifier, ct);
         await AuthenticateAsync(token.AccessToken, ct);
     }
 
@@ -242,26 +266,29 @@ public sealed class DiscordRpcIntegration : IDisposable
         throw new InvalidOperationException("Discord desktop RPC pipe was not found. Start Discord and try again.");
     }
 
-    private async Task<string> AuthorizeAsync(string clientId, CancellationToken ct)
+    private async Task<AuthCodeResponse> AuthorizeAsync(string clientId, CancellationToken ct)
     {
+        var codeVerifier = CreatePkceVerifier();
         var args = new JObject
         {
             ["client_id"] = clientId,
+            ["response_type"] = "code",
+            ["redirect_uri"] = ResolveRedirectUri(),
             ["scopes"] = new JArray(VoiceScopes),
+            ["code_challenge"] = CreatePkceChallenge(codeVerifier),
+            ["code_challenge_method"] = "S256",
         };
         var data = await SendCommandAsync("AUTHORIZE", args, ct);
         var code = data.Value<string>("code");
         if (string.IsNullOrWhiteSpace(code))
             throw new InvalidOperationException("Discord did not return an authorization code.");
-        return code;
+        return new AuthCodeResponse(code, codeVerifier);
     }
 
-    private async Task<TokenResponse> ExchangeCodeAsync(string code, CancellationToken ct)
+    private async Task<TokenResponse> ExchangeCodeAsync(string code, string codeVerifier, CancellationToken ct)
     {
         var clientId = ResolveClientId();
         var clientSecret = ResolveClientSecret();
-        if (string.IsNullOrWhiteSpace(clientSecret))
-            throw new InvalidOperationException("Discord RPC Client Secret is not configured.");
 
         var form = new Dictionary<string, string>
         {
@@ -270,13 +297,22 @@ public sealed class DiscordRpcIntegration : IDisposable
             ["redirect_uri"] = ResolveRedirectUri(),
         };
 
+        if (string.IsNullOrWhiteSpace(clientSecret))
+        {
+            form["client_id"] = clientId;
+            form["code_verifier"] = codeVerifier;
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://discord.com/api/oauth2/token")
         {
             Content = new FormUrlEncodedContent(form),
         };
 
-        var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
-        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", auth);
+        if (!string.IsNullOrWhiteSpace(clientSecret))
+        {
+            var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", auth);
+        }
 
         using var response = await _http.SendAsync(request, ct);
         var json = await response.Content.ReadAsStringAsync(ct);
@@ -412,6 +448,25 @@ public sealed class DiscordRpcIntegration : IDisposable
         return "";
     }
 
+    private static string CreatePkceVerifier()
+    {
+        Span<byte> bytes = stackalloc byte[48];
+        RandomNumberGenerator.Fill(bytes);
+        return Base64UrlEncode(bytes);
+    }
+
+    private static string CreatePkceChallenge(string verifier)
+    {
+        var bytes = SHA256.HashData(Encoding.ASCII.GetBytes(verifier));
+        return Base64UrlEncode(bytes);
+    }
+
+    private static string Base64UrlEncode(ReadOnlySpan<byte> bytes)
+        => Convert.ToBase64String(bytes)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+
     private void ClosePipe()
     {
         _authenticated = false;
@@ -427,5 +482,6 @@ public sealed class DiscordRpcIntegration : IDisposable
         _http.Dispose();
     }
 
+    private sealed record AuthCodeResponse(string Code, string CodeVerifier);
     private sealed record TokenResponse(string AccessToken);
 }

@@ -187,6 +187,8 @@ public partial class SettingsView : UserControl
         BtnSignalRgbOpenPluginFolder.Click += OnSignalRgbOpenPluginFolder;
 
         // Spotify
+        BtnDiscordConnect.Click += OnDiscordConnect;
+        BtnDiscordDisconnect.Click += OnDiscordDisconnect;
         TxtSpotifyClientId.TextChanged += OnValueChanged;
         BtnSpotifySetupGuide.Click += OnSpotifySetupGuide;
         BtnSpotifyConnect.Click += OnSpotifyConnect;
@@ -287,6 +289,7 @@ public partial class SettingsView : UserControl
 
         // Integrations — Spotify
         TxtSpotifyClientId.Text = config.Spotify.ClientId;
+        RefreshDiscordStatus();
         RefreshSpotifyStatus();
 
         // Integrations — Govee
@@ -1583,6 +1586,65 @@ public partial class SettingsView : UserControl
         catch (Exception ex)
         {
             GlassDialog.ShowWarning($"Could not open plugin folder:\n{ex.Message}", owner: Window.GetWindow(this));
+        }
+    }
+
+    private async void OnDiscordConnect(object sender, RoutedEventArgs e)
+    {
+        if (_config == null) return;
+
+        var discord = App.DiscordRpc;
+        if (discord == null)
+        {
+            GlassDialog.ShowInfo("Discord service is not available.", owner: Window.GetWindow(this));
+            return;
+        }
+
+        TxtDiscordStatus.Text = "Waiting for Discord...";
+        BtnDiscordConnect.IsEnabled = false;
+        try
+        {
+            await discord.ConnectAsync();
+            RefreshDiscordStatus();
+            GlassDialog.ShowInfo("Discord connected. Discord button actions are ready.", owner: Window.GetWindow(this));
+        }
+        catch (Exception ex)
+        {
+            TxtDiscordStatus.Text = "Error";
+            GlassDialog.ShowWarning($"Discord connect failed:\n{ex.Message}", owner: Window.GetWindow(this));
+        }
+        finally
+        {
+            BtnDiscordConnect.IsEnabled = true;
+            RefreshDiscordStatus();
+        }
+    }
+
+    private void OnDiscordDisconnect(object sender, RoutedEventArgs e)
+    {
+        App.DiscordRpc?.Disconnect();
+        RefreshDiscordStatus();
+    }
+
+    private void RefreshDiscordStatus()
+    {
+        if (_config == null) return;
+        bool connected = !string.IsNullOrWhiteSpace(_config.DiscordRpc.AccessToken);
+        if (connected)
+        {
+            DiscordStatusDot.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#5865F2"));
+            TxtDiscordStatus.Text = string.IsNullOrEmpty(_config.DiscordRpc.ConnectedUser)
+                ? "Connected"
+                : $"Connected as {_config.DiscordRpc.ConnectedUser}";
+            BtnDiscordConnect.Content = "Reconnect";
+            BtnDiscordDisconnect.IsEnabled = true;
+        }
+        else
+        {
+            DiscordStatusDot.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#555555"));
+            TxtDiscordStatus.Text = "Not connected";
+            BtnDiscordConnect.Content = "Connect";
+            BtnDiscordDisconnect.IsEnabled = false;
         }
     }
 

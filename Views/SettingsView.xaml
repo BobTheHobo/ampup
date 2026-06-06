@@ -623,6 +623,32 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Discord -->
+                    <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
+                            Margin="0,14,0,0" Padding="0,14,0,0">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Discord" Style="{StaticResource BodyText}" FontWeight="SemiBold" />
+                                <Ellipse x:Name="DiscordStatusDot" Width="8" Height="8"
+                                         Fill="#555555" VerticalAlignment="Center" Margin="12,0,6,0" />
+                                <TextBlock x:Name="TxtDiscordStatus" Text="Not connected"
+                                           Style="{StaticResource SecondaryText}" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="Authorize the Discord desktop app so button actions can toggle self mute, deafen, and leave voice."
+                                       Style="{StaticResource SecondaryText}" FontSize="11"
+                                       TextWrapping="Wrap" Margin="0,0,0,10" />
+                            <StackPanel Orientation="Horizontal">
+                                <ui:Button x:Name="BtnDiscordConnect" Content="Connect"
+                                           Appearance="Secondary" Margin="0,0,8,0" />
+                                <ui:Button x:Name="BtnDiscordDisconnect" Content="Disconnect"
+                                           Appearance="Secondary" IsEnabled="False" />
+                            </StackPanel>
+                            <TextBlock Text="Discord must be running. If authorization fails, enable Public OAuth2 Client for the Amp Up Discord application."
+                                       Style="{StaticResource SecondaryText}" FontSize="11"
+                                       TextWrapping="Wrap" Margin="0,8,0,0" />
+                        </StackPanel>
+                    </Border>
+
                     <!-- Spotify -->
                     <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
                             Margin="0,14,0,0" Padding="0,14,0,0">

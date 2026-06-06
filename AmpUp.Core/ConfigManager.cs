@@ -186,6 +186,8 @@ public static class ConfigManager
             config.Profiles.Add("Default");
         if (string.IsNullOrEmpty(config.ActiveProfile))
             config.ActiveProfile = "Default";
+        if (string.IsNullOrWhiteSpace(config.DiscordRpc.ClientId))
+            config.DiscordRpc.ClientId = new DiscordRpcConfig().ClientId;
         foreach (var p in config.Profiles)
         {
             if (!config.ProfileIcons.ContainsKey(p))

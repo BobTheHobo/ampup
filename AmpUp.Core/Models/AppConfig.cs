@@ -103,7 +103,7 @@ public class SignalRgbConfig
 public class DiscordRpcConfig
 {
     public bool Enabled { get; set; } = true;
-    public string ClientId { get; set; } = "";
+    public string ClientId { get; set; } = "1512624085283246110";
     public string ClientSecret { get; set; } = "";
     public string RedirectUri { get; set; } = "http://127.0.0.1";
     public string AccessToken { get; set; } = "";
