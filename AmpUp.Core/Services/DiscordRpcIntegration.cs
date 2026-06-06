@@ -217,7 +217,25 @@ public sealed class DiscordRpcIntegration : IDisposable
             catch (Exception ex)
             {
                 Logger.Log($"Discord RPC stored token failed: {ex.Message}");
+                ClosePipe();
+                await ConnectAsync(clientId, ct);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_config.RefreshToken))
+        {
+            try
+            {
+                var refreshed = await RefreshAccessTokenAsync(ct);
+                await AuthenticateAsync(refreshed.AccessToken, ct);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Discord RPC refresh token failed: {ex.Message}");
                 _config.AccessToken = "";
+                _config.RefreshToken = "";
+                _config.TokenExpiresAtUtc = DateTime.MinValue;
                 _config.ConnectedUser = "";
                 _persist(_config);
                 ClosePipe();
@@ -322,6 +340,55 @@ public sealed class DiscordRpcIntegration : IDisposable
         var accessToken = payload.Value<string>("access_token") ?? "";
         if (string.IsNullOrWhiteSpace(accessToken))
             throw new InvalidOperationException("Discord token exchange returned no access token.");
+
+        _config.AccessToken = accessToken;
+        _config.RefreshToken = payload.Value<string>("refresh_token") ?? _config.RefreshToken;
+        int expiresIn = payload.Value<int?>("expires_in") ?? 604800;
+        _config.TokenExpiresAtUtc = DateTime.UtcNow.AddSeconds(Math.Max(60, expiresIn));
+        _persist(_config);
+
+        return new TokenResponse(accessToken);
+    }
+
+    private async Task<TokenResponse> RefreshAccessTokenAsync(CancellationToken ct)
+    {
+        var clientId = ResolveClientId();
+        var clientSecret = ResolveClientSecret();
+        var refreshToken = _config.RefreshToken;
+        if (string.IsNullOrWhiteSpace(refreshToken))
+            throw new InvalidOperationException("No Discord refresh token is available.");
+
+        var form = new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = refreshToken,
+        };
+
+        if (string.IsNullOrWhiteSpace(clientSecret))
+        {
+            form["client_id"] = clientId;
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://discord.com/api/oauth2/token")
+        {
+            Content = new FormUrlEncodedContent(form),
+        };
+
+        if (!string.IsNullOrWhiteSpace(clientSecret))
+        {
+            var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"));
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", auth);
+        }
+
+        using var response = await _http.SendAsync(request, ct);
+        var json = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Discord token refresh failed: {(int)response.StatusCode} {json}");
+
+        var payload = JObject.Parse(json);
+        var accessToken = payload.Value<string>("access_token") ?? "";
+        if (string.IsNullOrWhiteSpace(accessToken))
+            throw new InvalidOperationException("Discord token refresh returned no access token.");
 
         _config.AccessToken = accessToken;
         _config.RefreshToken = payload.Value<string>("refresh_token") ?? _config.RefreshToken;
