@@ -191,7 +191,6 @@ public sealed class DiscordRpcIntegration : IDisposable
         var args = new JObject
         {
             ["client_id"] = clientId,
-            ["redirect_uri"] = ResolveRedirectUri(),
             ["scopes"] = new JArray(VoiceScopes),
         };
         var data = await SendCommandAsync("AUTHORIZE", args, ct);
