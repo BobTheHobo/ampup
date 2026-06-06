@@ -157,7 +157,7 @@ Amp Up is a .NET 8 WPF application using WPF-UI, NAudio, Newtonsoft.Json, System
 
 | Version | Highlights |
 |-|-|
-| **v1.0.9.3** | Direct Discord RPC button actions for mute/deafen, explicit voice state controls, leave voice, noise suppression, and one-time authorization testing flow. |
+| **v1.0.9.3** | Direct Discord RPC button actions for mute/deafen, explicit voice state controls, leave voice, and noise suppression. |
 | **v1.0.9.2** | SignalRGB bridge/actions/profile sync, expanded N3 integration actions, Home Assistant action fixes, Room Temperature mode, warmer Govee temperature presets, and RGBIC segment reliability fixes. |
 | **v1.0.6-beta** | SignalRGB beta work, N3 sensitivity refinements, and integration polish. |
 | **v1.0.5-beta** | Stream-controller and integration reliability pass. |

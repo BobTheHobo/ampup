@@ -556,6 +556,7 @@ public partial class ButtonsView
         bool obsEnabled = _config.Obs.Enabled;
         bool vmEnabled = _config.VoiceMeeter.Enabled;
         bool groupsExist = _config.Groups.Count > 0;
+        bool discordAvailable = IsDiscordRpcAvailable(_config);
 
         bool anyHaConfigured = _config.Buttons.Concat(_config.N3.Buttons).Any(b =>
             IsHaAction(b.Action) || IsHaAction(b.DoublePressAction) || IsHaAction(b.HoldAction));
@@ -567,6 +568,8 @@ public partial class ButtonsView
             IsVmAction(b.Action) || IsVmAction(b.DoublePressAction) || IsVmAction(b.HoldAction));
         bool anyGroupConfigured = _config.Buttons.Concat(_config.N3.Buttons).Any(b =>
             b.Action == "group_toggle" || b.DoublePressAction == "group_toggle" || b.HoldAction == "group_toggle");
+        bool anyDiscordConfigured = _config.Buttons.Concat(_config.N3.Buttons).Any(b =>
+            IsDiscordAction(b.Action) || IsDiscordAction(b.DoublePressAction) || IsDiscordAction(b.HoldAction));
 
         // Always show Stream Controller page actions inside the N3 designer.
         const bool showScPageActions = true;
@@ -627,7 +630,7 @@ public partial class ButtonsView
         AddIntegrationGroup("group_discord", "Discord", "D",
             Color.FromRgb(0x58, 0x65, 0xF2), "Integrations",
             "Toggle Discord self mute or deafen through the local Discord desktop app",
-            discordChildren, enabled: true);
+            discordChildren, enabled: discordAvailable || anyDiscordConfigured);
 
         AddIntegrationGroup("group_ha", "Home Assistant", "⚡",
             Color.FromRgb(0x26, 0xC6, 0xDA), "Integrations",

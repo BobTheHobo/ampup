@@ -15,6 +15,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 - Added direct Discord RPC button actions for toggle mute, toggle deafen, explicit mute/deafen on/off, leave voice, and noise suppression.
 
+### Changed
+- Hid Discord RPC credential fields from normal Settings UI for public builds; credentials remain local/env-only for test configurations.
+
 ---
 
 ## [1.0.9.2] - 2026-06-04

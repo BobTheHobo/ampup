@@ -190,13 +190,6 @@ public partial class SettingsView : UserControl
         BtnSpotifyConnect.Click += OnSpotifyConnect;
         BtnSpotifyDisconnect.Click += OnSpotifyDisconnect;
 
-        // Discord
-        ChkDiscordRpcEnabled.Checked += OnValueChanged;
-        ChkDiscordRpcEnabled.Unchecked += OnValueChanged;
-        TxtDiscordClientId.TextChanged += OnValueChanged;
-        TxtDiscordClientSecret.PasswordChanged += OnPasswordChanged;
-        TxtDiscordRedirectUri.TextChanged += OnValueChanged;
-
         // About
         TxtVersion.Text = $"Amp Up v{UpdateChecker.CurrentVersion}";
         BtnCheckUpdate.Click += OnCheckUpdate;
@@ -293,13 +286,6 @@ public partial class SettingsView : UserControl
         // Integrations — Spotify
         TxtSpotifyClientId.Text = config.Spotify.ClientId;
         RefreshSpotifyStatus();
-
-        ChkDiscordRpcEnabled.IsChecked = config.DiscordRpc.Enabled;
-        TxtDiscordClientId.Text = config.DiscordRpc.ClientId;
-        TxtDiscordClientSecret.Password = config.DiscordRpc.ClientSecret;
-        TxtDiscordRedirectUri.Text = string.IsNullOrWhiteSpace(config.DiscordRpc.RedirectUri)
-            ? "http://127.0.0.1"
-            : config.DiscordRpc.RedirectUri;
 
         // Integrations — Govee
         ChkGoveeEnabled.IsChecked = config.Ambience.GoveeEnabled;
@@ -837,12 +823,6 @@ public partial class SettingsView : UserControl
         _config.Ambience.GoveeCloudEnabled = ChkGoveeCloudEnabled.IsChecked == true;
         _config.Ambience.GoveeApiKey = TxtGoveeApiKey.Password;
         _config.Spotify.ClientId = TxtSpotifyClientId.Text.Trim();
-        _config.DiscordRpc.Enabled = ChkDiscordRpcEnabled.IsChecked == true;
-        _config.DiscordRpc.ClientId = TxtDiscordClientId.Text.Trim();
-        _config.DiscordRpc.ClientSecret = TxtDiscordClientSecret.Password;
-        _config.DiscordRpc.RedirectUri = string.IsNullOrWhiteSpace(TxtDiscordRedirectUri.Text)
-            ? "http://127.0.0.1"
-            : TxtDiscordRedirectUri.Text.Trim();
 
         // VoiceMeeter
         _config.VoiceMeeter.Enabled = ChkVmEnabled.IsChecked == true;
