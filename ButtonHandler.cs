@@ -232,6 +232,30 @@ public class ButtonHandler : IDisposable
                     if (_discordRpc != null)
                         _ = _discordRpc.ToggleDeafenAsync();
                     break;
+                case "discord_mute_on":
+                    if (_discordRpc != null)
+                        _ = _discordRpc.SetMuteAsync(true);
+                    break;
+                case "discord_mute_off":
+                    if (_discordRpc != null)
+                        _ = _discordRpc.SetMuteAsync(false);
+                    break;
+                case "discord_deafen_on":
+                    if (_discordRpc != null)
+                        _ = _discordRpc.SetDeafenAsync(true);
+                    break;
+                case "discord_deafen_off":
+                    if (_discordRpc != null)
+                        _ = _discordRpc.SetDeafenAsync(false);
+                    break;
+                case "discord_leave_voice":
+                    if (_discordRpc != null)
+                        _ = _discordRpc.LeaveVoiceChannelAsync();
+                    break;
+                case "discord_toggle_noise_suppression":
+                    if (_discordRpc != null)
+                        _ = _discordRpc.ToggleNoiseSuppressionAsync();
+                    break;
                 case "add_active_app_to_group":
                     AddForegroundAppToGroup(btn); break;
                 case "mute_device":

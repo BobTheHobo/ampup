@@ -649,7 +649,7 @@
                                       Content="Enable Discord mute/deafen actions"
                                       Foreground="{StaticResource TextPrimaryBrush}"
                                       Margin="0,0,0,8" />
-                            <TextBlock Text="Uses the local Discord desktop app for direct self mute/deafen actions without global keyboard shortcuts."
+                            <TextBlock Text="Uses the local Discord desktop app for direct voice actions without global keyboard shortcuts. Discord may ask for one-time authorization."
                                        Style="{StaticResource SecondaryText}" FontSize="11"
                                        TextWrapping="Wrap" Margin="0,0,0,10" />
                             <Expander Header="Advanced - Discord RPC app credentials"

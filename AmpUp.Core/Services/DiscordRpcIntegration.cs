@@ -44,6 +44,38 @@ public sealed class DiscordRpcIntegration : IDisposable
     public async Task ToggleDeafenAsync(CancellationToken ct = default)
         => await ToggleVoiceFlagAsync("deaf", ct);
 
+    public async Task SetMuteAsync(bool muted, CancellationToken ct = default)
+        => await SetVoiceFlagAsync("mute", muted, ct);
+
+    public async Task SetDeafenAsync(bool deafened, CancellationToken ct = default)
+        => await SetVoiceFlagAsync("deaf", deafened, ct);
+
+    public async Task ToggleNoiseSuppressionAsync(CancellationToken ct = default)
+        => await ToggleVoiceFlagAsync("noise_suppression", ct);
+
+    public async Task LeaveVoiceChannelAsync(CancellationToken ct = default)
+    {
+        if (!_config.Enabled)
+            return;
+
+        await _gate.WaitAsync(ct);
+        try
+        {
+            await EnsureAuthenticatedAsync(ct);
+            await SendCommandAsync("SELECT_VOICE_CHANNEL",
+                new JObject { ["channel_id"] = JValue.CreateNull() }, ct);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Discord RPC leave voice failed: {ex.Message}");
+            ClosePipe();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<bool?> GetMuteAsync(CancellationToken ct = default)
         => await GetVoiceFlagAsync("mute", ct);
 
@@ -82,6 +114,30 @@ public sealed class DiscordRpcIntegration : IDisposable
         catch (Exception ex)
         {
             Logger.Log($"Discord RPC toggle {flag} failed: {ex.Message}");
+            ClosePipe();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task SetVoiceFlagAsync(string flag, bool value, CancellationToken ct)
+    {
+        if (!_config.Enabled)
+            return;
+
+        await _gate.WaitAsync(ct);
+        try
+        {
+            await EnsureAuthenticatedAsync(ct);
+            var updated = await SendCommandAsync("SET_VOICE_SETTINGS",
+                new JObject { [flag] = value }, ct);
+            UpdateCachedFlags(updated);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Discord RPC set {flag} failed: {ex.Message}");
             ClosePipe();
         }
         finally

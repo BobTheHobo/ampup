@@ -51,6 +51,9 @@ public partial class ButtonsView : UserControl
         ("Spotify: Play/Pause", "spotify_play_pause"), ("Spotify: Next", "spotify_next"), ("Spotify: Prev", "spotify_prev"),
         ("Spotify: Shuffle", "spotify_shuffle"), ("Spotify: Like Track", "spotify_like"),
         ("Discord: Toggle Mute", "discord_toggle_mute"), ("Discord: Toggle Deafen", "discord_toggle_deafen"),
+        ("Discord: Mute On", "discord_mute_on"), ("Discord: Mute Off", "discord_mute_off"),
+        ("Discord: Deafen On", "discord_deafen_on"), ("Discord: Deafen Off", "discord_deafen_off"),
+        ("Discord: Leave Voice", "discord_leave_voice"), ("Discord: Toggle Noise Suppression", "discord_toggle_noise_suppression"),
         ("OBS: Record", "obs_record"), ("OBS: Stream", "obs_stream"),
         ("OBS: Scene", "obs_scene"), ("OBS: Mute", "obs_mute"),
         ("VM: Mute Strip", "vm_mute_strip"), ("VM: Mute Bus", "vm_mute_bus"),
@@ -67,6 +70,13 @@ public partial class ButtonsView : UserControl
     };
 
     private static readonly string[] PathActions = { "mute_program", "launch_exe", "close_program", "sc_go_to_page", "open_url", "signalrgb_effect", "signalrgb_effect_cycle", "signalrgb_restore" };
+    private static readonly string[] DiscordActionValues =
+    {
+        "discord_toggle_mute", "discord_toggle_deafen",
+        "discord_mute_on", "discord_mute_off",
+        "discord_deafen_on", "discord_deafen_off",
+        "discord_leave_voice", "discord_toggle_noise_suppression",
+    };
 
     private static readonly (string Display, string Value)[] PowerOptions =
     {
@@ -101,6 +111,9 @@ public partial class ButtonsView : UserControl
         { "spotify_play_pause", "▶" }, { "spotify_next", "⏭" }, { "spotify_prev", "⏮" },
         { "spotify_shuffle", "⇌" }, { "spotify_like", "♥" },
         { "discord_toggle_mute", "D" }, { "discord_toggle_deafen", "D" },
+        { "discord_mute_on", "D" }, { "discord_mute_off", "D" },
+        { "discord_deafen_on", "D" }, { "discord_deafen_off", "D" },
+        { "discord_leave_voice", "D" }, { "discord_toggle_noise_suppression", "D" },
         { "add_active_app_to_group", "+" },
         { "signalrgb_effect", "S" }, { "signalrgb_effect_cycle", "S" },
         { "signalrgb_blackout", "S" }, { "signalrgb_restore", "S" },
@@ -155,6 +168,12 @@ public partial class ButtonsView : UserControl
         { "vm_mute_bus",        Color.FromRgb(0xFF, 0x8F, 0x00) },
         { "discord_toggle_mute", Color.FromRgb(0x58, 0x65, 0xF2) },
         { "discord_toggle_deafen", Color.FromRgb(0x58, 0x65, 0xF2) },
+        { "discord_mute_on", Color.FromRgb(0x58, 0x65, 0xF2) },
+        { "discord_mute_off", Color.FromRgb(0x58, 0x65, 0xF2) },
+        { "discord_deafen_on", Color.FromRgb(0x58, 0x65, 0xF2) },
+        { "discord_deafen_off", Color.FromRgb(0x58, 0x65, 0xF2) },
+        { "discord_leave_voice", Color.FromRgb(0x58, 0x65, 0xF2) },
+        { "discord_toggle_noise_suppression", Color.FromRgb(0x58, 0x65, 0xF2) },
         { "add_active_app_to_group", Color.FromRgb(0x26, 0xC6, 0xDA) },
         { "signalrgb_effect",   Color.FromRgb(0xFF, 0x9E, 0x55) },
         { "signalrgb_effect_cycle", Color.FromRgb(0xFF, 0xC1, 0x07) },
@@ -1396,6 +1415,12 @@ public partial class ButtonsView : UserControl
         { "spotify_like",       "Like / unlike the currently-playing Spotify track" },
         { "discord_toggle_mute", "Toggle Discord self mute through local Discord RPC" },
         { "discord_toggle_deafen", "Toggle Discord self deafen through local Discord RPC" },
+        { "discord_mute_on", "Set Discord self mute on through local Discord RPC" },
+        { "discord_mute_off", "Set Discord self mute off through local Discord RPC" },
+        { "discord_deafen_on", "Set Discord self deafen on through local Discord RPC" },
+        { "discord_deafen_off", "Set Discord self deafen off through local Discord RPC" },
+        { "discord_leave_voice", "Leave the current Discord voice channel" },
+        { "discord_toggle_noise_suppression", "Toggle Discord noise suppression" },
         { "signalrgb_effect",   "Switch to a SignalRGB lighting effect using the free signalrgb:// URL handler" },
         { "signalrgb_effect_cycle", "Cycle through SignalRGB effects listed on this button" },
         { "signalrgb_blackout", "Apply SignalRGB Solid Color black using the free signalrgb:// URL handler" },
@@ -1510,7 +1535,7 @@ public partial class ButtonsView : UserControl
         ("Advanced",        new[] { "multi_action", "toggle_action", "open_folder" }),
         ("Power",           new[] { "power_sleep", "power_lock", "power_off", "power_restart", "power_logoff", "power_hibernate" }),
         ("Room",            new[] { "room_toggle", "room_effect" }),
-        ("Integrations",    new[] { "group_toggle", "ha_toggle", "ha_scene", "ha_color", "ha_color_temp", "ha_service", "corsair_toggle", "govee_toggle", "govee_color", "govee_white_toggle", "obs_record", "obs_stream", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus", "spotify_play_pause", "spotify_next", "spotify_prev", "spotify_shuffle", "spotify_like", "discord_toggle_mute", "discord_toggle_deafen", "signalrgb_effect", "signalrgb_effect_cycle", "signalrgb_blackout", "signalrgb_restore" }),
+        ("Integrations",    new[] { "group_toggle", "ha_toggle", "ha_scene", "ha_color", "ha_color_temp", "ha_service", "corsair_toggle", "govee_toggle", "govee_color", "govee_white_toggle", "obs_record", "obs_stream", "obs_scene", "obs_mute", "vm_mute_strip", "vm_mute_bus", "spotify_play_pause", "spotify_next", "spotify_prev", "spotify_shuffle", "spotify_like", "discord_toggle_mute", "discord_toggle_deafen", "discord_mute_on", "discord_mute_off", "discord_deafen_on", "discord_deafen_off", "discord_leave_voice", "discord_toggle_noise_suppression", "signalrgb_effect", "signalrgb_effect_cycle", "signalrgb_blackout", "signalrgb_restore" }),
         ("Stream Controller", new[] { "sc_page_next", "sc_page_prev", "sc_page_home", "sc_go_to_page" }),
     };
 
@@ -1579,7 +1604,7 @@ public partial class ButtonsView : UserControl
 
         picker.AddActionGroup("group_discord", "Discord", "D",
             Color.FromRgb(0x58, 0x65, 0xF2),
-            new[] { "discord_toggle_mute", "discord_toggle_deafen" });
+            DiscordActionValues);
 
         picker.BuildPopup();
     }

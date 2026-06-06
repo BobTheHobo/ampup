@@ -10,6 +10,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.9.3] - 2026-06-05
+
+### Added
+- Added direct Discord RPC button actions for toggle mute, toggle deafen, explicit mute/deafen on/off, leave voice, and noise suppression.
+
+---
+
 ## [1.0.9.2] - 2026-06-04
 
 ### Added

@@ -148,8 +148,12 @@ internal static class DynamicKeyStateProvider
             case "mute_mic":
                 return "mute_mic";
             case "discord_toggle_mute":
+            case "discord_mute_on":
+            case "discord_mute_off":
                 return "discord_mic";
             case "discord_toggle_deafen":
+            case "discord_deafen_on":
+            case "discord_deafen_off":
                 return "discord_deafen";
             case "obs_record":
                 return "obs_recording";
