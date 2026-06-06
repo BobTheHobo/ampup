@@ -273,7 +273,6 @@ public sealed class DiscordRpcIntegration : IDisposable
         {
             ["client_id"] = clientId,
             ["response_type"] = "code",
-            ["redirect_uri"] = ResolveRedirectUri(),
             ["scopes"] = new JArray(VoiceScopes),
             ["code_challenge"] = CreatePkceChallenge(codeVerifier),
             ["code_challenge_method"] = "S256",
