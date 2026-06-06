@@ -46,6 +46,7 @@ public class ButtonHandler : IDisposable
     private HAIntegration? _ha;
     private ObsIntegration? _obs;
     private VoiceMeeterIntegration? _vm;
+    private DiscordRpcIntegration? _discordRpc;
     private readonly MMDeviceEnumerator _enumerator = new();
     private readonly ButtonGestureEngine _gestureEngine = new();
 
@@ -61,6 +62,7 @@ public class ButtonHandler : IDisposable
     public void SetHAIntegration(HAIntegration? ha) => _ha = ha;
     public void SetObsIntegration(ObsIntegration? obs) => _obs = obs;
     public void SetVoiceMeeterIntegration(VoiceMeeterIntegration? vm) => _vm = vm;
+    public void SetDiscordRpcIntegration(DiscordRpcIntegration? discordRpc) => _discordRpc = discordRpc;
 
     /// <summary>Fires when room_toggle action is triggered — toggle all room lights.</summary>
     public event Action? OnRoomToggle;
@@ -222,6 +224,14 @@ public class ButtonHandler : IDisposable
                     MuteActiveWindow(); break;
                 case "mute_app_group":
                     MuteAppGroup(btn); break;
+                case "discord_toggle_mute":
+                    if (_discordRpc != null)
+                        _ = _discordRpc.ToggleMuteAsync();
+                    break;
+                case "discord_toggle_deafen":
+                    if (_discordRpc != null)
+                        _ = _discordRpc.ToggleDeafenAsync();
+                    break;
                 case "add_active_app_to_group":
                     AddForegroundAppToGroup(btn); break;
                 case "mute_device":

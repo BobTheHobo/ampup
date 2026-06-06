@@ -56,6 +56,8 @@ public partial class App : Application
     private N3Controller? _n3;
     private SpotifyIntegration? _spotify;
     public static SpotifyIntegration? Spotify => (Current as App)?._spotify;
+    private DiscordRpcIntegration? _discordRpc;
+    public static DiscordRpcIntegration? DiscordRpc => (Current as App)?._discordRpc;
     private RadialWheelOverlay? _radialWheel;
     private bool _wheelVisible;
     private System.Windows.Threading.DispatcherTimer? _wheelDismissTimer;
@@ -357,6 +359,9 @@ public partial class App : Application
         // Spotify integration — tries to restore a prior session silently
         // using the stored refresh token. User-facing Connect button lives
         // in Settings for first-time auth.
+        _discordRpc = new DiscordRpcIntegration(_config.DiscordRpc, _ => ConfigManager.Save(_config));
+        _buttons.SetDiscordRpcIntegration(_discordRpc);
+
         _spotify = new SpotifyIntegration(_config.Spotify, _ => ConfigManager.Save(_config));
         _spotify.OnStateChanged += HandleSpotifyStateChanged;
         _ = Task.Run(async () =>
@@ -4842,6 +4847,7 @@ public partial class App : Application
         _lgMonitor?.Dispose();
         _n3?.Dispose();
         _spotify?.Dispose();
+        _discordRpc?.Dispose();
         _cachedMic?.Dispose();
         _cachedMaster?.Dispose();
         lock (_notifyLock)

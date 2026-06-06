@@ -190,6 +190,12 @@ public partial class SettingsView : UserControl
         BtnSpotifyConnect.Click += OnSpotifyConnect;
         BtnSpotifyDisconnect.Click += OnSpotifyDisconnect;
 
+        // Discord
+        ChkDiscordRpcEnabled.Checked += OnValueChanged;
+        ChkDiscordRpcEnabled.Unchecked += OnValueChanged;
+        TxtDiscordClientId.TextChanged += OnValueChanged;
+        TxtDiscordClientSecret.PasswordChanged += OnPasswordChanged;
+
         // About
         TxtVersion.Text = $"Amp Up v{UpdateChecker.CurrentVersion}";
         BtnCheckUpdate.Click += OnCheckUpdate;
@@ -286,6 +292,10 @@ public partial class SettingsView : UserControl
         // Integrations — Spotify
         TxtSpotifyClientId.Text = config.Spotify.ClientId;
         RefreshSpotifyStatus();
+
+        ChkDiscordRpcEnabled.IsChecked = config.DiscordRpc.Enabled;
+        TxtDiscordClientId.Text = config.DiscordRpc.ClientId;
+        TxtDiscordClientSecret.Password = config.DiscordRpc.ClientSecret;
 
         // Integrations — Govee
         ChkGoveeEnabled.IsChecked = config.Ambience.GoveeEnabled;
@@ -501,6 +511,7 @@ public partial class SettingsView : UserControl
         loaded.Ambience = _config.Ambience;
         loaded.VoiceMeeter = _config.VoiceMeeter;
         loaded.SignalRgb = _config.SignalRgb;
+        loaded.DiscordRpc = _config.DiscordRpc;
         loaded.Groups = _config.Groups;
     }
 
@@ -822,6 +833,9 @@ public partial class SettingsView : UserControl
         _config.Ambience.GoveeCloudEnabled = ChkGoveeCloudEnabled.IsChecked == true;
         _config.Ambience.GoveeApiKey = TxtGoveeApiKey.Password;
         _config.Spotify.ClientId = TxtSpotifyClientId.Text.Trim();
+        _config.DiscordRpc.Enabled = ChkDiscordRpcEnabled.IsChecked == true;
+        _config.DiscordRpc.ClientId = TxtDiscordClientId.Text.Trim();
+        _config.DiscordRpc.ClientSecret = TxtDiscordClientSecret.Password;
 
         // VoiceMeeter
         _config.VoiceMeeter.Enabled = ChkVmEnabled.IsChecked == true;

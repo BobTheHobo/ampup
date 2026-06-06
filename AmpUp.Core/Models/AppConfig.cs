@@ -40,6 +40,7 @@ public class AppConfig
     public ObsConfig Obs { get; set; } = new();
     public VoiceMeeterConfig VoiceMeeter { get; set; } = new();
     public SignalRgbConfig SignalRgb { get; set; } = new();
+    public DiscordRpcConfig DiscordRpc { get; set; } = new();
     public bool HasCompletedSetup { get; set; } = false;
     public bool AutoSuggestLayout { get; set; } = false;
     public string LastWelcomeVersion { get; set; } = "";
@@ -97,6 +98,17 @@ public class SignalRgbConfig
     public bool ProfileSyncEnabled { get; set; } = false;
     public Dictionary<string, string> ProfileEffects { get; set; } = new();
     public Dictionary<string, string> ProfileLayouts { get; set; } = new();
+}
+
+public class DiscordRpcConfig
+{
+    public bool Enabled { get; set; } = true;
+    public string ClientId { get; set; } = "";
+    public string ClientSecret { get; set; } = "";
+    public string AccessToken { get; set; } = "";
+    public string RefreshToken { get; set; } = "";
+    public DateTime TokenExpiresAtUtc { get; set; } = DateTime.MinValue;
+    public string ConnectedUser { get; set; } = "";
 }
 
 public class SpotifyConfig

@@ -47,7 +47,10 @@ internal static class DynamicKeyStateProvider
 
                 case "discord_mic":
                     // TODO: no reliable public API for Discord mic mute — MVP returns false.
-                    return false;
+                    return App.DiscordRpc?.LastKnownMute == true;
+
+                case "discord_deafen":
+                    return App.DiscordRpc?.LastKnownDeafen == true;
 
                 case "room_lights_on":
                     // Any Govee device currently powered on, or Corsair
@@ -126,7 +129,8 @@ internal static class DynamicKeyStateProvider
         ("obs_recording",   "OBS Recording"),
         ("obs_streaming",   "OBS Streaming"),
         ("spotify_playing", "Spotify Playing"),
-        ("discord_mic",     "Discord Mic Muted (coming soon)"),
+        ("discord_mic",     "Discord Mic Muted"),
+        ("discord_deafen",  "Discord Deafened"),
         ("room_lights_on",  "Room Lights On"),
     };
 
@@ -143,6 +147,10 @@ internal static class DynamicKeyStateProvider
                 return "mute_master";
             case "mute_mic":
                 return "mute_mic";
+            case "discord_toggle_mute":
+                return "discord_mic";
+            case "discord_toggle_deafen":
+                return "discord_deafen";
             case "obs_record":
                 return "obs_recording";
             case "obs_stream":

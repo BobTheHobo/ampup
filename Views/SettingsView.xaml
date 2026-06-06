@@ -638,6 +638,41 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Discord -->
+                    <Border BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
+                            Margin="0,14,0,0" Padding="0,14,0,0">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="Discord" Style="{StaticResource BodyText}" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <CheckBox x:Name="ChkDiscordRpcEnabled"
+                                      Content="Enable Discord mute/deafen actions"
+                                      Foreground="{StaticResource TextPrimaryBrush}"
+                                      Margin="0,0,0,8" />
+                            <TextBlock Text="Uses the local Discord desktop app for direct self mute/deafen actions without global keyboard shortcuts."
+                                       Style="{StaticResource SecondaryText}" FontSize="11"
+                                       TextWrapping="Wrap" Margin="0,0,0,10" />
+                            <Expander Header="Advanced - Discord RPC app credentials"
+                                      Foreground="{DynamicResource TextDimBrush}"
+                                      Margin="0,4,0,0" FontSize="11">
+                                <StackPanel Margin="0,8,0,0">
+                                    <TextBlock Text="Client ID" Style="{StaticResource SecondaryText}" Margin="0,0,0,4" />
+                                    <TextBox x:Name="TxtDiscordClientId"
+                                             Background="{DynamicResource InputBgBrush}"
+                                             Foreground="{DynamicResource TextPrimaryBrush}"
+                                             BorderBrush="{DynamicResource InputBorderBrush}"
+                                             Padding="8,4"
+                                             Margin="0,0,0,8" />
+                                    <TextBlock Text="Client Secret" Style="{StaticResource SecondaryText}" Margin="0,0,0,4" />
+                                    <PasswordBox x:Name="TxtDiscordClientSecret"
+                                                 Background="{DynamicResource InputBgBrush}"
+                                                 Foreground="{DynamicResource TextPrimaryBrush}"
+                                                 BorderBrush="{DynamicResource InputBorderBrush}" />
+                                </StackPanel>
+                            </Expander>
+                        </StackPanel>
+                    </Border>
+
                 </StackPanel>
             </Border>
 
