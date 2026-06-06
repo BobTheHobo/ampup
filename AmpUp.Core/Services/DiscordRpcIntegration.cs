@@ -191,6 +191,7 @@ public sealed class DiscordRpcIntegration : IDisposable
         var args = new JObject
         {
             ["client_id"] = clientId,
+            ["redirect_uri"] = ResolveRedirectUri(),
             ["scopes"] = new JArray(VoiceScopes),
         };
         var data = await SendCommandAsync("AUTHORIZE", args, ct);
@@ -211,6 +212,7 @@ public sealed class DiscordRpcIntegration : IDisposable
         {
             ["grant_type"] = "authorization_code",
             ["code"] = code,
+            ["redirect_uri"] = ResolveRedirectUri(),
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://discord.com/api/oauth2/token")
@@ -340,6 +342,12 @@ public sealed class DiscordRpcIntegration : IDisposable
         => FirstNonEmpty(
             Environment.GetEnvironmentVariable("AMPUP_DISCORD_CLIENT_SECRET"),
             _config.ClientSecret);
+
+    private string ResolveRedirectUri()
+        => FirstNonEmpty(
+            Environment.GetEnvironmentVariable("AMPUP_DISCORD_REDIRECT_URI"),
+            _config.RedirectUri,
+            "http://127.0.0.1");
 
     private static string FirstNonEmpty(params string?[] values)
     {

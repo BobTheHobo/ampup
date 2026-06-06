@@ -668,6 +668,12 @@
                                                  Background="{DynamicResource InputBgBrush}"
                                                  Foreground="{DynamicResource TextPrimaryBrush}"
                                                  BorderBrush="{DynamicResource InputBorderBrush}" />
+                                    <TextBlock Text="Redirect URI" Style="{StaticResource SecondaryText}" Margin="0,8,0,4" />
+                                    <TextBox x:Name="TxtDiscordRedirectUri"
+                                             Background="{DynamicResource InputBgBrush}"
+                                             Foreground="{DynamicResource TextPrimaryBrush}"
+                                             BorderBrush="{DynamicResource InputBorderBrush}"
+                                             Padding="8,4" />
                                 </StackPanel>
                             </Expander>
                         </StackPanel>
