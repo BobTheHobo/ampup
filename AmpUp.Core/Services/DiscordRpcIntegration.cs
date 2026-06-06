@@ -294,12 +294,12 @@ public sealed class DiscordRpcIntegration : IDisposable
             ["grant_type"] = "authorization_code",
             ["code"] = code,
             ["redirect_uri"] = ResolveRedirectUri(),
+            ["code_verifier"] = codeVerifier,
         };
 
         if (string.IsNullOrWhiteSpace(clientSecret))
         {
             form["client_id"] = clientId;
-            form["code_verifier"] = codeVerifier;
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://discord.com/api/oauth2/token")
