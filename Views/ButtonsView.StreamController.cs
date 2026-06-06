@@ -2284,8 +2284,6 @@ public partial class ButtonsView
             _config.Buttons.Concat(_config.N3.Buttons).Any(b => IsVmAction(b.Action) || IsVmAction(b.DoublePressAction) || IsVmAction(b.HoldAction)),
             _config.Groups.Count > 0,
             _config.Buttons.Concat(_config.N3.Buttons).Any(b => b.Action == "group_toggle" || b.DoublePressAction == "group_toggle" || b.HoldAction == "group_toggle"),
-            IsDiscordRpcAvailable(_config),
-            _config.Buttons.Concat(_config.N3.Buttons).Any(b => IsDiscordAction(b.Action) || IsDiscordAction(b.DoublePressAction) || IsDiscordAction(b.HoldAction)),
             showScPageActions: true);
 
         PopulateDevicePicker(_scDevicePicker);

@@ -1,4 +1,5 @@
 using System.IO;
+using System.IO.Compression;
 using AmpUp.Core.Models;
 using Newtonsoft.Json;
 
@@ -304,5 +305,106 @@ public static class ConfigManager
     {
         var path = ProfilePath(profileName);
         return LoadJsonFile<AppConfig>(path, $"profile {profileName}", cfg => { if (cfg != null) EnsureDefaults(cfg); });
+    }
+
+    public static void CreateBackup(string destinationPath, AppConfig config)
+    {
+        lock (_saveLock)
+        {
+            string json = JsonConvert.SerializeObject(config, Formatting.Indented);
+            AtomicWrite(ConfigPath, json);
+            if (!string.IsNullOrWhiteSpace(config.ActiveProfile))
+                AtomicWrite(ProfilePath(config.ActiveProfile), json);
+
+            var backupDir = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrWhiteSpace(backupDir))
+                Directory.CreateDirectory(backupDir);
+
+            var tempPath = destinationPath + ".tmp";
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
+
+            using (var archive = ZipFile.Open(tempPath, ZipArchiveMode.Create))
+            {
+                AddJsonFileIfExists(archive, ConfigPath, "config.json");
+
+                foreach (var profilePath in Directory.EnumerateFiles(ConfigDir, "profile_*.json"))
+                    AddJsonFileIfExists(archive, profilePath, Path.GetFileName(profilePath));
+
+                var manifest = new
+                {
+                    app = "AmpUp",
+                    backupVersion = 1,
+                    createdUtc = DateTime.UtcNow,
+                    activeProfile = config.ActiveProfile,
+                    profiles = config.Profiles,
+                };
+                var entry = archive.CreateEntry("manifest.json", CompressionLevel.Optimal);
+                using var writer = new StreamWriter(entry.Open());
+                writer.Write(JsonConvert.SerializeObject(manifest, Formatting.Indented));
+            }
+
+            if (File.Exists(destinationPath))
+                File.Delete(destinationPath);
+            File.Move(tempPath, destinationPath);
+        }
+    }
+
+    public static AppConfig RestoreBackup(string sourcePath)
+    {
+        lock (_saveLock)
+        {
+            var restoredJson = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            using (var archive = ZipFile.OpenRead(sourcePath))
+            {
+                foreach (var entry in archive.Entries)
+                {
+                    var fileName = Path.GetFileName(entry.FullName);
+                    if (!IsRestorableConfigFile(fileName))
+                        continue;
+
+                    using var reader = new StreamReader(entry.Open());
+                    restoredJson[fileName] = reader.ReadToEnd();
+                }
+            }
+
+            if (!restoredJson.TryGetValue("config.json", out var configJson))
+                throw new InvalidDataException("Backup does not contain config.json.");
+
+            var restoredConfig = JsonConvert.DeserializeObject<AppConfig>(configJson)
+                ?? throw new InvalidDataException("Backup config.json is not a valid AmpUp config.");
+            EnsureDefaults(restoredConfig);
+
+            foreach (var path in Directory.EnumerateFiles(ConfigDir, "profile_*.json"))
+                File.Delete(path);
+
+            foreach (var pair in restoredJson)
+            {
+                var destination = pair.Key.Equals("config.json", StringComparison.OrdinalIgnoreCase)
+                    ? ConfigPath
+                    : Path.Combine(ConfigDir, pair.Key);
+                AtomicWrite(destination, pair.Value);
+            }
+
+            return restoredConfig;
+        }
+    }
+
+    private static void AddJsonFileIfExists(ZipArchive archive, string sourcePath, string entryName)
+    {
+        if (!File.Exists(sourcePath))
+            return;
+
+        archive.CreateEntryFromFile(sourcePath, entryName, CompressionLevel.Optimal);
+    }
+
+    private static bool IsRestorableConfigFile(string fileName)
+    {
+        if (fileName.Equals("config.json", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return fileName.StartsWith("profile_", StringComparison.OrdinalIgnoreCase)
+            && fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
     }
 }

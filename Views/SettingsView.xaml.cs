@@ -122,6 +122,8 @@ public partial class SettingsView : UserControl
         BtnImportTurnUp.Click += OnImportTurnUp;
         BtnExportProfile.Click += OnExportProfile;
         BtnImportProfile.Click += OnImportProfile;
+        BtnBackupSettings.Click += OnBackupSettings;
+        BtnRestoreSettings.Click += OnRestoreSettings;
 
         // Govee
         ChkGoveeEnabled.Checked += OnGoveeEnabledChanged;
@@ -1058,6 +1060,80 @@ public partial class SettingsView : UserControl
     }
 
     // ── Home Assistant settings ────────────────────────────────────
+
+    private void OnBackupSettings(object sender, RoutedEventArgs e)
+    {
+        if (_config == null) return;
+
+        CollectAndSave();
+        ConfigManager.SaveProfile(_config, _config.ActiveProfile);
+
+        var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmm");
+        var dlg = new SaveFileDialog
+        {
+            Title = "Backup Amp Up Settings",
+            FileName = $"AmpUp-Backup-{timestamp}.ampupbackup",
+            Filter = "Amp Up backup (*.ampupbackup)|*.ampupbackup|Zip archive (*.zip)|*.zip|All files (*.*)|*.*",
+            DefaultExt = "ampupbackup"
+        };
+
+        if (dlg.ShowDialog() != true) return;
+
+        try
+        {
+            ConfigManager.CreateBackup(dlg.FileName, _config);
+            GlassDialog.ShowInfo("Amp Up settings backup saved.", owner: Window.GetWindow(this));
+        }
+        catch (Exception ex)
+        {
+            GlassDialog.ShowWarning($"Backup failed: {ex.Message}", owner: Window.GetWindow(this));
+        }
+    }
+
+    private void OnRestoreSettings(object sender, RoutedEventArgs e)
+    {
+        if (_config == null) return;
+
+        var dlg = new OpenFileDialog
+        {
+            Title = "Restore Amp Up Settings",
+            Filter = "Amp Up backup (*.ampupbackup;*.zip)|*.ampupbackup;*.zip|All files (*.*)|*.*",
+            DefaultExt = "ampupbackup"
+        };
+
+        if (dlg.ShowDialog() != true) return;
+
+        if (!GlassDialog.Confirm(
+            "Restore this backup? Current app settings and saved profiles will be replaced.",
+            "RESTORE SETTINGS",
+            dangerYes: true,
+            owner: Window.GetWindow(this)))
+            return;
+
+        try
+        {
+            CollectAndSave();
+            var preRestorePath = Path.Combine(
+                ConfigManager.AppDataDir,
+                $"AmpUp-Before-Restore-{DateTime.Now:yyyyMMdd-HHmmss}.ampupbackup");
+            ConfigManager.CreateBackup(preRestorePath, _config);
+
+            var restored = ConfigManager.RestoreBackup(dlg.FileName);
+            _config = restored;
+            _onSave?.Invoke(_config);
+            LoadConfig(_config, _onSave!);
+            (Window.GetWindow(this) as MainWindow)?.RefreshProfilePicker();
+            (Window.GetWindow(this) as MainWindow)?.RefreshViews(_config);
+
+            GlassDialog.ShowInfo(
+                $"Amp Up settings restored.\n\nA safety backup of the previous settings was saved to:\n{preRestorePath}",
+                owner: Window.GetWindow(this));
+        }
+        catch (Exception ex)
+        {
+            GlassDialog.ShowWarning($"Restore failed: {ex.Message}", owner: Window.GetWindow(this));
+        }
+    }
 
     private async void OnHaTest(object sender, RoutedEventArgs e)
     {

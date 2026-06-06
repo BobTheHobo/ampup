@@ -260,6 +260,28 @@
                 </StackPanel>
             </Border>
 
+            <!-- BACKUP & RESTORE -->
+            <Border Style="{StaticResource CardPanel}" Margin="0,0,0,12">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <Border Width="3" CornerRadius="2" Background="{DynamicResource AccentBrush}" Margin="0,0,10,0" />
+                        <TextBlock Text="BACKUP &amp; RESTORE" Style="{StaticResource HeaderText}" Margin="0" />
+                    </StackPanel>
+                    <TextBlock Text="Save a full copy of your Amp Up settings before trying test builds. Restore brings back app settings and saved profiles."
+                               Style="{StaticResource SecondaryText}" Margin="0,0,0,10" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal">
+                        <ui:Button x:Name="BtnBackupSettings" Content="Backup Settings"
+                                   Appearance="Secondary" Margin="0,0,8,0"
+                                   ToolTip="Save a full Amp Up settings backup file" />
+                        <ui:Button x:Name="BtnRestoreSettings" Content="Restore Settings"
+                                   Appearance="Danger"
+                                   ToolTip="Restore app settings and profiles from a backup file" />
+                    </StackPanel>
+                    <TextBlock Text="Backup files may include integration tokens or API keys. Keep them private."
+                               Style="{StaticResource SecondaryText}" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
             <!-- LED Calibration moved to the Lights tab (CALIBRATION sub-tab) -->
 
             <!-- ── INTEGRATIONS ────────────────────────────────────── -->

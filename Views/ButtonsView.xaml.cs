@@ -1461,15 +1461,11 @@ public partial class ButtonsView : UserControl
         bool groupsExist = config.Groups.Count > 0;
         bool anyGroupConfigured = config.Buttons.Any(b =>
             b.Action == "group_toggle" || b.DoublePressAction == "group_toggle" || b.HoldAction == "group_toggle");
-        bool discordAvailable = IsDiscordRpcAvailable(config);
-        bool anyDiscordConfigured = config.Buttons.Any(b =>
-            IsDiscordAction(b.Action) || IsDiscordAction(b.DoublePressAction) || IsDiscordAction(b.HoldAction));
-
         for (int i = 0; i < 5; i++)
         {
-            PopulateActionPicker(_tapCombos[i], haEnabled, anyHaConfigured, goveeEnabled, anyGoveeConfigured, obsEnabled, anyObsConfigured, vmEnabled, anyVmConfigured, groupsExist, anyGroupConfigured, discordAvailable, anyDiscordConfigured);
-            PopulateActionPicker(_dblCombos[i], haEnabled, anyHaConfigured, goveeEnabled, anyGoveeConfigured, obsEnabled, anyObsConfigured, vmEnabled, anyVmConfigured, groupsExist, anyGroupConfigured, discordAvailable, anyDiscordConfigured);
-            PopulateActionPicker(_holdCombos[i], haEnabled, anyHaConfigured, goveeEnabled, anyGoveeConfigured, obsEnabled, anyObsConfigured, vmEnabled, anyVmConfigured, groupsExist, anyGroupConfigured, discordAvailable, anyDiscordConfigured);
+            PopulateActionPicker(_tapCombos[i], haEnabled, anyHaConfigured, goveeEnabled, anyGoveeConfigured, obsEnabled, anyObsConfigured, vmEnabled, anyVmConfigured, groupsExist, anyGroupConfigured);
+            PopulateActionPicker(_dblCombos[i], haEnabled, anyHaConfigured, goveeEnabled, anyGoveeConfigured, obsEnabled, anyObsConfigured, vmEnabled, anyVmConfigured, groupsExist, anyGroupConfigured);
+            PopulateActionPicker(_holdCombos[i], haEnabled, anyHaConfigured, goveeEnabled, anyGoveeConfigured, obsEnabled, anyObsConfigured, vmEnabled, anyVmConfigured, groupsExist, anyGroupConfigured);
         }
 
         // Register sub-flyout providers
@@ -1527,16 +1523,6 @@ public partial class ButtonsView : UserControl
     private static bool IsDiscordAction(string? action)
         => action != null && DiscordActionValues.Contains(action);
 
-    private static bool IsDiscordRpcAvailable(AppConfig config)
-    {
-        if (!config.DiscordRpc.Enabled) return false;
-        if (!string.IsNullOrWhiteSpace(config.DiscordRpc.AccessToken)) return true;
-        if (!string.IsNullOrWhiteSpace(config.DiscordRpc.ClientId)
-            && !string.IsNullOrWhiteSpace(config.DiscordRpc.ClientSecret)) return true;
-        return !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AMPUP_DISCORD_CLIENT_ID"))
-            && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AMPUP_DISCORD_CLIENT_SECRET"));
-    }
-
     private static bool IsCorsairAction(string? action)
         => action is "corsair_toggle";
 
@@ -1561,7 +1547,7 @@ public partial class ButtonsView : UserControl
     private static bool IsScPageAction(string? action)
         => action is "sc_page_next" or "sc_page_prev" or "sc_page_home" or "sc_go_to_page";
 
-    private void PopulateActionPicker(ActionPicker picker, bool haEnabled, bool anyHaConfigured, bool goveeEnabled, bool anyGoveeConfigured, bool obsEnabled = false, bool anyObsConfigured = false, bool vmEnabled = false, bool anyVmConfigured = false, bool groupsExist = false, bool anyGroupConfigured = false, bool discordAvailable = false, bool anyDiscordConfigured = false, bool showScPageActions = false)
+    private void PopulateActionPicker(ActionPicker picker, bool haEnabled, bool anyHaConfigured, bool goveeEnabled, bool anyGoveeConfigured, bool obsEnabled = false, bool anyObsConfigured = false, bool vmEnabled = false, bool anyVmConfigured = false, bool groupsExist = false, bool anyGroupConfigured = false, bool showScPageActions = false)
     {
         picker.ClearItems();
 
@@ -1580,14 +1566,12 @@ public partial class ButtonsView : UserControl
                 bool isVm = IsVmAction(value);
                 bool isGroup = value == "group_toggle";
                 bool isScPage = IsScPageAction(value);
-                bool isDiscord = IsDiscordAction(value);
 
                 if (isHa && !haEnabled && !anyHaConfigured) continue;
                 if (isGovee && !goveeEnabled && !anyGoveeConfigured) continue;
                 if (isObs && !obsEnabled && !anyObsConfigured) continue;
                 if (isVm && !vmEnabled && !anyVmConfigured) continue;
                 if (isGroup && !groupsExist && !anyGroupConfigured) continue;
-                if (isDiscord && !discordAvailable && !anyDiscordConfigured) continue;
                 if (isScPage && !showScPageActions) continue;
 
                 if (!anyAdded) { picker.AddCategory(category); anyAdded = true; }
@@ -1620,12 +1604,9 @@ public partial class ButtonsView : UserControl
             Color.FromRgb(0x1D, 0xB9, 0x54),
             new[] { "spotify_play_pause", "spotify_next", "spotify_prev", "spotify_shuffle", "spotify_like" });
 
-        if (discordAvailable || anyDiscordConfigured)
-        {
-            picker.AddActionGroup("group_discord", "Discord", "D",
-                Color.FromRgb(0x58, 0x65, 0xF2),
-                DiscordActionValues);
-        }
+        picker.AddActionGroup("group_discord", "Discord", "D",
+            Color.FromRgb(0x58, 0x65, 0xF2),
+            DiscordActionValues);
 
         picker.BuildPopup();
     }
