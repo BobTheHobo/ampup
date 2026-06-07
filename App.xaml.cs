@@ -2311,6 +2311,10 @@ public partial class App : Application
         var ducking = _config.Ducking;
         var autoSwitch = _config.AutoSwitch;
         var signalRgb = _config.SignalRgb;
+        var discordRpc = _config.DiscordRpc;
+        var spotify = _config.Spotify;
+        var voiceMeeter = _config.VoiceMeeter;
+        var corsair = _config.Corsair;
 
         _config = profile;
         _config.ActiveProfile = profileName;
@@ -2325,6 +2329,10 @@ public partial class App : Application
         _config.Ducking = ducking;
         _config.AutoSwitch = autoSwitch;
         _config.SignalRgb = signalRgb;
+        _config.DiscordRpc = discordRpc;
+        _config.Spotify = spotify;
+        _config.VoiceMeeter = voiceMeeter;
+        _config.Corsair = corsair;
         ConfigManager.Save(_config);
         ApplyRgbConfig();
         ApplySignalRgbProfileSync(profileName);

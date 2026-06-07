@@ -1420,7 +1420,15 @@ public partial class MainWindow : FluentWindow
         loaded.Serial = _config.Serial;
         loaded.StartWithWindows = _config.StartWithWindows;
         loaded.HomeAssistant = _config.HomeAssistant;
+        loaded.Obs = _config.Obs;
         loaded.Ambience = _config.Ambience;
+        loaded.Ducking = _config.Ducking;
+        loaded.AutoSwitch = _config.AutoSwitch;
+        loaded.VoiceMeeter = _config.VoiceMeeter;
+        loaded.Corsair = _config.Corsair;
+        loaded.SignalRgb = _config.SignalRgb;
+        loaded.DiscordRpc = _config.DiscordRpc;
+        loaded.Spotify = _config.Spotify;
         loaded.Profiles = _config.Profiles;
         loaded.ProfileIcons = _config.ProfileIcons;
         loaded.Groups = _config.Groups;
