@@ -142,10 +142,37 @@ public partial class ButtonsView
         };
         _v2PreviewRow.Children.Add(_v2PreviewCard);
 
+        var iconButtonStack = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(14, 0, 0, 0),
+        };
+
         var chooseIconInlineBtn = MakeEditorButton("Choose Icon", (_, _) => ChooseStreamControllerIcon());
-        chooseIconInlineBtn.Margin = new Thickness(14, 0, 0, 0);
         chooseIconInlineBtn.VerticalAlignment = VerticalAlignment.Center;
-        _v2PreviewRow.Children.Add(chooseIconInlineBtn);
+        iconButtonStack.Children.Add(chooseIconInlineBtn);
+
+        if (_scClearIconButton == null)
+        {
+            _scClearIconButton = MakeEditorButton("Clear Icon", (_, _) =>
+            {
+                if (_loading || _config == null) return;
+                var key = GetSelectedDisplayKeyConfig();
+                if (key == null) return;
+                key.ImagePath = "";
+                key.PresetIconKind = "";
+                LoadStreamControllerSelection();
+                QueueSave();
+            });
+        }
+        DetachFromParent(_scClearIconButton);
+        _scClearIconButton.Content = "Clear Icon";
+        _scClearIconButton.Margin = new Thickness(0, 8, 0, 0);
+        _scClearIconButton.VerticalAlignment = VerticalAlignment.Center;
+        iconButtonStack.Children.Add(_scClearIconButton);
+
+        _v2PreviewRow.Children.Add(iconButtonStack);
 
         _v2PreviewPanel.Children.Add(_v2PreviewRow);
 
