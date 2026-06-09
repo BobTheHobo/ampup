@@ -10,6 +10,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.9.5] - 2026-06-09
+
+### Added
+- App Status lighting can now use separate effects for unmuted, muted, and not-running app states, including an explicit Off option.
+
+---
+
 ## [1.0.9.3] - 2026-06-05
 
 ### Added

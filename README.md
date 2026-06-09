@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.9.3-00BFEF" alt="Version" />
+  <img src="https://img.shields.io/badge/version-1.0.9.5-00BFEF" alt="Version" />
   <img src="https://img.shields.io/badge/Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows" />
   <img src="https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white" alt=".NET 8" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
@@ -26,7 +26,7 @@ The 1.0 beta also adds native support for the **TreasLin / VSDinside N3** stream
 
 ## Install
 
-1. Download **`AmpUp-Setup-1.0.9.3.exe`** from [Releases](https://github.com/audioslayer/ampup/releases).
+1. Download **`AmpUp-Setup-1.0.9.5.exe`** from [Releases](https://github.com/audioslayer/ampup/releases).
 2. Run the installer.
 3. Launch Amp Up, then connect your Turn Up mixer or N3 controller.
 
@@ -157,6 +157,7 @@ Amp Up is a .NET 8 WPF application using WPF-UI, NAudio, Newtonsoft.Json, System
 
 | Version | Highlights |
 |-|-|
+| **v1.0.9.5** | App Status lighting now supports separate effects for unmuted, muted, and not-running states, including Off. |
 | **v1.0.9.3** | Direct Discord RPC button actions for mute/deafen, explicit voice state controls, leave voice, and noise suppression. |
 | **v1.0.9.2** | SignalRGB bridge/actions/profile sync, expanded N3 integration actions, Home Assistant action fixes, Room Temperature mode, warmer Govee temperature presets, and RGBIC segment reliability fixes. |
 | **v1.0.6-beta** | SignalRGB beta work, N3 sensitivity refinements, and integration polish. |
