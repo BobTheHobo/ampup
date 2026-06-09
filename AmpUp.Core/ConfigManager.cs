@@ -7,6 +7,13 @@ namespace AmpUp.Core;
 
 public static class ConfigManager
 {
+    private const int LegacyN3SideButtonBase = 106;
+    private const int LegacyN3EncoderPressBase = 109;
+    private const int N3SideButtonBase = 10000;
+    private const int N3EncoderPressBase = 10003;
+    private static readonly string[] LegacyN3SideDefaultActions = { "media_prev", "media_play_pause", "media_next" };
+    private static readonly string[] LegacyN3EncoderDefaultActions = { "mute_master", "mute_active_window", "mute_mic" };
+
     public static string AppDataDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AmpUp");
 
@@ -79,12 +86,12 @@ public static class ConfigManager
         (103, "N3 Key 4", "none"),
         (104, "N3 Key 5", "none"),
         (105, "N3 Key 6", "none"),
-        (106, "N3 Side 1", "media_prev"),
-        (107, "N3 Side 2", "media_play_pause"),
-        (108, "N3 Side 3", "media_next"),
-        (109, "N3 Press 1", "mute_master"),
-        (110, "N3 Press 2", "mute_active_window"),
-        (111, "N3 Press 3", "mute_mic"),
+        (N3SideButtonBase + 0, "N3 Side 1", "media_prev"),
+        (N3SideButtonBase + 1, "N3 Side 2", "media_play_pause"),
+        (N3SideButtonBase + 2, "N3 Side 3", "media_next"),
+        (N3EncoderPressBase + 0, "N3 Press 1", "mute_master"),
+        (N3EncoderPressBase + 1, "N3 Press 2", "mute_active_window"),
+        (N3EncoderPressBase + 2, "N3 Press 3", "mute_mic"),
     };
     private static readonly (int idx, string title, string subtitle, string background, string accent)[] DefaultN3DisplayKeys =
     {
@@ -100,6 +107,8 @@ public static class ConfigManager
 
     private static void EnsureDefaults(AppConfig config)
     {
+        MigrateLegacyN3ControlButtonIds(config);
+
         for (int i = 0; i < 5; i++)
         {
             if (!config.Knobs.Any(k => k.Idx == i))
@@ -204,6 +213,69 @@ public static class ConfigManager
 
         NormalizeDeviceSurfaceSelections(config);
     }
+
+    private static void MigrateLegacyN3ControlButtonIds(AppConfig config)
+    {
+        if (config.N3?.Buttons == null) return;
+
+        for (int i = 0; i < 3; i++)
+        {
+            MigrateLegacyN3ControlButtonId(
+                config.N3.Buttons,
+                LegacyN3SideButtonBase + i,
+                N3SideButtonBase + i,
+                $"N3 Side {i + 1}",
+                LegacyN3SideDefaultActions[i]);
+            MigrateLegacyN3ControlButtonId(
+                config.N3.Buttons,
+                LegacyN3EncoderPressBase + i,
+                N3EncoderPressBase + i,
+                $"N3 Press {i + 1}",
+                LegacyN3EncoderDefaultActions[i]);
+        }
+    }
+
+    private static void MigrateLegacyN3ControlButtonId(List<ButtonConfig> buttons, int oldIdx, int newIdx, string defaultLabel, string defaultAction)
+    {
+        var oldButton = buttons.FirstOrDefault(b => b.Idx == oldIdx);
+        if (oldButton == null) return;
+
+        bool legacyDefault = IsLegacyN3DefaultButton(oldButton, defaultLabel, defaultAction);
+        if (buttons.Any(b => b.Idx == newIdx))
+        {
+            if (legacyDefault)
+                buttons.Remove(oldButton);
+            return;
+        }
+
+        if (legacyDefault)
+        {
+            oldButton.Idx = newIdx;
+            return;
+        }
+
+        var controlCopy = CloneButton(oldButton);
+        controlCopy.Idx = newIdx;
+        buttons.Add(controlCopy);
+    }
+
+    private static ButtonConfig CloneButton(ButtonConfig button)
+        => JsonConvert.DeserializeObject<ButtonConfig>(JsonConvert.SerializeObject(button))
+           ?? new ButtonConfig { Idx = button.Idx };
+
+    private static bool IsLegacyN3DefaultButton(ButtonConfig button, string defaultLabel, string defaultAction)
+        => string.Equals(button.Label ?? "", defaultLabel, StringComparison.OrdinalIgnoreCase)
+           && string.Equals(button.Action ?? "none", defaultAction, StringComparison.OrdinalIgnoreCase)
+           && string.Equals(button.Path ?? "", "", StringComparison.Ordinal)
+           && string.Equals(button.HoldAction ?? "none", "none", StringComparison.OrdinalIgnoreCase)
+           && string.Equals(button.DoublePressAction ?? "none", "none", StringComparison.OrdinalIgnoreCase)
+           && string.IsNullOrEmpty(button.MacroKeys)
+           && string.IsNullOrEmpty(button.DeviceId)
+           && string.IsNullOrEmpty(button.ProfileName)
+           && string.IsNullOrEmpty(button.FolderName)
+           && button.ActionSequence.Count == 0
+           && string.Equals(button.ToggleActionA ?? "none", "none", StringComparison.OrdinalIgnoreCase)
+           && string.Equals(button.ToggleActionB ?? "none", "none", StringComparison.OrdinalIgnoreCase);
 
     private static void NormalizeDeviceSurfaceSelections(AppConfig config)
     {

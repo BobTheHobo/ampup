@@ -196,6 +196,17 @@ public partial class ButtonsView
         _scTitleBox.Visibility = Visibility.Visible;
         designContent.Children.Add(_scTitleBox);
 
+        if (_scScrollTitleCheckBox == null)
+        {
+            _scScrollTitleCheckBox = MakeEditorCheckBox("Scroll title when too long");
+            _scScrollTitleCheckBox.Checked += (_, _) => { if (!_loading) { UpdateEditorPreviewOnly(); QueueSave(); } };
+            _scScrollTitleCheckBox.Unchecked += (_, _) => { if (!_loading) { UpdateEditorPreviewOnly(); QueueSave(); } };
+        }
+        DetachFromParent(_scScrollTitleCheckBox);
+        _scScrollTitleCheckBox.Margin = new Thickness(0, 0, 0, 10);
+        _scScrollTitleCheckBox.Visibility = Visibility.Visible;
+        designContent.Children.Add(_scScrollTitleCheckBox);
+
         // Font picker — writes to key.FontFamily so the device-JPEG renderer
         // can switch typeface per key. Populated with a curated list of
         // fonts that ship on Windows + a few stylistic extras.
@@ -767,6 +778,7 @@ public partial class ButtonsView
             if (_scTextPositionPicker != null) _scTextPositionPicker.Visibility = Visibility.Visible;
             if (_scTextSizeSlider != null) _scTextSizeSlider.Visibility = Visibility.Visible;
             if (_scTextSizeLabel != null) _scTextSizeLabel.Visibility = Visibility.Visible;
+            if (_scScrollTitleCheckBox != null) _scScrollTitleCheckBox.Visibility = Visibility.Visible;
             if (_scTextColorSwatchPanel != null) _scTextColorSwatchPanel.Visibility = Visibility.Visible;
             if (_scDisplayTypePicker != null) _scDisplayTypePicker.Visibility = Visibility.Visible;
         }
@@ -795,7 +807,7 @@ public partial class ButtonsView
                     var anim = StreamControllerDisplayRenderer.CreateEditorPreviewAnimation(key, 360);
                     if (anim != null)
                     {
-                        var sig = $"{key.Idx}|{key.ImagePath}|{key.PresetIconKind}|360";
+                        var sig = $"{key.Idx}|{key.ImagePath}|{key.PresetIconKind}|{key.Title}|{key.ScrollTitleWhenOverflow}|{key.TextPosition}|{key.TextSize}|{key.TextColor}|{key.FontFamily}|360";
                         AnimatedImageDriver.Register(_scEditorPreview, anim, sig);
                     }
                     else
@@ -807,6 +819,8 @@ public partial class ButtonsView
 
             if (_scTitleBox != null)
                 _scTitleBox.Text = key.Title;
+            if (_scScrollTitleCheckBox != null)
+                _scScrollTitleCheckBox.IsChecked = key.ScrollTitleWhenOverflow;
             if (_scIconBox != null)
             {
                 _scIconBox.Text = !string.IsNullOrWhiteSpace(key.ImagePath)

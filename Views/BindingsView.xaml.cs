@@ -472,7 +472,7 @@ public class BindingsView : UserControl
 
         stack.Children.Add(MakeSectionLabel("STREAM CONTROLLER CONTROLS"));
 
-        // Side buttons (106-108) + encoder presses (109-111) in a single row.
+        // Side buttons + encoder presses in a single row.
         var controlsRow = new UniformGrid
         {
             Columns = 6,
@@ -480,7 +480,7 @@ public class BindingsView : UserControl
         };
         for (int i = 0; i < 3; i++)
         {
-            int btnIdx = 106 + i; // N3SideButtonBase
+            int btnIdx = 10000 + i; // N3SideButtonBase
             var btn = config.N3.Buttons.FirstOrDefault(b => b.Idx == btnIdx)
                       ?? new ButtonConfig { Idx = btnIdx };
             var card = BuildButtonCard(i, btn, profileName);
@@ -490,7 +490,7 @@ public class BindingsView : UserControl
         }
         for (int i = 0; i < 3; i++)
         {
-            int btnIdx = 109 + i; // N3EncoderPressBase
+            int btnIdx = 10003 + i; // N3EncoderPressBase
             var btn = config.N3.Buttons.FirstOrDefault(b => b.Idx == btnIdx)
                       ?? new ButtonConfig { Idx = btnIdx };
             var card = BuildButtonCard(i + 3, btn, profileName);
@@ -514,7 +514,8 @@ public class BindingsView : UserControl
     {
         bool hasContent = !string.IsNullOrWhiteSpace(key.Title)
                           || !string.IsNullOrWhiteSpace(key.ImagePath)
-                          || !string.IsNullOrWhiteSpace(key.PresetIconKind);
+                          || !string.IsNullOrWhiteSpace(key.PresetIconKind)
+                          || key.DisplayType != DisplayKeyType.Normal;
 
         var card = new Border
         {

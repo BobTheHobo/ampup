@@ -409,6 +409,7 @@ public class StreamControllerDisplayKeyConfig
     public string ImagePath { get; set; } = "";
     public string PresetIconKind { get; set; } = "";
     public string Title { get; set; } = "";
+    public bool ScrollTitleWhenOverflow { get; set; } = false;
     public string Subtitle { get; set; } = "";
     public string BackgroundColor { get; set; } = "#1C1C1C";
     public string AccentColor { get; set; } = "#00E676";
@@ -559,12 +560,12 @@ public class QuickWheelConfig
     /// <summary>
     /// Resolve (Device, TriggerButton) to the virtual button index the
     /// gesture engine sees. Turn Up buttons keep their 0-4 range; N3
-    /// inputs map into the 106+ / 109+ virtual ranges defined by App.
+    /// inputs map into the non-paged virtual ranges defined by App.
     /// </summary>
     public int GetVirtualButtonIdx() => Device switch
     {
-        QuickWheelDevice.ScSideButton    => 106 + TriggerButton,
-        QuickWheelDevice.ScEncoderPress  => 109 + TriggerButton,
+        QuickWheelDevice.ScSideButton    => 10000 + TriggerButton,
+        QuickWheelDevice.ScEncoderPress  => 10003 + TriggerButton,
         _                                => TriggerButton,
     };
 }

@@ -91,6 +91,19 @@ internal static class StreamControllerDisplayRenderer
     {
         var effectiveKey = ResolveEffectiveKey(key);
 
+        if (ShouldScrollTitle(effectiveKey, size))
+        {
+            var deviceAnimation = CreateScrollingTitleAnimation(effectiveKey, size, encodeDeviceFrames: false);
+            if (deviceAnimation.EditorFrames == null || deviceAnimation.EditorFrames.Length == 0)
+                return null;
+
+            return new StreamControllerEditorAnimation
+            {
+                Frames = deviceAnimation.EditorFrames,
+                FrameDelaysMs = deviceAnimation.FrameDelaysMs,
+            };
+        }
+
         // Source file: explicit ImagePath wins, otherwise resolve via the
         // PresetIconKind custom-pack mapping (fx_, neon_, retro_, etc.).
         string sourcePath = effectiveKey.ImagePath;
@@ -167,6 +180,19 @@ internal static class StreamControllerDisplayRenderer
     public static StreamControllerDeviceAnimation? CreateDeviceAnimation(StreamControllerDisplayKeyConfig key)
     {
         var effectiveKey = ResolveEffectiveKey(key);
+        if (ShouldScrollTitle(effectiveKey, RenderCanvasSize))
+        {
+            var scrolling = CreateScrollingTitleAnimation(effectiveKey, RenderCanvasSize, encodeDeviceFrames: true);
+            if (scrolling.DeviceFrames == null || scrolling.DeviceFrames.Length == 0)
+                return null;
+
+            return new StreamControllerDeviceAnimation
+            {
+                Frames = scrolling.DeviceFrames,
+                FrameDelaysMs = scrolling.FrameDelaysMs,
+            };
+        }
+
         if (string.IsNullOrWhiteSpace(effectiveKey.ImagePath)
             || !File.Exists(effectiveKey.ImagePath)
             || !string.Equals(Path.GetExtension(effectiveKey.ImagePath), ".gif", StringComparison.OrdinalIgnoreCase))
@@ -234,6 +260,7 @@ internal static class StreamControllerDisplayRenderer
             ImagePath = key.ImagePath,
             PresetIconKind = key.PresetIconKind,
             Title = key.Title,
+            ScrollTitleWhenOverflow = key.ScrollTitleWhenOverflow,
             Subtitle = key.Subtitle,
             BackgroundColor = key.BackgroundColor,
             AccentColor = key.AccentColor,
@@ -294,9 +321,10 @@ internal static class StreamControllerDisplayRenderer
             clone.Title = rendered;
             clone.ImagePath = "";
             clone.PresetIconKind = "";
-            // Center the time, default large font if the user hasn't customised it.
+            // Center the time, but respect user-selected small sizes. The
+            // device is only 60x60, so a forced large clock clips quickly.
             clone.TextPosition = DisplayTextPosition.Middle;
-            if (clone.TextSize < 18) clone.TextSize = 22;
+            if (clone.TextSize == 14) clone.TextSize = 16;
             return clone;
         }
 
@@ -482,6 +510,107 @@ internal static class StreamControllerDisplayRenderer
 
         return bitmap;
     }
+
+    private sealed class ScrollingTitleAnimation
+    {
+        public byte[][]? DeviceFrames { get; init; }
+        public BitmapSource[]? EditorFrames { get; init; }
+        public required int[] FrameDelaysMs { get; init; }
+    }
+
+    private static bool ShouldScrollTitle(StreamControllerDisplayKeyConfig key, int size)
+    {
+        if (!key.ScrollTitleWhenOverflow) return false;
+        if (key.TextPosition == DisplayTextPosition.Hidden) return false;
+
+        string title = key.Title?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(title)) return false;
+        if (title.Contains('\n') || title.Contains('\r')) return false;
+
+        using var probe = new DrawingBitmap(size, size);
+        using var graphics = DrawingGraphics.FromImage(probe);
+        ConfigureGraphics(graphics);
+        using var font = CreateTitleFont(key, size);
+        float scale = size / 60f;
+        float availableWidth = Math.Max(1f, size - 4 * scale);
+        return graphics.MeasureString(title, font).Width > availableWidth + 1f;
+    }
+
+    private static ScrollingTitleAnimation CreateScrollingTitleAnimation(
+        StreamControllerDisplayKeyConfig key,
+        int size,
+        bool encodeDeviceFrames)
+    {
+        var noTextKey = CloneDisplayKey(key);
+        noTextKey.TextPosition = DisplayTextPosition.Hidden;
+        using var baseBitmap = ComposeImage(noTextKey, size);
+
+        using var probe = new DrawingBitmap(size, size);
+        using var probeGraphics = DrawingGraphics.FromImage(probe);
+        ConfigureGraphics(probeGraphics);
+        using var font = CreateTitleFont(key, size);
+        string title = key.Title?.Trim() ?? "";
+        float scale = size / 60f;
+        float availableWidth = Math.Max(1f, size - 4 * scale);
+        float titleWidth = probeGraphics.MeasureString(title, font).Width;
+        float gap = Math.Max(12f * scale, availableWidth * 0.35f);
+        float step = Math.Max(1f, 2.0f * scale);
+        int movingFrames = Math.Clamp((int)Math.Ceiling((titleWidth + gap) / step), 16, 96);
+        int pauseFrames = 6;
+        int frameCount = pauseFrames + movingFrames;
+        var delays = Enumerable.Repeat(80, frameCount).ToArray();
+        for (int i = 0; i < pauseFrames; i++)
+            delays[i] = 180;
+
+        byte[][]? deviceFrames = encodeDeviceFrames ? new byte[frameCount][] : null;
+        BitmapSource[]? editorFrames = encodeDeviceFrames ? null : new BitmapSource[frameCount];
+
+        for (int i = 0; i < frameCount; i++)
+        {
+            float offset = i < pauseFrames ? 0f : (i - pauseFrames) * step;
+            using var frame = new DrawingBitmap(baseBitmap);
+            DrawScrollingTextOverlay(frame, key, size, size, title, offset);
+
+            if (encodeDeviceFrames)
+                deviceFrames![i] = EncodeForDevice(frame);
+            else
+                editorFrames![i] = ToBitmapSource(frame);
+        }
+
+        return new ScrollingTitleAnimation
+        {
+            DeviceFrames = deviceFrames,
+            EditorFrames = editorFrames,
+            FrameDelaysMs = delays,
+        };
+    }
+
+    private static StreamControllerDisplayKeyConfig CloneDisplayKey(StreamControllerDisplayKeyConfig key) => new()
+    {
+        Idx = key.Idx,
+        ImagePath = key.ImagePath ?? "",
+        PresetIconKind = key.PresetIconKind ?? "",
+        Title = key.Title ?? "",
+        ScrollTitleWhenOverflow = key.ScrollTitleWhenOverflow,
+        Subtitle = key.Subtitle ?? "",
+        BackgroundColor = key.BackgroundColor ?? "",
+        AccentColor = key.AccentColor ?? "",
+        TextPosition = key.TextPosition,
+        TextSize = key.TextSize,
+        TextColor = key.TextColor ?? "",
+        IconColor = key.IconColor ?? "",
+        FontFamily = key.FontFamily ?? "",
+        Brightness = key.Brightness,
+        DisplayType = key.DisplayType,
+        ClockFormat = key.ClockFormat ?? "",
+        DynamicStateSource = key.DynamicStateSource ?? "",
+        DynamicStateActiveIcon = key.DynamicStateActiveIcon ?? "",
+        DynamicStateActiveTitle = key.DynamicStateActiveTitle ?? "",
+        DynamicStateInactiveBrightness = key.DynamicStateInactiveBrightness,
+        DynamicStateDimWhenActive = key.DynamicStateDimWhenActive,
+        DynamicStateGlowColor = key.DynamicStateGlowColor ?? "",
+        SpotifyAlbumArtLayout = key.SpotifyAlbumArtLayout,
+    };
 
     private static DrawingBitmap ComposeSpotifyAlbumArtTileBitmap(
         StreamControllerDisplayKeyConfig spanKey,
@@ -962,19 +1091,7 @@ internal static class StreamControllerDisplayRenderer
 
         float scale = height / 60f;
         var textColor = ParseColor(key.TextColor, DrawingColor.White);
-        float baseFontSize = Math.Clamp(key.TextSize, 6, 28);
-
-        var fontName = string.IsNullOrWhiteSpace(key.FontFamily) ? "Segoe UI" : key.FontFamily;
-        DrawingFont titleFont;
-        try
-        {
-            titleFont = new DrawingFont(fontName, baseFontSize * scale, System.Drawing.FontStyle.Bold, DrawingGraphicsUnit.Pixel);
-        }
-        catch
-        {
-            titleFont = new DrawingFont("Segoe UI", baseFontSize * scale, System.Drawing.FontStyle.Bold, DrawingGraphicsUnit.Pixel);
-        }
-        using var _ = titleFont;
+        using var titleFont = CreateTitleFont(key, height);
         using var textBrush = new DrawingBrush(textColor);
 
         // Split on both Windows and Unix newlines; cap at 3 lines so long
@@ -1050,6 +1167,91 @@ internal static class StreamControllerDisplayRenderer
                 new DrawingRectangleF(2 * scale, lineY, width - 4 * scale, lineH),
                 format);
         }
+    }
+
+    private static DrawingFont CreateTitleFont(StreamControllerDisplayKeyConfig key, int height)
+    {
+        float scale = height / 60f;
+        float baseFontSize = Math.Clamp(key.TextSize, 6, 28);
+        var fontName = string.IsNullOrWhiteSpace(key.FontFamily) ? "Segoe UI" : key.FontFamily;
+        try
+        {
+            return new DrawingFont(fontName, baseFontSize * scale, System.Drawing.FontStyle.Bold, DrawingGraphicsUnit.Pixel);
+        }
+        catch
+        {
+            return new DrawingFont("Segoe UI", baseFontSize * scale, System.Drawing.FontStyle.Bold, DrawingGraphicsUnit.Pixel);
+        }
+    }
+
+    private static void DrawScrollingTextOverlay(
+        DrawingBitmap bitmap,
+        StreamControllerDisplayKeyConfig key,
+        int width,
+        int height,
+        string title,
+        float offset)
+    {
+        using var graphics = DrawingGraphics.FromImage(bitmap);
+        ConfigureGraphics(graphics);
+
+        float scale = height / 60f;
+        float pad = Math.Max(2f, 3f * scale);
+        using var titleFont = CreateTitleFont(key, height);
+        using var textBrush = new DrawingBrush(ParseColor(key.TextColor, DrawingColor.White));
+        float lineH = graphics.MeasureString("Ag", titleFont).Height;
+        float regionX = 2 * scale;
+        float regionW = width - 4 * scale;
+        float regionH = lineH;
+        float textY;
+
+        switch (key.TextPosition)
+        {
+            case DisplayTextPosition.Top:
+                textY = pad;
+                FillTextReadabilityGradient(graphics, width, height, textY, regionH, pad, top: true);
+                break;
+            case DisplayTextPosition.Middle:
+                textY = (height - regionH) * 0.5f;
+                FillTextReadabilityGradient(graphics, width, height, textY, regionH, pad, top: false);
+                break;
+            default:
+                textY = height - regionH - pad;
+                FillTextReadabilityGradient(graphics, width, height, textY, regionH, pad, top: false);
+                break;
+        }
+
+        var clip = new System.Drawing.RectangleF(regionX, textY - pad, regionW, regionH + pad * 2);
+        var oldClip = graphics.Clip;
+        graphics.SetClip(clip);
+        try
+        {
+            graphics.DrawString(title, titleFont, textBrush, regionX - offset, textY);
+        }
+        finally
+        {
+            graphics.Clip = oldClip;
+            oldClip.Dispose();
+        }
+    }
+
+    private static void FillTextReadabilityGradient(
+        DrawingGraphics graphics,
+        int width,
+        int height,
+        float textY,
+        float totalH,
+        float pad,
+        bool top)
+    {
+        float y = top ? 0 : Math.Max(0, textY - pad * 3);
+        float h = top ? Math.Min(height, textY + totalH + pad * 3) : Math.Min(height - y, totalH + pad * 4);
+        using var grad = new System.Drawing.Drawing2D.LinearGradientBrush(
+            new System.Drawing.PointF(0, y),
+            new System.Drawing.PointF(0, y + Math.Max(1, h)),
+            top ? DrawingColor.FromArgb(180, 0, 0, 0) : DrawingColor.FromArgb(0, 0, 0, 0),
+            top ? DrawingColor.FromArgb(0, 0, 0, 0) : DrawingColor.FromArgb(180, 0, 0, 0));
+        graphics.FillRectangle(grad, 0, y, width, h);
     }
 
     private static byte[] EncodeForDevice(DrawingImage image)

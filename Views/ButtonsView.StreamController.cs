@@ -13,8 +13,8 @@ namespace AmpUp.Views;
 public partial class ButtonsView
 {
     private const int StreamControllerDisplayKeyBase = 100;
-    private const int StreamControllerSideButtonBase = 106;
-    private const int StreamControllerEncoderPressBase = 109;
+    private const int StreamControllerSideButtonBase = 10000;
+    private const int StreamControllerEncoderPressBase = 10003;
     private const int StreamControllerKeysPerPage = 6;
 
     // Key grid
@@ -32,6 +32,7 @@ public partial class ButtonsView
     private TextBlock? _scEditorTitle;
     private Image? _scEditorPreview;
     private TextBox? _scTitleBox;
+    private CheckBox? _scScrollTitleCheckBox;
 
     // Display type (Normal / Clock / Dynamic / Solid / Spotify) + related editors
     private SegmentedControl? _scDisplayTypePicker;
@@ -750,6 +751,12 @@ public partial class ButtonsView
         _scDisplayTabContent.Children.Add(_scTitleBox);
         _scNormalOnlyRows.Add(titleLabel);
         _scNormalOnlyRows.Add(_scTitleBox);
+        _scScrollTitleCheckBox = MakeEditorCheckBox("Scroll title when too long");
+        _scScrollTitleCheckBox.Margin = new Thickness(0, 6, 0, 10);
+        _scScrollTitleCheckBox.Checked += (_, _) => { if (!_loading) { UpdateEditorPreviewOnly(); QueueSave(); } };
+        _scScrollTitleCheckBox.Unchecked += (_, _) => { if (!_loading) { UpdateEditorPreviewOnly(); QueueSave(); } };
+        _scDisplayTabContent.Children.Add(_scScrollTitleCheckBox);
+        _scNormalOnlyRows.Add(_scScrollTitleCheckBox);
         // Text position picker
         var textPositionLabel = MakeEditorLabel("TEXT POSITION");
         _scDisplayTabContent.Children.Add(textPositionLabel);
@@ -1191,6 +1198,18 @@ public partial class ButtonsView
         };
         button.Click += onClick;
         return button;
+    }
+
+    private static CheckBox MakeEditorCheckBox(string text)
+    {
+        return new CheckBox
+        {
+            Content = text,
+            FontSize = 12,
+            Foreground = (Brush)Application.Current.FindResource("TextPrimaryBrush"),
+            Margin = new Thickness(0, 0, 0, 8),
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
     }
 
     /// <summary>
@@ -2336,6 +2355,10 @@ public partial class ButtonsView
             || _scEditorTitle == null || _scEditorPreview == null || _scTitleBox == null || _scIconBox == null)
             return;
 
+        bool previousLoading = _loading;
+        _loading = true;
+        try
+        {
         // Resolve the button config. Folder page 1+ LCD keys overlap the
         // root side/encoder idx range (106-111), so a naive "idx < 106 =
         // folder / else = root" split loads the wrong config for those
@@ -2432,6 +2455,7 @@ public partial class ButtonsView
             }
             if (_scTextSizeSlider != null) _scTextSizeSlider.Value = Math.Clamp(key.TextSize, 6, 28);
             if (_scTextSizeLabel != null) _scTextSizeLabel.Text = $"Font Size: {Math.Clamp(key.TextSize, 6, 28)}";
+            if (_scScrollTitleCheckBox != null) _scScrollTitleCheckBox.IsChecked = key.ScrollTitleWhenOverflow;
             BuildTextColorSwatches();
 
             // Display Type + Clock / Dynamic fields
@@ -2588,6 +2612,11 @@ public partial class ButtonsView
                 }
             }
             _scSignalRgbEffectPicker.SelectedIndex = foundIdx;
+        }
+        }
+        finally
+        {
+            _loading = previousLoading;
         }
     }
 
@@ -2794,7 +2823,9 @@ public partial class ButtonsView
         var display = GetSelectedDisplayKeyConfig();
         if (display != null && _scTitleBox != null)
         {
-            display.Title = _scTitleBox.Text.Trim();
+            display.Title = _scTitleBox.Text;
+            if (_scScrollTitleCheckBox != null)
+                display.ScrollTitleWhenOverflow = _scScrollTitleCheckBox.IsChecked == true;
             if (_scTextPositionPicker?.SelectedTag is DisplayTextPosition textPos)
                 display.TextPosition = textPos;
             if (_scTextSizeSlider != null)
@@ -2954,7 +2985,9 @@ public partial class ButtonsView
         var display = GetSelectedDisplayKeyConfig();
         if (display == null || _scEditorPreview == null || _scTitleBox == null) return;
 
-        display.Title = _scTitleBox.Text.Trim();
+        display.Title = _scTitleBox.Text;
+        if (_scScrollTitleCheckBox != null)
+            display.ScrollTitleWhenOverflow = _scScrollTitleCheckBox.IsChecked == true;
         if (_scTextPositionPicker?.SelectedTag is DisplayTextPosition pos)
             display.TextPosition = pos;
         if (_scTextSizeSlider != null)
@@ -2983,6 +3016,23 @@ public partial class ButtonsView
                 ? StreamControllerDisplayRenderer.CreateSpotifyAlbumArtTilePreview(
                     spotifySpanMaster, display, localIdx, 360, drawSpotifySpanTitle)
                 : StreamControllerDisplayRenderer.CreateEditorPreview(display, 360);
+        if (!spotifySpan && spotifySpanMaster == null)
+        {
+            var anim = StreamControllerDisplayRenderer.CreateEditorPreviewAnimation(display, 360);
+            if (anim != null)
+            {
+                var sig = $"{display.Idx}|{display.ImagePath}|{display.PresetIconKind}|{display.Title}|{display.ScrollTitleWhenOverflow}|{display.TextPosition}|{display.TextSize}|{display.TextColor}|{display.FontFamily}|360";
+                AnimatedImageDriver.Register(_scEditorPreview, anim, sig);
+            }
+            else
+            {
+                AnimatedImageDriver.Unregister(_scEditorPreview);
+            }
+        }
+        else
+        {
+            AnimatedImageDriver.Unregister(_scEditorPreview);
+        }
 
         if (localIdx >= 0 && localIdx < 6)
         {

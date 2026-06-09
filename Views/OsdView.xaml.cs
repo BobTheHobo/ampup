@@ -592,8 +592,8 @@ public partial class OsdView : UserControl
 
         int virtualIdx = device switch
         {
-            QuickWheelDevice.ScSideButton    => 106 + localIdx,
-            QuickWheelDevice.ScEncoderPress  => 109 + localIdx,
+            QuickWheelDevice.ScSideButton    => 10000 + localIdx,
+            QuickWheelDevice.ScEncoderPress  => 10003 + localIdx,
             _                                => -1,
         };
         if (virtualIdx < 0) return;

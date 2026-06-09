@@ -409,11 +409,39 @@ public partial class MainWindow : FluentWindow
         {
             // Double-click to toggle maximize
             WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            e.Handled = true;
         }
         else if (e.ButtonState == MouseButtonState.Pressed)
         {
-            try { DragMove(); } catch (InvalidOperationException) { }
+            try
+            {
+                if (WindowState == WindowState.Maximized)
+                    RestoreMaximizedWindowForDrag(e);
+
+                DragMove();
+                e.Handled = true;
+            }
+            catch (InvalidOperationException) { }
         }
+    }
+
+    private void RestoreMaximizedWindowForDrag(MouseButtonEventArgs e)
+    {
+        var mouseInWindow = e.GetPosition(this);
+        var mouseOnScreen = PointToScreen(mouseInWindow);
+        var source = System.Windows.PresentationSource.FromVisual(this);
+        if (source?.CompositionTarget != null)
+            mouseOnScreen = source.CompositionTarget.TransformFromDevice.Transform(mouseOnScreen);
+
+        double restoredWidth = RestoreBounds.Width > 0 ? RestoreBounds.Width : Math.Max(ActualWidth * 0.8, 900);
+        double restoredHeight = RestoreBounds.Height > 0 ? RestoreBounds.Height : Math.Max(ActualHeight * 0.8, 650);
+        double xRatio = ActualWidth > 0 ? mouseInWindow.X / ActualWidth : 0.5;
+
+        WindowState = WindowState.Normal;
+        Width = restoredWidth;
+        Height = restoredHeight;
+        Left = mouseOnScreen.X - restoredWidth * Math.Clamp(xRatio, 0.05, 0.95);
+        Top = mouseOnScreen.Y - Math.Min(mouseInWindow.Y, 36);
     }
 
     // ── Traffic-light window buttons ──────────────────────────────

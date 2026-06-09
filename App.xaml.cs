@@ -67,8 +67,8 @@ public partial class App : Application
     private readonly Dictionary<int, N3AnimatedKeyState> _n3AnimatedKeys = new();
     private readonly SemaphoreSlim _n3DisplayWriteGate = new(1, 1);
     private const int N3DisplayKeyBase = 100;
-    private const int N3SideButtonBase = 106;
-    private const int N3EncoderPressBase = 109;
+    private const int N3SideButtonBase = 10000;
+    private const int N3EncoderPressBase = 10003;
     private const int N3KnobStateBase = 5;
     private const int StreamControllerRefreshIntervalMs = 1000;
     private const int StreamControllerAnimatedRefreshIntervalMs = 250;
@@ -2743,10 +2743,8 @@ public partial class App : Application
         if (_n3ButtonOverride.TryGetValue(idx, out var pre))
             return pre;
 
-        // Side buttons (106-108) and encoder presses (109-111) fall through
-        // to the root bindings when no LCD pre-resolution is present for
-        // their idx. Pre-resolution is what fixes the page-1 folder LCD
-        // collision without breaking global side/encoder behavior.
+        // Side buttons and encoder presses use high, non-paged IDs so LCD
+        // keys on later pages cannot collide with their root bindings.
         if (idx >= N3SideButtonBase && idx <= N3EncoderPressBase + 2)
             return _config?.N3.Buttons.FirstOrDefault(b => b.Idx == idx);
 
@@ -2874,7 +2872,9 @@ public partial class App : Application
                 // on the device while the editor shows it as empty.
                 bool hasText = !string.IsNullOrWhiteSpace(key.Title);
 
-                if (!hasImage && !hasPreset && !hasText)
+                bool rendersWithoutNormalContent = key.DisplayType != DisplayKeyType.Normal;
+
+                if (!hasImage && !hasPreset && !hasText && !rendersWithoutNormalContent)
                 {
                     ops.Add((i, null, null, true));
                     continue;
@@ -2997,13 +2997,6 @@ public partial class App : Application
     private bool TryGetAnimatedN3State(int slot, StreamControllerDisplayKeyConfig key, out N3AnimatedKeyState state)
     {
         state = null!;
-        if (string.IsNullOrWhiteSpace(key.ImagePath)
-            || !File.Exists(key.ImagePath)
-            || !string.Equals(Path.GetExtension(key.ImagePath), ".gif", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
         string signature = BuildAnimatedN3Signature(key);
         if (_n3AnimatedKeys.TryGetValue(slot, out var existing) && existing.Signature == signature)
         {
@@ -3053,6 +3046,7 @@ public partial class App : Application
           .Append(key.TextSize).Append('|')
           .Append(key.TextColor).Append('|')
           .Append(key.FontFamily).Append('|')
+          .Append(key.ScrollTitleWhenOverflow).Append('|')
           .Append(key.Brightness);
         return sb.ToString();
     }
