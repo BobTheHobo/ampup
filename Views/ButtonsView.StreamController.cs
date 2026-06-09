@@ -591,12 +591,7 @@ public partial class ButtonsView
         _scClearIconButton = MakeEditorButton("Clear", (_, _) =>
         {
             if (_loading || _config == null) return;
-            var key = GetSelectedDisplayKeyConfig();
-            if (key == null) return;
-            key.ImagePath = "";
-            key.PresetIconKind = "";
-            LoadStreamControllerSelection();
-            QueueSave();
+            ClearSelectedStreamControllerIcon();
         });
 
         // ── Display Type (Normal / Clock / Dynamic) ────────────────────
@@ -3714,6 +3709,24 @@ public partial class ButtonsView
                 QueueSave();
             }
         }
+    }
+
+    private void ClearSelectedStreamControllerIcon()
+    {
+        var key = GetSelectedDisplayKeyConfig();
+        if (key == null) return;
+
+        key.ImagePath = "";
+        key.PresetIconKind = "";
+        key.AccentColor = "";
+        key.IconColor = "#F7F7F7";
+        key.DynamicStateGlowColor = "";
+
+        if (key.DisplayType == DisplayKeyType.Solid)
+            key.BackgroundColor = "#1C1C1C";
+
+        LoadStreamControllerSelection();
+        QueueSave();
     }
 
     private void BrowsePathForSelectedStreamAction()

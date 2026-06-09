@@ -158,12 +158,7 @@ public partial class ButtonsView
             _scClearIconButton = MakeEditorButton("Clear Icon", (_, _) =>
             {
                 if (_loading || _config == null) return;
-                var key = GetSelectedDisplayKeyConfig();
-                if (key == null) return;
-                key.ImagePath = "";
-                key.PresetIconKind = "";
-                LoadStreamControllerSelection();
-                QueueSave();
+                ClearSelectedStreamControllerIcon();
             });
         }
         DetachFromParent(_scClearIconButton);
