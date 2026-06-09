@@ -552,8 +552,8 @@ internal static class StreamControllerDisplayRenderer
         float availableWidth = Math.Max(1f, size - 4 * scale);
         float titleWidth = probeGraphics.MeasureString(title, font).Width;
         float gap = Math.Max(12f * scale, availableWidth * 0.35f);
-        float step = Math.Max(1f, 2.0f * scale);
-        int movingFrames = Math.Clamp((int)Math.Ceiling((titleWidth + gap) / step), 16, 96);
+        float step = Math.Max(1f, 1.25f * scale);
+        int movingFrames = Math.Clamp((int)Math.Ceiling((titleWidth + gap) / step), 20, 128);
         int pauseFrames = 6;
         int frameCount = pauseFrames + movingFrames;
         var delays = Enumerable.Repeat(80, frameCount).ToArray();

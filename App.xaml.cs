@@ -71,7 +71,7 @@ public partial class App : Application
     private const int N3EncoderPressBase = 10003;
     private const int N3KnobStateBase = 5;
     private const int StreamControllerRefreshIntervalMs = 1000;
-    private const int StreamControllerAnimatedRefreshIntervalMs = 250;
+    private const int StreamControllerAnimatedRefreshIntervalMs = 80;
     private const int StreamControllerDynamicRefreshMs = 3000;
     private const int MutePollingIdleMs = 1000;
     private const int MutePollingDuckingMs = 500;
