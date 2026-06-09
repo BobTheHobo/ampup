@@ -462,11 +462,13 @@ public partial class MainWindow : FluentWindow
     private void BtnMinimize_Click(object sender, MouseButtonEventArgs e)
     {
         WindowState = WindowState.Minimized;
+        e.Handled = true;
     }
 
     private void BtnMaximize_Click(object sender, MouseButtonEventArgs e)
     {
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        e.Handled = true;
     }
 
     private void BtnClose_Click(object sender, MouseButtonEventArgs e)
