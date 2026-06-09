@@ -409,7 +409,6 @@ public class StreamControllerDisplayKeyConfig
     public string ImagePath { get; set; } = "";
     public string PresetIconKind { get; set; } = "";
     public string Title { get; set; } = "";
-    public bool ScrollTitleWhenOverflow { get; set; } = false;
     public string Subtitle { get; set; } = "";
     public string BackgroundColor { get; set; } = "#1C1C1C";
     public string AccentColor { get; set; } = "#00E676";

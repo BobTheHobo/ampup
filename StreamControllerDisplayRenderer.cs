@@ -260,7 +260,6 @@ internal static class StreamControllerDisplayRenderer
             ImagePath = key.ImagePath,
             PresetIconKind = key.PresetIconKind,
             Title = key.Title,
-            ScrollTitleWhenOverflow = key.ScrollTitleWhenOverflow,
             Subtitle = key.Subtitle,
             BackgroundColor = key.BackgroundColor,
             AccentColor = key.AccentColor,
@@ -520,7 +519,6 @@ internal static class StreamControllerDisplayRenderer
 
     private static bool ShouldScrollTitle(StreamControllerDisplayKeyConfig key, int size)
     {
-        if (!key.ScrollTitleWhenOverflow) return false;
         if (key.TextPosition == DisplayTextPosition.Hidden) return false;
 
         string title = key.Title?.Trim() ?? "";
@@ -591,7 +589,6 @@ internal static class StreamControllerDisplayRenderer
         ImagePath = key.ImagePath ?? "",
         PresetIconKind = key.PresetIconKind ?? "",
         Title = key.Title ?? "",
-        ScrollTitleWhenOverflow = key.ScrollTitleWhenOverflow,
         Subtitle = key.Subtitle ?? "",
         BackgroundColor = key.BackgroundColor ?? "",
         AccentColor = key.AccentColor ?? "",

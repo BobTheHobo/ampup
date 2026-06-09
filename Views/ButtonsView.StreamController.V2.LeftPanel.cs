@@ -1527,7 +1527,7 @@ public partial class ButtonsView
 
             // Compose a hash from fields the tile actually renders — skip
             // CreateHardwarePreview + tile.Refresh() when nothing changed.
-            string hash = $"{key.Title}|{key.ScrollTitleWhenOverflow}|{key.ImagePath}|{key.PresetIconKind}|{key.TextPosition}|{key.TextSize}|{key.TextColor}|{key.IconColor}|{key.FontFamily}|{key.Brightness}|{key.BackgroundColor}|{key.AccentColor}|{key.DisplayType}|{key.ClockFormat}|{key.DynamicStateSource}|{key.DynamicStateActiveIcon}|{key.DynamicStateActiveTitle}|{key.DynamicStateInactiveBrightness}|{key.DynamicStateDimWhenActive}|{key.DynamicStateGlowColor}|{key.SpotifyAlbumArtLayout}|{spotifyStateHash}|{dynamicActive}|{button?.Action}|{isSelected}";
+            string hash = $"{key.Title}|{key.ImagePath}|{key.PresetIconKind}|{key.TextPosition}|{key.TextSize}|{key.TextColor}|{key.IconColor}|{key.FontFamily}|{key.Brightness}|{key.BackgroundColor}|{key.AccentColor}|{key.DisplayType}|{key.ClockFormat}|{key.DynamicStateSource}|{key.DynamicStateActiveIcon}|{key.DynamicStateActiveTitle}|{key.DynamicStateInactiveBrightness}|{key.DynamicStateDimWhenActive}|{key.DynamicStateGlowColor}|{key.SpotifyAlbumArtLayout}|{spotifyStateHash}|{dynamicActive}|{button?.Action}|{isSelected}";
             if (_v2KeyTileStateHash.TryGetValue(i, out var lastHash) && lastHash == hash)
                 continue;
 
@@ -1545,7 +1545,7 @@ public partial class ButtonsView
             {
                 tile.PreviewImage = StreamControllerDisplayRenderer.CreateEditorPreview(key, 240);
                 tile.PreviewAnimation = StreamControllerDisplayRenderer.CreateEditorPreviewAnimation(key, 240);
-                tile.PreviewAnimationSignature = $"{key.Idx}|{key.ImagePath}|{key.PresetIconKind}|{key.Title}|{key.ScrollTitleWhenOverflow}|{key.TextPosition}|{key.TextSize}|{key.TextColor}|{key.FontFamily}|{key.SpotifyAlbumArtLayout}|{spotifyStateHash}|240";
+                tile.PreviewAnimationSignature = $"{key.Idx}|{key.ImagePath}|{key.PresetIconKind}|{key.Title}|{key.TextPosition}|{key.TextSize}|{key.TextColor}|{key.FontFamily}|{key.SpotifyAlbumArtLayout}|{spotifyStateHash}|240";
             }
             // Label by physical slot (1-6, top-left → bot-right) so the user's
             // "top-right = Key 3" mental model holds regardless of whether the

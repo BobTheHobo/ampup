@@ -3046,7 +3046,6 @@ public partial class App : Application
           .Append(key.TextSize).Append('|')
           .Append(key.TextColor).Append('|')
           .Append(key.FontFamily).Append('|')
-          .Append(key.ScrollTitleWhenOverflow).Append('|')
           .Append(key.Brightness);
         return sb.ToString();
     }
