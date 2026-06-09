@@ -1223,7 +1223,11 @@ internal static class StreamControllerDisplayRenderer
         graphics.SetClip(clip);
         try
         {
-            graphics.DrawString(title, titleFont, textBrush, regionX - offset, textY);
+            float titleWidth = graphics.MeasureString(title, titleFont).Width;
+            float gap = Math.Max(12f * scale, regionW * 0.35f);
+            float firstX = regionX - offset;
+            graphics.DrawString(title, titleFont, textBrush, firstX, textY);
+            graphics.DrawString(title, titleFont, textBrush, firstX + titleWidth + gap, textY);
         }
         finally
         {
