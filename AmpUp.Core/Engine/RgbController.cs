@@ -719,6 +719,10 @@ public class RgbController : IDisposable
 
         switch (light.Effect)
         {
+            case LightEffect.Off:
+                SetColor(k, 0, 0, 0);
+                break;
+
             case LightEffect.SingleColor:
                 EffectSingleColor(k, light, pos);
                 break;
@@ -1720,24 +1724,128 @@ public class RgbController : IDisposable
 
     /// <summary>
     /// App-aware position blend. Running + unmuted uses color1->color2 by knob
-    /// position; muted uses color3; not running uses color4.
+    /// position by default; each status can override the rendered effect.
     /// </summary>
     private void EffectProgramStatus(int k, LightConfig light, float pos)
     {
         var state = GetProgramState(k, defaultRunning: false, defaultMuted: true);
         if (!state.Running)
         {
-            SetColor(k, light.R4, light.G4, light.B4);
+            ApplyProgramStatusEffect(k, light, light.ProgramStatusNotRunningEffect, pos, light.R4, light.G4, light.B4);
             return;
         }
 
         if (state.Muted)
         {
-            SetColor(k, light.R3, light.G3, light.B3);
+            ApplyProgramStatusEffect(k, light, light.ProgramStatusMutedEffect, pos, light.R3, light.G3, light.B3);
             return;
         }
 
-        EffectPositionBlend(k, light, pos);
+        ApplyProgramStatusEffect(k, light, light.ProgramStatusUnmutedEffect, pos, light.R, light.G, light.B);
+    }
+
+    private void ApplyProgramStatusEffect(int k, LightConfig source, LightEffect effect, float pos, int primaryR, int primaryG, int primaryB)
+    {
+        if (effect is LightEffect.ProgramStatus or LightEffect.ProgramMute or LightEffect.AppGroupMute
+            or LightEffect.MicStatus or LightEffect.DeviceMute or LightEffect.DeviceSelect
+            or LightEffect.DevicePositionFill or LightEffect.AudioReactive or LightEffect.AudioPositionBlend)
+        {
+            effect = LightEffect.SingleColor;
+        }
+
+        var light = new LightConfig
+        {
+            Idx = source.Idx,
+            R = primaryR,
+            G = primaryG,
+            B = primaryB,
+            R2 = source.R2,
+            G2 = source.G2,
+            B2 = source.B2,
+            EffectSpeed = source.EffectSpeed,
+            Brightness = source.Brightness,
+            ReactiveMode = source.ReactiveMode,
+            PaletteName = source.PaletteName,
+        };
+
+        switch (effect)
+        {
+            case LightEffect.Off:
+                SetColor(k, 0, 0, 0);
+                break;
+            case LightEffect.ColorBlend:
+                EffectColorBlend(k, light, pos);
+                break;
+            case LightEffect.PositionFill:
+                EffectPositionFill(k, light, pos);
+                break;
+            case LightEffect.PositionBlend:
+                EffectPositionBlend(k, light, pos);
+                break;
+            case LightEffect.CycleFill:
+                EffectCycleFill(k, light, pos);
+                break;
+            case LightEffect.RainbowFill:
+                EffectRainbowFill(k, light, pos);
+                break;
+            case LightEffect.GradientFill:
+                EffectGradientFill(k, light);
+                break;
+            case LightEffect.Blink:
+                EffectBlink(k, light);
+                break;
+            case LightEffect.Pulse:
+                EffectPulse(k, light);
+                break;
+            case LightEffect.Breathing:
+                EffectBreathing(k, light);
+                break;
+            case LightEffect.Fire:
+                EffectFire(k, light);
+                break;
+            case LightEffect.Comet:
+                EffectComet(k, light);
+                break;
+            case LightEffect.Sparkle:
+                EffectSparkle(k, light);
+                break;
+            case LightEffect.PingPong:
+                EffectPingPong(k, light);
+                break;
+            case LightEffect.Stack:
+                EffectStack(k, light);
+                break;
+            case LightEffect.Wave:
+                EffectWave(k, light);
+                break;
+            case LightEffect.Candle:
+                EffectCandle(k, light);
+                break;
+            case LightEffect.RainbowWave:
+                EffectRainbowWave(k, light.EffectSpeed);
+                break;
+            case LightEffect.RainbowCycle:
+                EffectRainbowCycle(k, light.EffectSpeed);
+                break;
+            case LightEffect.Wheel:
+                EffectWheel(k, light);
+                break;
+            case LightEffect.RainbowWheel:
+                EffectRainbowWheel(k, light);
+                break;
+            case LightEffect.Heartbeat:
+                EffectHeartbeat(k, light);
+                break;
+            case LightEffect.Plasma:
+                EffectPlasma(k, light);
+                break;
+            case LightEffect.Drip:
+                EffectDrip(k, light);
+                break;
+            default:
+                EffectSingleColor(k, light, pos);
+                break;
+        }
     }
 
     /// <summary>

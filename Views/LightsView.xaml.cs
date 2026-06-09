@@ -47,6 +47,10 @@ public partial class LightsView : UserControl
     private readonly TextBox[] _programNameBoxes = new TextBox[5];
     private readonly StackPanel[] _programNamePanels = new StackPanel[5];
     private readonly Border[] _programAppChips = new Border[5];
+    private readonly StackPanel[] _programStatusEffectPanels = new StackPanel[5];
+    private readonly ActionPicker[] _programStatusUnmutedPickers = new ActionPicker[5];
+    private readonly ActionPicker[] _programStatusMutedPickers = new ActionPicker[5];
+    private readonly ActionPicker[] _programStatusNotRunningPickers = new ActionPicker[5];
 
 
     // Global knob effect previews
@@ -303,6 +307,10 @@ public partial class LightsView : UserControl
                 _programNameBoxes[i].Text = light.ProgramName ?? "";
                 UpdateProgramAppChipDisplay(i, light.ProgramName);
             }
+
+            _programStatusUnmutedPickers[i]?.Select(light.ProgramStatusUnmutedEffect.ToString());
+            _programStatusMutedPickers[i]?.Select(light.ProgramStatusMutedEffect.ToString());
+            _programStatusNotRunningPickers[i]?.Select(light.ProgramStatusNotRunningEffect.ToString());
 
             // Populate DeviceSelect device pickers, then update visibility (which may re-populate),
             // then restore colors/selections after the final populate.
@@ -1813,6 +1821,26 @@ public partial class LightsView : UserControl
             _programNamePanels[idx] = programNameContainer;
             panel.Children.Add(programNameContainer);
 
+            var statusEffectContainer = new StackPanel { Visibility = Visibility.Collapsed };
+            statusEffectContainer.Children.Add(MakeLabel("APP STATUS EFFECTS"));
+            var unmutedPicker = MakeProgramStatusEffectPicker("What to show while the app is running and unmuted");
+            unmutedPicker.Select(LightEffect.PositionBlend.ToString());
+            statusEffectContainer.Children.Add(MakeStatusEffectRow("UNMUTED", unmutedPicker));
+            _programStatusUnmutedPickers[idx] = unmutedPicker;
+
+            var mutedPicker = MakeProgramStatusEffectPicker("What to show while the app is muted");
+            mutedPicker.Select(LightEffect.SingleColor.ToString());
+            statusEffectContainer.Children.Add(MakeStatusEffectRow("MUTED", mutedPicker));
+            _programStatusMutedPickers[idx] = mutedPicker;
+
+            var notRunningPicker = MakeProgramStatusEffectPicker("What to show while the app process is not running");
+            notRunningPicker.Select(LightEffect.SingleColor.ToString());
+            statusEffectContainer.Children.Add(MakeStatusEffectRow("NOT RUNNING", notRunningPicker));
+            _programStatusNotRunningPickers[idx] = notRunningPicker;
+
+            _programStatusEffectPanels[idx] = statusEffectContainer;
+            panel.Children.Add(statusEffectContainer);
+
             // DeviceSelect rows (hidden unless DeviceSelect effect)
             var deviceSelectContainer = new StackPanel { Visibility = Visibility.Collapsed };
             deviceSelectContainer.Children.Add(MakeLabel("DEVICE COLORS"));
@@ -2121,6 +2149,60 @@ public partial class LightsView : UserControl
         };
 
         return MakeColorPill(label, Colors.Black, tooltip, () => OnPickColor(idx, slot));
+    }
+
+    private ActionPicker MakeProgramStatusEffectPicker(string tooltip)
+    {
+        var picker = new ActionPicker
+        {
+            Margin = new Thickness(0, 0, 0, 8),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ToolTip = tooltip,
+        };
+
+        picker.AddItem("Off", LightEffect.Off.ToString(), "0", Color.FromRgb(0x66, 0x66, 0x66), "Turn these LEDs off for this app state");
+        picker.AddItem("Solid", LightEffect.SingleColor.ToString(), "●", Color.FromRgb(0x00, 0xE6, 0x76), "Use this state's color as a solid color");
+        picker.AddItem("Blend", LightEffect.ColorBlend.ToString(), "◑", Color.FromRgb(0xFF, 0xAA, 0x33), "Blend this state's color into the secondary color by knob position");
+        picker.AddItem("Fill", LightEffect.PositionFill.ToString(), "▂▅█", Color.FromRgb(0x4A, 0xB3, 0xFF), "Progressively fill with this state's color");
+        picker.AddItem("PosBlend", LightEffect.PositionBlend.ToString(), "▂▄▇", Color.FromRgb(0x8A, 0xFF, 0xA8), "Progressively fill from this state's color to secondary");
+        picker.AddItem("CycleFill", LightEffect.CycleFill.ToString(), "▂▅⟳", Color.FromRgb(0xFF, 0xD5, 0x4F), "Progressive fill with cycling colors");
+        picker.AddItem("RainbowFill", LightEffect.RainbowFill.ToString(), "▂▅", Color.FromRgb(0xFF, 0x66, 0xDD), "Progressive rainbow fill");
+        picker.AddItem("Gradient", LightEffect.GradientFill.ToString(), "●", Color.FromRgb(0xB3, 0x88, 0xFF), "Static gradient across the three LEDs");
+        picker.AddItem("Blink", LightEffect.Blink.ToString(), "⚡", Color.FromRgb(0xFF, 0xD7, 0x40), "Blink between this state's color and secondary");
+        picker.AddItem("Pulse", LightEffect.Pulse.ToString(), "◎", Color.FromRgb(0xE0, 0x40, 0xFB), "Pulse between this state's color and secondary");
+        picker.AddItem("Breathe", LightEffect.Breathing.ToString(), "〰", Color.FromRgb(0xBA, 0x68, 0xC8), "Smooth breathing animation");
+        picker.AddItem("Fire", LightEffect.Fire.ToString(), "♨", Color.FromRgb(0xFF, 0x70, 0x43), "Fire animation using this state's color and secondary");
+        picker.AddItem("Comet", LightEffect.Comet.ToString(), "☄", Color.FromRgb(0x90, 0xA4, 0xAE), "Comet animation");
+        picker.AddItem("Sparkle", LightEffect.Sparkle.ToString(), "✦", Color.FromRgb(0xF5, 0xF5, 0xF5), "Sparkle animation");
+        picker.AddItem("Pong", LightEffect.PingPong.ToString(), "↔", Color.FromRgb(0x29, 0xB6, 0xF6), "Bouncing dot animation");
+        picker.AddItem("Stack", LightEffect.Stack.ToString(), "▁▃▆", Color.FromRgb(0x66, 0xBB, 0x6A), "Stacking LED animation");
+        picker.AddItem("Wave", LightEffect.Wave.ToString(), "∿", Color.FromRgb(0x26, 0xC6, 0xDA), "Traveling brightness wave");
+        picker.AddItem("Candle", LightEffect.Candle.ToString(), "♢", Color.FromRgb(0xFF, 0xA7, 0x26), "Organic candle flicker");
+        picker.AddItem("Rainbow", LightEffect.RainbowWave.ToString(), "≈", Color.FromRgb(0xFF, 0x66, 0xDD), "Rainbow wave animation");
+        picker.AddItem("Cycle", LightEffect.RainbowCycle.ToString(), "⟳", Color.FromRgb(0x7C, 0x4D, 0xFF), "Rainbow cycle animation");
+        picker.AddItem("Wheel", LightEffect.Wheel.ToString(), "⟲", Color.FromRgb(0x4D, 0xDD, 0xFF), "Rotating dot animation");
+        picker.AddItem("R.Wheel", LightEffect.RainbowWheel.ToString(), "⊚", Color.FromRgb(0xFF, 0x44, 0xAA), "Rainbow wheel animation");
+        picker.AddItem("Heart", LightEffect.Heartbeat.ToString(), "♥", Color.FromRgb(0xFF, 0x52, 0x52), "Heartbeat pulse animation");
+        picker.AddItem("Plasma", LightEffect.Plasma.ToString(), "◆", Color.FromRgb(0x9C, 0x27, 0xB0), "Flowing plasma color animation");
+        picker.AddItem("Drip", LightEffect.Drip.ToString(), "◇", Color.FromRgb(0x4F, 0xC3, 0xF7), "Droplet animation");
+        picker.SelectionChanged += (_, _) => { if (!_loading) QueueSave(); };
+        return picker;
+    }
+
+    private FrameworkElement MakeStatusEffectRow(string label, ActionPicker picker)
+    {
+        var row = new Grid { Margin = new Thickness(0, 0, 0, 2) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(94) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var text = MakeLabel(label);
+        text.Margin = new Thickness(0, 7, 8, 0);
+        Grid.SetColumn(text, 0);
+        row.Children.Add(text);
+
+        Grid.SetColumn(picker, 1);
+        row.Children.Add(picker);
+        return row;
     }
 
     private Border MakeColorPill(string label, Color initial, string tooltip, Action onClick)
@@ -2506,6 +2588,7 @@ public partial class LightsView : UserControl
         _speedPanels[idx].Visibility = Visibility.Visible; // always show (brightness is always relevant)
         _reactiveModePanels[idx].Visibility = isReactive ? Visibility.Visible : Visibility.Collapsed;
         _programNamePanels[idx].Visibility = needsProgramName ? Visibility.Visible : Visibility.Collapsed;
+        _programStatusEffectPanels[idx].Visibility = needsProgramStatusColors ? Visibility.Visible : Visibility.Collapsed;
 
         if (_deviceSelectPanels[idx] != null)
         {
@@ -2580,6 +2663,9 @@ public partial class LightsView : UserControl
                 light.EffectSpeed = copy.EffectSpeed;
                 light.ReactiveMode = copy.ReactiveMode;
                 light.ProgramName = copy.ProgramName;
+                light.ProgramStatusUnmutedEffect = copy.ProgramStatusUnmutedEffect;
+                light.ProgramStatusMutedEffect = copy.ProgramStatusMutedEffect;
+                light.ProgramStatusNotRunningEffect = copy.ProgramStatusNotRunningEffect;
                 light.DeviceColors = copy.DeviceColors != null
                     ? new List<DeviceColorEntry>(copy.DeviceColors.Select(dc => new DeviceColorEntry { DeviceId = dc.DeviceId, R = dc.R, G = dc.G, B = dc.B }))
                     : new List<DeviceColorEntry>();
@@ -2600,6 +2686,9 @@ public partial class LightsView : UserControl
                     _reactiveModeComboBoxes[idx].Select(light.ReactiveMode.ToString());
                 if (_programNameBoxes[idx] != null)
                     _programNameBoxes[idx].Text = light.ProgramName ?? "";
+                _programStatusUnmutedPickers[idx]?.Select(light.ProgramStatusUnmutedEffect.ToString());
+                _programStatusMutedPickers[idx]?.Select(light.ProgramStatusMutedEffect.ToString());
+                _programStatusNotRunningPickers[idx]?.Select(light.ProgramStatusNotRunningEffect.ToString());
                 PopulateDeviceSelectPickers(idx);
                 LoadDeviceSelectColors(idx, light);
                 UpdateVisibility(idx, light.Effect);
@@ -2621,6 +2710,9 @@ public partial class LightsView : UserControl
                 light.R4 = 72; light.G4 = 72; light.B4 = 72;
                 light.EffectSpeed = 50;
                 light.ProgramName = "";
+                light.ProgramStatusUnmutedEffect = LightEffect.PositionBlend;
+                light.ProgramStatusMutedEffect = LightEffect.SingleColor;
+                light.ProgramStatusNotRunningEffect = LightEffect.SingleColor;
                 light.DeviceColors = new List<DeviceColorEntry>();
 
                 _loading = true;
@@ -2637,6 +2729,9 @@ public partial class LightsView : UserControl
                 _speedSliders[idx].Value = 50;
                 if (_programNameBoxes[idx] != null)
                     _programNameBoxes[idx].Text = "";
+                _programStatusUnmutedPickers[idx]?.Select(LightEffect.PositionBlend.ToString());
+                _programStatusMutedPickers[idx]?.Select(LightEffect.SingleColor.ToString());
+                _programStatusNotRunningPickers[idx]?.Select(LightEffect.SingleColor.ToString());
                 UpdateVisibility(idx, LightEffect.SingleColor);
                 _loading = false;
 
@@ -2752,6 +2847,13 @@ public partial class LightsView : UserControl
 
             if (_programNameBoxes[i] != null)
                 light.ProgramName = _programNameBoxes[i].Text.Trim();
+
+            if (_programStatusUnmutedPickers[i] != null && Enum.TryParse<LightEffect>(_programStatusUnmutedPickers[i].SelectedValue, out var unmutedEffect))
+                light.ProgramStatusUnmutedEffect = unmutedEffect;
+            if (_programStatusMutedPickers[i] != null && Enum.TryParse<LightEffect>(_programStatusMutedPickers[i].SelectedValue, out var mutedEffect))
+                light.ProgramStatusMutedEffect = mutedEffect;
+            if (_programStatusNotRunningPickers[i] != null && Enum.TryParse<LightEffect>(_programStatusNotRunningPickers[i].SelectedValue, out var notRunningEffect))
+                light.ProgramStatusNotRunningEffect = notRunningEffect;
 
             // Save DeviceSelect mappings only for effects that use device colors
             // and the pickers are initialized, otherwise preserve existing config

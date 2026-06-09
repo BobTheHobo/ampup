@@ -288,6 +288,12 @@ public class LightConfig
     public int R4 { get; set; } = 72;
     public int G4 { get; set; } = 72;
     public int B4 { get; set; } = 72;
+    [JsonConverter(typeof(StringEnumConverter))]
+    public LightEffect ProgramStatusUnmutedEffect { get; set; } = LightEffect.PositionBlend;
+    [JsonConverter(typeof(StringEnumConverter))]
+    public LightEffect ProgramStatusMutedEffect { get; set; } = LightEffect.SingleColor;
+    [JsonConverter(typeof(StringEnumConverter))]
+    public LightEffect ProgramStatusNotRunningEffect { get; set; } = LightEffect.SingleColor;
     public int EffectSpeed { get; set; } = 50;
     public int Brightness { get; set; } = 100; // per-knob brightness 0-100
     [JsonConverter(typeof(StringEnumConverter))]
@@ -327,7 +333,7 @@ public class GlobalLightConfig
 
 public enum LightEffect
 {
-    SingleColor, ColorBlend, PositionFill, Blink, Pulse,
+    Off, SingleColor, ColorBlend, PositionFill, Blink, Pulse,
     RainbowWave, RainbowCycle, MicStatus, DeviceMute, AudioReactive,
     Breathing, Fire, Comet, Sparkle, GradientFill,
     PositionBlend, PositionBlendMute,
