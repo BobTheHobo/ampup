@@ -771,11 +771,8 @@ public partial class ButtonsView
         _scHardwarePanel.Children.Add(_scHardwareMetricPicker);
 
         _scHardwarePanel.Children.Add(MakeEditorLabel("LABEL"));
-        _scHardwareLabelBox = new TextBox
-        {
-            Style = (Style)FindResource("GlassTextBox"),
-            Margin = new Thickness(0, 0, 0, 10),
-        };
+        _scHardwareLabelBox = MakeEditorTextBox("CPU");
+        _scHardwareLabelBox.Margin = new Thickness(0, 0, 0, 10);
         _scHardwareLabelBox.TextChanged += (_, _) =>
         {
             if (_loading || _config == null) return;
