@@ -568,7 +568,10 @@ internal static class StreamControllerDisplayRenderer
         using var font = CreateTitleFont(key, size);
         float scale = size / 60f;
         float availableWidth = Math.Max(1f, size - 4 * scale);
-        return graphics.MeasureString(title, font).Width > availableWidth + 1f;
+        using var format = CreateSingleLineMeasureFormat();
+        float titleWidth = graphics.MeasureString(title, font, new System.Drawing.PointF(0, 0), format).Width;
+        float comfortMargin = Math.Max(2f * scale, availableWidth * 0.06f);
+        return titleWidth > availableWidth + comfortMargin;
     }
 
     private static ScrollingTitleAnimation CreateScrollingTitleAnimation(
@@ -587,7 +590,8 @@ internal static class StreamControllerDisplayRenderer
         string title = key.Title?.Trim() ?? "";
         float scale = size / 60f;
         float availableWidth = Math.Max(1f, size - 4 * scale);
-        float titleWidth = probeGraphics.MeasureString(title, font).Width;
+        using var format = CreateSingleLineMeasureFormat();
+        float titleWidth = probeGraphics.MeasureString(title, font, new System.Drawing.PointF(0, 0), format).Width;
         float gap = Math.Max(12f * scale, availableWidth * 0.35f);
         float step = Math.Max(1f, 1.25f * scale);
         int movingFrames = Math.Clamp((int)Math.Ceiling((titleWidth + gap) / step), 20, 128);
@@ -1272,6 +1276,16 @@ internal static class StreamControllerDisplayRenderer
             graphics.Clip = oldClip;
             oldClip.Dispose();
         }
+    }
+
+    private static DrawingStringFormat CreateSingleLineMeasureFormat()
+    {
+        return new DrawingStringFormat(DrawingStringFormat.GenericTypographic)
+        {
+            FormatFlags = System.Drawing.StringFormatFlags.MeasureTrailingSpaces
+                          | System.Drawing.StringFormatFlags.NoWrap,
+            Trimming = System.Drawing.StringTrimming.None,
+        };
     }
 
     private static void FillTextReadabilityGradient(
