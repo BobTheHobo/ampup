@@ -45,6 +45,8 @@ public partial class ButtonsView
     private StackPanel? _v2PreviewPanel;
     private StackPanel? _v2ActionPanel;
     private StackPanel? _v2ActionFieldsPanel;
+    private TextBlock? _v2TitleLabel;
+    private TextBlock? _v2TextPositionLabel;
 
     // ── V2 components ──────────────────────────────────────────────────
     // These are created in BuildStreamControllerDesignerV2 and wired by

@@ -3281,8 +3281,9 @@ public partial class ButtonsView
         _scGlowColorSwatchPanel.Children.Clear();
 
         var display = GetSelectedDisplayKeyConfig();
-        bool isSolid = display?.DisplayType == DisplayKeyType.Solid;
-        string currentHex = isSolid
+        bool usesBackgroundFill = display?.DisplayType == DisplayKeyType.Solid
+                                  || display?.DisplayType == DisplayKeyType.HardwareMonitor;
+        string currentHex = usesBackgroundFill
             ? (display?.BackgroundColor ?? display?.AccentColor ?? "#00E676")
             : (display?.AccentColor ?? "#00E676");
 
@@ -3305,7 +3306,7 @@ public partial class ButtonsView
             swatch.MouseLeftButtonDown += (_, _) =>
             {
                 if (display == null) return;
-                if (isSolid)
+                if (usesBackgroundFill)
                     display.BackgroundColor = capturedHex;
                 else
                     display.AccentColor = capturedHex;
@@ -3316,7 +3317,7 @@ public partial class ButtonsView
             _scGlowColorSwatchPanel.Children.Add(swatch);
         }
 
-        string activeHex = isSolid
+        string activeHex = usesBackgroundFill
             ? (display?.BackgroundColor ?? "")
             : (display?.AccentColor ?? "");
         bool isCustom = !string.IsNullOrWhiteSpace(activeHex)
@@ -3351,21 +3352,21 @@ public partial class ButtonsView
             try
             {
                 initial = (Color)ColorConverter.ConvertFromString(
-                    isSolid ? (display.BackgroundColor ?? display.AccentColor ?? "#00E676")
-                            : (display.AccentColor ?? "#00E676"));
+                    usesBackgroundFill ? (display.BackgroundColor ?? display.AccentColor ?? "#00E676")
+                                       : (display.AccentColor ?? "#00E676"));
             }
             catch { initial = Colors.Lime; }
             var dialog = new ColorPickerDialog(initial) { Owner = Window.GetWindow(this) };
             dialog.ColorChanged += c =>
             {
-                if (isSolid)
+                if (usesBackgroundFill)
                     display.BackgroundColor = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
                 else
                     display.AccentColor = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
                 UpdateEditorPreviewOnly();
             };
             dialog.ShowDialog();
-            if (isSolid)
+            if (usesBackgroundFill)
                 display.BackgroundColor = $"#{dialog.SelectedColor.R:X2}{dialog.SelectedColor.G:X2}{dialog.SelectedColor.B:X2}";
             else
                 display.AccentColor = $"#{dialog.SelectedColor.R:X2}{dialog.SelectedColor.G:X2}{dialog.SelectedColor.B:X2}";

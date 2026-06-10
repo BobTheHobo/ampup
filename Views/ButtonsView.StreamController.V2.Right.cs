@@ -199,7 +199,8 @@ public partial class ButtonsView
             designContent.Children.Add(_scDisplayTypePicker);
         }
 
-        designContent.Children.Add(MakeEditorLabel("TITLE"));
+        _v2TitleLabel = MakeEditorLabel("TITLE");
+        designContent.Children.Add(_v2TitleLabel);
         if (_scTitleBox == null)
         {
             _scTitleBox = MakeEditorTextBox("Display title");
@@ -286,7 +287,8 @@ public partial class ButtonsView
         _v2BrightnessSlider.Margin = new Thickness(0, 0, 0, 10);
         designContent.Children.Add(_v2BrightnessSlider);
 
-        designContent.Children.Add(MakeEditorLabel("TEXT POSITION"));
+        _v2TextPositionLabel = MakeEditorLabel("TEXT POSITION");
+        designContent.Children.Add(_v2TextPositionLabel);
         if (_scTextPositionPicker == null)
         {
             _scTextPositionPicker = new SegmentedControl { HorizontalAlignment = HorizontalAlignment.Left };
@@ -369,6 +371,12 @@ public partial class ButtonsView
             DetachFromParent(_scDynamicPanel);
             _scDynamicPanel.Margin = new Thickness(0, 10, 0, 0);
             designContent.Children.Add(_scDynamicPanel);
+        }
+        if (_scHardwarePanel != null)
+        {
+            DetachFromParent(_scHardwarePanel);
+            _scHardwarePanel.Margin = new Thickness(0, 10, 0, 0);
+            designContent.Children.Add(_scHardwarePanel);
         }
 
         // The DESIGN tab itself is the section header now — drop the
@@ -784,9 +792,13 @@ public partial class ButtonsView
         // the current effect, the editor keeps them available for tweaking.
         if (isLcd)
         {
-            if (_scTitleBox != null) _scTitleBox.Visibility = Visibility.Visible;
+            var selectedDisplay = GetSelectedDisplayKeyConfig();
+            bool isHardwareMonitor = selectedDisplay?.DisplayType == DisplayKeyType.HardwareMonitor;
+            if (_v2TitleLabel != null) _v2TitleLabel.Visibility = isHardwareMonitor ? Visibility.Collapsed : Visibility.Visible;
+            if (_scTitleBox != null) _scTitleBox.Visibility = isHardwareMonitor ? Visibility.Collapsed : Visibility.Visible;
             // _scIconBox intentionally stays hidden — see FillV2PreviewPanel.
-            if (_scTextPositionPicker != null) _scTextPositionPicker.Visibility = Visibility.Visible;
+            if (_v2TextPositionLabel != null) _v2TextPositionLabel.Visibility = isHardwareMonitor ? Visibility.Collapsed : Visibility.Visible;
+            if (_scTextPositionPicker != null) _scTextPositionPicker.Visibility = isHardwareMonitor ? Visibility.Collapsed : Visibility.Visible;
             if (_scTextSizeSlider != null) _scTextSizeSlider.Visibility = Visibility.Visible;
             if (_scTextSizeLabel != null) _scTextSizeLabel.Visibility = Visibility.Visible;
             if (_scTextColorSwatchPanel != null) _scTextColorSwatchPanel.Visibility = Visibility.Visible;
@@ -848,6 +860,20 @@ public partial class ButtonsView
                     _ => 2,
                 };
             }
+            if (_scHardwareMetricPicker != null)
+            {
+                string src = string.IsNullOrWhiteSpace(key.HardwareMetricSource) ? "cpu_temp" : key.HardwareMetricSource;
+                int metricIdx = 0;
+                for (int i = 0; i < HardwareMonitorService.Sources.Length; i++)
+                {
+                    if (HardwareMonitorService.Sources[i].Source == src)
+                    {
+                        metricIdx = i;
+                        break;
+                    }
+                }
+                _scHardwareMetricPicker.SelectedIndex = metricIdx;
+            }
             if (_v2FontPicker != null)
             {
                 var currentFont = string.IsNullOrWhiteSpace(key.FontFamily) ? "Segoe UI" : key.FontFamily;
@@ -893,14 +919,21 @@ public partial class ButtonsView
             // keep one familiar color control instead of a separate concept.
             bool hasPresetIcon = !string.IsNullOrWhiteSpace(key.PresetIconKind)
                                  && string.IsNullOrWhiteSpace(key.ImagePath);
-            bool showGlowRow = hasPresetIcon || key.DisplayType == DisplayKeyType.Solid;
+            bool usesBackgroundFill = key.DisplayType == DisplayKeyType.Solid
+                                      || key.DisplayType == DisplayKeyType.HardwareMonitor;
+            bool showGlowRow = hasPresetIcon || usesBackgroundFill;
             if (_v2IconColorLabel != null)
                 _v2IconColorLabel.Visibility = hasPresetIcon ? Visibility.Visible : Visibility.Collapsed;
             if (_scIconColorSwatchPanel != null)
                 _scIconColorSwatchPanel.Visibility = hasPresetIcon ? Visibility.Visible : Visibility.Collapsed;
             if (_v2GlowColorLabel != null)
             {
-                _v2GlowColorLabel.Text = key.DisplayType == DisplayKeyType.Solid ? "SOLID COLOR" : "GLOW COLOR";
+                _v2GlowColorLabel.Text = key.DisplayType switch
+                {
+                    DisplayKeyType.Solid => "SOLID COLOR",
+                    DisplayKeyType.HardwareMonitor => "BACKGROUND COLOR",
+                    _ => "GLOW COLOR",
+                };
                 _v2GlowColorLabel.Visibility = showGlowRow ? Visibility.Visible : Visibility.Collapsed;
             }
             if (_scGlowColorSwatchPanel != null)
