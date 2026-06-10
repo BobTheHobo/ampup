@@ -657,7 +657,7 @@ public class AmbienceConfig
     public string? RoomEffect { get; set; } = null; // null = not active
     public string RoomColor1 { get; set; } = "#00E676";
     public string RoomColor2 { get; set; } = "#FFFFFF";
-    public bool RoomColorsAuto { get; set; } = false; // scenes use their own signature colors instead of the custom palette
+    public bool RoomColorsAuto { get; set; } = true; // scenes use their own signature colors instead of the custom palette
     public int RoomTemperatureKelvin { get; set; } = 3500;
     public int RoomEffectSpeed { get; set; } = 50;
 }
