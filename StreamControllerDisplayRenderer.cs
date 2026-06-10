@@ -337,12 +337,14 @@ internal static class StreamControllerDisplayRenderer
         {
             var metric = HardwareMetricProvider?.Invoke(key.HardwareMetricSource)
                 ?? new HardwareMetricDisplay("Hardware", "--", false);
-            clone.Title = $"{metric.ValueText}\n{metric.Label}";
+            clone.Title = "";
             clone.Subtitle = "";
             clone.ImagePath = "";
             clone.PresetIconKind = "";
             clone.TextPosition = DisplayTextPosition.Middle;
             if (clone.TextSize == 14) clone.TextSize = 20;
+            if (clone.HardwareMetricLabelSize <= 0) clone.HardwareMetricLabelSize = 10;
+            if (string.IsNullOrWhiteSpace(clone.HardwareMetricLabelColor)) clone.HardwareMetricLabelColor = "#FFFFFF";
             if (!metric.IsAvailable)
                 clone.Brightness = Math.Clamp((int)Math.Round(key.Brightness * 0.55), 0, 100);
             return clone;
@@ -536,7 +538,9 @@ internal static class StreamControllerDisplayRenderer
         }
 
         // Draw text overlay on all key types
-        if (hasText && key.TextPosition != DisplayTextPosition.Hidden)
+        if (key.DisplayType == DisplayKeyType.HardwareMonitor)
+            DrawHardwareMetricOverlay(bitmap, key, canvas, canvas);
+        else if (hasText && key.TextPosition != DisplayTextPosition.Hidden)
             DrawTextOverlay(bitmap, key, canvas, title);
 
         // Per-key brightness — final multiply pass. 100 = unchanged, 0 = black.
@@ -649,6 +653,10 @@ internal static class StreamControllerDisplayRenderer
         DynamicStateGlowColor = key.DynamicStateGlowColor ?? "",
         SpotifyAlbumArtLayout = key.SpotifyAlbumArtLayout,
         HardwareMetricSource = key.HardwareMetricSource ?? "cpu_temp",
+        HardwareMetricLabel = key.HardwareMetricLabel ?? "",
+        HardwareMetricLabelSize = key.HardwareMetricLabelSize,
+        HardwareMetricLabelColor = key.HardwareMetricLabelColor ?? "",
+        HardwareMetricLayout = key.HardwareMetricLayout,
     };
 
     private static DrawingBitmap ComposeSpotifyAlbumArtTileBitmap(
@@ -1220,6 +1228,99 @@ internal static class StreamControllerDisplayRenderer
         catch
         {
             return new DrawingFont("Segoe UI", baseFontSize * scale, System.Drawing.FontStyle.Bold, DrawingGraphicsUnit.Pixel);
+        }
+    }
+
+    private static void DrawHardwareMetricOverlay(
+        DrawingBitmap bitmap,
+        StreamControllerDisplayKeyConfig key,
+        int width,
+        int height)
+    {
+        var metric = HardwareMetricProvider?.Invoke(key.HardwareMetricSource)
+            ?? new HardwareMetricDisplay("Hardware", "--", false);
+
+        string value = metric.ValueText?.Trim() ?? "--";
+        string label = string.IsNullOrWhiteSpace(key.HardwareMetricLabel)
+            ? metric.Label
+            : key.HardwareMetricLabel.Trim();
+
+        using var graphics = DrawingGraphics.FromImage(bitmap);
+        ConfigureGraphics(graphics);
+
+        float scale = height / 60f;
+        string fontName = string.IsNullOrWhiteSpace(key.FontFamily) ? "Segoe UI" : key.FontFamily;
+        using var valueFont = CreateSizedFont(fontName, Math.Clamp(key.TextSize, 6, 32) * scale, System.Drawing.FontStyle.Bold);
+        using var labelFont = CreateSizedFont(fontName, Math.Clamp(key.HardwareMetricLabelSize <= 0 ? 10 : key.HardwareMetricLabelSize, 6, 24) * scale, System.Drawing.FontStyle.Bold);
+        using var valueBrush = new DrawingBrush(ParseColor(key.TextColor, DrawingColor.White));
+        using var labelBrush = new DrawingBrush(ParseColor(key.HardwareMetricLabelColor, DrawingColor.White));
+        using var format = new System.Drawing.StringFormat
+        {
+            Alignment = System.Drawing.StringAlignment.Center,
+            LineAlignment = System.Drawing.StringAlignment.Center,
+            Trimming = System.Drawing.StringTrimming.EllipsisCharacter,
+            FormatFlags = System.Drawing.StringFormatFlags.NoWrap,
+        };
+
+        float pad = Math.Max(2f, 3f * scale);
+        float spacing = Math.Max(1f, 2f * scale);
+        var layout = key.HardwareMetricLayout;
+        bool showValue = layout != HardwareMetricLayout.LabelOnly;
+        bool showLabel = layout != HardwareMetricLayout.ValueOnly && !string.IsNullOrWhiteSpace(label);
+        float valueH = showValue ? graphics.MeasureString("88°", valueFont).Height : 0;
+        float labelH = showLabel ? graphics.MeasureString("CPU", labelFont).Height : 0;
+        float totalH = layout == HardwareMetricLayout.SideBySide
+            ? Math.Max(valueH, labelH)
+            : valueH + labelH + (showValue && showLabel ? spacing : 0);
+        float y = (height - totalH) * 0.5f;
+        float contentX = pad;
+        float contentW = width - pad * 2;
+
+        if (layout == HardwareMetricLayout.SideBySide && showValue && showLabel)
+        {
+            float split = contentW * 0.58f;
+            graphics.DrawString(value, valueFont, valueBrush,
+                new DrawingRectangleF(contentX, y, split, totalH), format);
+            graphics.DrawString(label, labelFont, labelBrush,
+                new DrawingRectangleF(contentX + split, y, contentW - split, totalH), format);
+            return;
+        }
+
+        void DrawValue(float lineY)
+        {
+            if (!showValue) return;
+            graphics.DrawString(value, valueFont, valueBrush,
+                new DrawingRectangleF(contentX, lineY, contentW, valueH), format);
+        }
+
+        void DrawLabel(float lineY)
+        {
+            if (!showLabel) return;
+            graphics.DrawString(label, labelFont, labelBrush,
+                new DrawingRectangleF(contentX, lineY, contentW, labelH), format);
+        }
+
+        if (layout == HardwareMetricLayout.LabelAboveValue)
+        {
+            DrawLabel(y);
+            DrawValue(y + labelH + (showValue && showLabel ? spacing : 0));
+        }
+        else
+        {
+            DrawValue(y);
+            DrawLabel(y + valueH + (showValue && showLabel ? spacing : 0));
+        }
+    }
+
+    private static DrawingFont CreateSizedFont(string fontName, float size, System.Drawing.FontStyle style)
+    {
+        try
+        {
+            return new DrawingFont(fontName, size, style, DrawingGraphicsUnit.Pixel);
+        }
+        catch
+        {
+            return new DrawingFont("Segoe UI", size, style, DrawingGraphicsUnit.Pixel);
         }
     }
 

@@ -454,6 +454,14 @@ public class StreamControllerDisplayKeyConfig
 
     /// <summary>HardwareMonitor metric key (cpu_temp, gpu_temp, memory_used, etc.).</summary>
     public string HardwareMetricSource { get; set; } = "cpu_temp";
+    /// <summary>Optional label override for HardwareMonitor keys. Empty uses the metric's default label.</summary>
+    public string HardwareMetricLabel { get; set; } = "";
+    /// <summary>HardwareMonitor label font size. TextSize controls the metric value size.</summary>
+    public int HardwareMetricLabelSize { get; set; } = 10;
+    /// <summary>HardwareMonitor label color. TextColor controls the metric value color.</summary>
+    public string HardwareMetricLabelColor { get; set; } = "#FFFFFF";
+    [JsonConverter(typeof(StringEnumConverter))]
+    public HardwareMetricLayout HardwareMetricLayout { get; set; } = HardwareMetricLayout.ValueAboveLabel;
 }
 
 public enum DisplayKeyType
@@ -485,6 +493,15 @@ public enum SpotifyAlbumArtLayout
     FourLeft,
     FourRight,
     SixFull,
+}
+
+public enum HardwareMetricLayout
+{
+    ValueAboveLabel,
+    LabelAboveValue,
+    ValueOnly,
+    LabelOnly,
+    SideBySide,
 }
 
 public enum HardwareMode

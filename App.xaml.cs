@@ -63,6 +63,7 @@ public partial class App : Application
     private System.Windows.Threading.DispatcherTimer? _wheelDismissTimer;
     private System.Windows.Threading.DispatcherTimer? _streamControllerRefreshTimer;
     private DateTime _lastDynamicStateTick = DateTime.MinValue;
+    private DateTime _lastHardwareMetricTick = DateTime.MinValue;
     private readonly int[] _lastKnobRaw = new int[5];
     private readonly Dictionary<int, N3AnimatedKeyState> _n3AnimatedKeys = new();
     private HardwareMonitorService? _hardwareMonitor;
@@ -74,6 +75,7 @@ public partial class App : Application
     private const int StreamControllerRefreshIntervalMs = 1000;
     private const int StreamControllerAnimatedRefreshIntervalMs = 80;
     private const int StreamControllerDynamicRefreshMs = 3000;
+    private const int StreamControllerHardwareRefreshMs = 1000;
     private const int MutePollingIdleMs = 1000;
     private const int MutePollingDuckingMs = 500;
     private const int MutePollingQuietMs = 5000;
@@ -2576,17 +2578,21 @@ public partial class App : Application
             // LCDs every second is wasteful — clocks only change at minute
             // boundaries and dynamic state updates every few seconds is
             // plenty. 3s cadence cuts HID traffic and JPEG encode load.
-            bool fullRefreshDue = (hasClock || hasDynamic || hasHardwareMetric)
+            bool dynamicRefreshDue = (hasClock || hasDynamic)
                 && (DateTime.Now - _lastDynamicStateTick).TotalMilliseconds >= StreamControllerDynamicRefreshMs;
+            bool hardwareRefreshDue = hasHardwareMetric
+                && (DateTime.Now - _lastHardwareMetricTick).TotalMilliseconds >= StreamControllerHardwareRefreshMs;
 
-            if (fullRefreshDue)
+            if (dynamicRefreshDue || hardwareRefreshDue)
             {
                 // Keep OBS state fresh so obs_recording / obs_streaming reflect reality.
-                if (hasDynamic && _obs != null && _obs.IsAvailable)
+                if (dynamicRefreshDue && hasDynamic && _obs != null && _obs.IsAvailable)
                     _ = _obs.RefreshStatusAsync();
 
                 SyncStreamControllerDisplays();
-                _lastDynamicStateTick = DateTime.Now;
+                var now = DateTime.Now;
+                if (dynamicRefreshDue) _lastDynamicStateTick = now;
+                if (hardwareRefreshDue) _lastHardwareMetricTick = now;
                 return;
             }
 
@@ -3105,7 +3111,12 @@ public partial class App : Application
           .Append(key.TextSize).Append('|')
           .Append(key.TextColor).Append('|')
           .Append(key.FontFamily).Append('|')
-          .Append(key.Brightness);
+          .Append(key.Brightness).Append('|')
+          .Append(key.HardwareMetricSource).Append('|')
+          .Append(key.HardwareMetricLabel).Append('|')
+          .Append(key.HardwareMetricLabelSize).Append('|')
+          .Append(key.HardwareMetricLabelColor).Append('|')
+          .Append(key.HardwareMetricLayout);
         return sb.ToString();
     }
 

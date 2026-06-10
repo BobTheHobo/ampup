@@ -1,4 +1,9 @@
 using LibreHardwareMonitor.Hardware;
+using System.IO;
+using HwinfoReader = Hwinfo.SharedMemory.SharedMemoryReader;
+using HwinfoSensorReading = Hwinfo.SharedMemory.SensorReading;
+using HwinfoSensorType = Hwinfo.SharedMemory.SensorType;
+using LhmSensorType = LibreHardwareMonitor.Hardware.SensorType;
 
 namespace AmpUp;
 
@@ -10,13 +15,16 @@ internal sealed record HardwareMetricReading(
 
 internal sealed class HardwareMonitorService : IDisposable
 {
-    private const int RefreshMs = 2000;
+    private const int RefreshMs = 1000;
 
     private readonly object _lock = new();
     private Computer? _computer;
+    private HwinfoReader? _hwinfoReader;
     private DateTime _lastRefreshUtc = DateTime.MinValue;
     private bool _opened;
     private bool _failed;
+    private bool _hwinfoUnavailableLogged;
+    private readonly HashSet<string> _loggedUnavailableSources = new();
     private HardwareMetricReading _lastFallback = new("unavailable", "Hardware", "--", false);
 
     public static readonly (string Source, string Label)[] Sources =
@@ -50,19 +58,19 @@ internal sealed class HardwareMonitorService : IDisposable
 
                 return source switch
                 {
-                    "cpu_temp" => ReadSensor(source, "CPU Temp", IsCpu, SensorType.Temperature, PreferCpuPackage),
-                    "gpu_temp" => ReadSensor(source, "GPU Temp", IsGpu, SensorType.Temperature, PreferGpuCore),
-                    "cpu_load" => ReadSensor(source, "CPU Load", IsCpu, SensorType.Load, PreferTotalOrCore, "%"),
-                    "gpu_load" => ReadSensor(source, "GPU Load", IsGpu, SensorType.Load, PreferTotalOrCore, "%"),
-                    "cpu_clock" => ReadSensor(source, "CPU Clock", IsCpu, SensorType.Clock, PreferTotalOrCore, "MHz"),
-                    "gpu_clock" => ReadSensor(source, "GPU Clock", IsGpu, SensorType.Clock, PreferGpuCore, "MHz"),
-                    "cpu_power" => ReadSensor(source, "CPU Power", IsCpu, SensorType.Power, PreferPackageOrTotal, "W"),
-                    "gpu_power" => ReadSensor(source, "GPU Power", IsGpu, SensorType.Power, PreferPackageOrTotal, "W"),
+                    "cpu_temp" => ReadCpuTemperature(),
+                    "gpu_temp" => ReadSensor(source, "GPU Temp", IsGpu, LhmSensorType.Temperature, PreferGpuCore),
+                    "cpu_load" => ReadSensor(source, "CPU Load", IsCpu, LhmSensorType.Load, PreferTotalOrCore, "%"),
+                    "gpu_load" => ReadSensor(source, "GPU Load", IsGpu, LhmSensorType.Load, PreferTotalOrCore, "%"),
+                    "cpu_clock" => ReadSensor(source, "CPU Clock", IsCpu, LhmSensorType.Clock, PreferTotalOrCore, "MHz"),
+                    "gpu_clock" => ReadSensor(source, "GPU Clock", IsGpu, LhmSensorType.Clock, PreferGpuCore, "MHz"),
+                    "cpu_power" => ReadSensor(source, "CPU Power", IsCpu, LhmSensorType.Power, PreferPackageOrTotal, "W"),
+                    "gpu_power" => ReadSensor(source, "GPU Power", IsGpu, LhmSensorType.Power, PreferPackageOrTotal, "W"),
                     "memory_used" => ReadMemoryUsed(),
-                    "memory_load" => ReadSensor(source, "Memory", h => h.HardwareType == HardwareType.Memory, SensorType.Load, PreferUsedMemory, "%"),
-                    "vram_used" => ReadSensor(source, "VRAM", IsGpu, SensorType.Data, PreferMemoryData, "GB"),
-                    "vram_load" => ReadSensor(source, "VRAM", IsGpu, SensorType.Load, PreferMemoryData, "%"),
-                    "fan_speed" => ReadSensor(source, "Fan", h => true, SensorType.Fan, PreferAny, "RPM"),
+                    "memory_load" => ReadSensor(source, "Memory", h => h.HardwareType == HardwareType.Memory, LhmSensorType.Load, PreferUsedMemory, "%"),
+                    "vram_used" => ReadSensor(source, "VRAM", IsGpu, LhmSensorType.Data, PreferMemoryData, "GB"),
+                    "vram_load" => ReadSensor(source, "VRAM", IsGpu, LhmSensorType.Load, PreferMemoryData, "%"),
+                    "fan_speed" => ReadSensor(source, "Fan", h => true, LhmSensorType.Fan, PreferAny, "RPM"),
                     _ => new HardwareMetricReading(source, GetSourceLabel(source), "--", false),
                 };
             }
@@ -122,7 +130,7 @@ internal sealed class HardwareMonitorService : IDisposable
         string source,
         string label,
         Func<IHardware, bool> hardwareFilter,
-        SensorType sensorType,
+        LhmSensorType sensorType,
         Func<ISensor, int> preference,
         string unit = "°")
     {
@@ -136,7 +144,10 @@ internal sealed class HardwareMonitorService : IDisposable
             .FirstOrDefault();
 
         if (sensor == null)
+        {
+            LogUnavailableSensorOnce(source, label, sensorType, hardwareFilter);
             return new HardwareMetricReading(source, label, "--", false);
+        }
 
         string value = FormatValue(sensor.Value!.Value, unit);
         var reading = new HardwareMetricReading(source, label, value, true);
@@ -144,12 +155,62 @@ internal sealed class HardwareMonitorService : IDisposable
         return reading;
     }
 
+    private HardwareMetricReading ReadCpuTemperature()
+    {
+        var lhmReading = ReadSensor("cpu_temp", "CPU Temp", IsCpu, LhmSensorType.Temperature, PreferCpuPackage);
+        if (lhmReading.IsAvailable)
+            return lhmReading;
+
+        var hwinfoReading = ReadHwinfoCpuTemperature();
+        return hwinfoReading ?? lhmReading;
+    }
+
+    private HardwareMetricReading? ReadHwinfoCpuTemperature()
+    {
+        HwinfoSensorReading? sensor = ReadHwinfoSensors()
+            .Where(s => s.Type == HwinfoSensorType.SensorTypeTemp
+                && IsUsefulTemperature(s.Value)
+                && IsHwinfoCpuTemperature(s))
+            .OrderBy(PreferHwinfoCpuTemperature)
+            .ThenBy(s => s.Index)
+            .Select(s => (HwinfoSensorReading?)s)
+            .FirstOrDefault();
+
+        if (sensor == null)
+            return null;
+
+        var reading = new HardwareMetricReading("cpu_temp", "CPU Temp", FormatValue((float)sensor.Value.Value, "°"), true);
+        _lastFallback = reading;
+        return reading;
+    }
+
+    private IEnumerable<HwinfoSensorReading> ReadHwinfoSensors()
+    {
+        try
+        {
+            _hwinfoReader ??= new HwinfoReader(50);
+            return _hwinfoReader.ReadLocal();
+        }
+        catch (Exception ex) when (ex is FileNotFoundException || ex is UnauthorizedAccessException || ex is InvalidDataException || ex is TimeoutException)
+        {
+            if (!_hwinfoUnavailableLogged)
+            {
+                _hwinfoUnavailableLogged = true;
+                Logger.Log($"HWiNFO shared memory CPU temp fallback unavailable: {ex.Message}. Start HWiNFO and enable Shared Memory Support if CPU temperature stays unavailable.");
+            }
+
+            _hwinfoReader?.Dispose();
+            _hwinfoReader = null;
+            return Array.Empty<HwinfoSensorReading>();
+        }
+    }
+
     private HardwareMetricReading ReadMemoryUsed()
     {
         var sensor = EnumerateSensors()
             .Where(s => s.Value.HasValue
                 && s.Hardware.HardwareType == HardwareType.Memory
-                && s.SensorType == SensorType.Data
+                && s.SensorType == LhmSensorType.Data
                 && IsUsefulSensorValue(s))
             .OrderBy(PreferUsedMemory)
             .ThenBy(s => s.Index)
@@ -243,6 +304,38 @@ internal sealed class HardwareMonitorService : IDisposable
 
     private static int PreferAny(ISensor sensor) => sensor.Index;
 
+    private static bool IsHwinfoCpuTemperature(HwinfoSensorReading sensor)
+    {
+        string label = $"{sensor.LabelUser} {sensor.LabelOrig}".ToLowerInvariant();
+        string group = $"{sensor.GroupLabelUser} {sensor.GroupLabelOrig}".ToLowerInvariant();
+        if (label.Contains("gpu") || group.Contains("gpu")) return false;
+
+        bool cpuGroup = group.Contains("cpu")
+            || group.Contains("processor")
+            || group.Contains("ryzen")
+            || group.Contains("core")
+            || group.Contains("amd");
+        bool cpuLabel = label.Contains("cpu")
+            || label.Contains("tctl")
+            || label.Contains("tdie")
+            || label.Contains("ccd")
+            || label.Contains("package")
+            || label.Contains("core max");
+
+        return cpuGroup && cpuLabel;
+    }
+
+    private static int PreferHwinfoCpuTemperature(HwinfoSensorReading sensor)
+    {
+        string label = $"{sensor.LabelUser} {sensor.LabelOrig}".ToLowerInvariant();
+        if (label.Contains("tctl") && label.Contains("tdie")) return 0;
+        if (label.Contains("tdie")) return 1;
+        if (label.Contains("package")) return 2;
+        if (label.Contains("core max")) return 3;
+        if (label.Contains("cpu")) return 4;
+        return 5;
+    }
+
     private static bool IsUsefulSensorValue(ISensor sensor)
     {
         float value = sensor.Value ?? float.NaN;
@@ -250,14 +343,40 @@ internal sealed class HardwareMonitorService : IDisposable
 
         return sensor.SensorType switch
         {
-            SensorType.Temperature => value > 0.5f && value < 130f,
-            SensorType.Load => value >= 0f && value <= 100f,
-            SensorType.Clock => value > 0f,
-            SensorType.Power => value > 0f,
-            SensorType.Data => value > 0f,
-            SensorType.Fan => value >= 0f,
+            LhmSensorType.Temperature => IsUsefulTemperature(value),
+            LhmSensorType.Load => value >= 0f && value <= 100f,
+            LhmSensorType.Clock => value > 0f,
+            LhmSensorType.Power => value > 0f,
+            LhmSensorType.Data => value > 0f,
+            LhmSensorType.Fan => value >= 0f,
             _ => true,
         };
+    }
+
+    private void LogUnavailableSensorOnce(
+        string source,
+        string label,
+        LhmSensorType sensorType,
+        Func<IHardware, bool> hardwareFilter)
+    {
+        if (!_loggedUnavailableSources.Add(source))
+            return;
+
+        var candidates = EnumerateSensors()
+            .Where(s => s.Value.HasValue
+                && s.SensorType == sensorType
+                && hardwareFilter(s.Hardware))
+            .Take(6)
+            .Select(s => $"{s.Hardware.Name}/{s.Name}={s.Value:0.##}")
+            .ToArray();
+
+        string details = candidates.Length == 0 ? "no candidates" : string.Join(", ", candidates);
+        Logger.Log($"Hardware monitor {label} unavailable from LibreHardwareMonitor ({details}).");
+    }
+
+    private static bool IsUsefulTemperature(double value)
+    {
+        return !double.IsNaN(value) && !double.IsInfinity(value) && value > 0.5 && value < 130;
     }
 
     private static string FormatValue(float value, string unit)
@@ -280,6 +399,8 @@ internal sealed class HardwareMonitorService : IDisposable
             _computer?.Close();
             _computer = null;
             _opened = false;
+            _hwinfoReader?.Dispose();
+            _hwinfoReader = null;
         }
     }
 }

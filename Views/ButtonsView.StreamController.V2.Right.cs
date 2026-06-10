@@ -336,7 +336,10 @@ public partial class ButtonsView
             designContent.Children.Add(_scTextSizeSlider);
         }
 
-        designContent.Children.Add(MakeEditorLabel("TEXT COLOR"));
+        if (_scTextColorLabel == null)
+            _scTextColorLabel = MakeEditorLabel("TEXT COLOR");
+        DetachFromParent(_scTextColorLabel);
+        designContent.Children.Add(_scTextColorLabel);
         if (_scTextColorSwatchPanel == null) _scTextColorSwatchPanel = new WrapPanel();
         DetachFromParent(_scTextColorSwatchPanel);
         _scTextColorSwatchPanel.Margin = new Thickness(0, 0, 0, 0);
@@ -802,6 +805,11 @@ public partial class ButtonsView
             if (_scTextPositionPicker != null) _scTextPositionPicker.Visibility = isHardwareMonitor ? Visibility.Collapsed : Visibility.Visible;
             if (_scTextSizeSlider != null) _scTextSizeSlider.Visibility = Visibility.Visible;
             if (_scTextSizeLabel != null) _scTextSizeLabel.Visibility = Visibility.Visible;
+            if (_scTextColorLabel != null)
+            {
+                _scTextColorLabel.Text = isHardwareMonitor ? "VALUE COLOR" : "TEXT COLOR";
+                _scTextColorLabel.Visibility = Visibility.Visible;
+            }
             if (_scTextColorSwatchPanel != null) _scTextColorSwatchPanel.Visibility = Visibility.Visible;
             if (_scDisplayTypePicker != null) _scDisplayTypePicker.Visibility = Visibility.Visible;
         }
@@ -875,6 +883,24 @@ public partial class ButtonsView
                 }
                 _scHardwareMetricPicker.SelectedIndex = metricIdx;
             }
+            if (_scHardwareLabelBox != null)
+                _scHardwareLabelBox.Text = key.HardwareMetricLabel ?? "";
+            if (_scHardwareLayoutPicker != null)
+            {
+                _scHardwareLayoutPicker.SelectedIndex = key.HardwareMetricLayout switch
+                {
+                    HardwareMetricLayout.LabelAboveValue => 1,
+                    HardwareMetricLayout.ValueOnly => 2,
+                    HardwareMetricLayout.LabelOnly => 3,
+                    HardwareMetricLayout.SideBySide => 4,
+                    _ => 0,
+                };
+            }
+            if (_scHardwareLabelSizeSlider != null)
+                _scHardwareLabelSizeSlider.Value = Math.Clamp(key.HardwareMetricLabelSize <= 0 ? 10 : key.HardwareMetricLabelSize, 6, 24);
+            if (_scHardwareLabelSizeLabel != null)
+                _scHardwareLabelSizeLabel.Text = $"Label Size: {Math.Clamp(key.HardwareMetricLabelSize <= 0 ? 10 : key.HardwareMetricLabelSize, 6, 24)}";
+            BuildHardwareLabelColorSwatches();
             if (_v2FontPicker != null)
             {
                 var currentFont = string.IsNullOrWhiteSpace(key.FontFamily) ? "Segoe UI" : key.FontFamily;

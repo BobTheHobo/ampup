@@ -48,11 +48,18 @@ public partial class ButtonsView
     private WrapPanel? _scDynamicGlowSwatchPanel;
     private StackPanel? _scHardwarePanel;
     private ListPicker? _scHardwareMetricPicker;
+    private TextBox? _scHardwareLabelBox;
+    private SegmentedControl? _scHardwareLayoutPicker;
+    private StyledSlider? _scHardwareLabelSizeSlider;
+    private TextBlock? _scHardwareLabelSizeLabel;
+    private TextBlock? _scHardwareLabelColorLabel;
+    private WrapPanel? _scHardwareLabelColorSwatchPanel;
     // Panels that host the "Normal" editors — grouped so they can hide together.
     private readonly List<FrameworkElement> _scNormalOnlyRows = new();
     private SegmentedControl? _scTextPositionPicker;
     private StyledSlider? _scTextSizeSlider;
     private TextBlock? _scTextSizeLabel;
+    private TextBlock? _scTextColorLabel;
     private Border? _scTextColorSwatch;
     private WrapPanel? _scTextColorSwatchPanel;
     private WrapPanel? _scIconColorSwatchPanel;
@@ -762,6 +769,83 @@ public partial class ButtonsView
             QueueSave();
         };
         _scHardwarePanel.Children.Add(_scHardwareMetricPicker);
+
+        _scHardwarePanel.Children.Add(MakeEditorLabel("LABEL"));
+        _scHardwareLabelBox = new TextBox
+        {
+            Style = (Style)FindResource("GlassTextBox"),
+            Margin = new Thickness(0, 0, 0, 10),
+        };
+        _scHardwareLabelBox.TextChanged += (_, _) =>
+        {
+            if (_loading || _config == null) return;
+            var key = GetSelectedDisplayKeyConfig();
+            if (key == null) return;
+            key.HardwareMetricLabel = _scHardwareLabelBox.Text;
+            UpdateEditorPreviewOnly();
+            QueueSave();
+        };
+        _scHardwarePanel.Children.Add(_scHardwareLabelBox);
+
+        _scHardwarePanel.Children.Add(MakeEditorLabel("LAYOUT"));
+        _scHardwareLayoutPicker = new SegmentedControl
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 0, 0, 10),
+        };
+        _scHardwareLayoutPicker.AddSegment("Value", HardwareMetricLayout.ValueAboveLabel);
+        _scHardwareLayoutPicker.AddSegment("Label", HardwareMetricLayout.LabelAboveValue);
+        _scHardwareLayoutPicker.AddSegment("Value Only", HardwareMetricLayout.ValueOnly);
+        _scHardwareLayoutPicker.AddSegment("Label Only", HardwareMetricLayout.LabelOnly);
+        _scHardwareLayoutPicker.AddSegment("Side", HardwareMetricLayout.SideBySide);
+        _scHardwareLayoutPicker.SelectionChanged += (_, _) =>
+        {
+            if (_loading || _config == null) return;
+            var key = GetSelectedDisplayKeyConfig();
+            if (key != null && _scHardwareLayoutPicker.SelectedTag is HardwareMetricLayout layout)
+                key.HardwareMetricLayout = layout;
+            UpdateEditorPreviewOnly();
+            QueueSave();
+        };
+        _scHardwarePanel.Children.Add(_scHardwareLayoutPicker);
+
+        _scHardwareLabelSizeLabel = new TextBlock
+        {
+            Text = "Label Size: 10",
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = FindBrush("TextDimBrush"),
+            Margin = new Thickness(0, 0, 0, 4),
+        };
+        _scHardwarePanel.Children.Add(_scHardwareLabelSizeLabel);
+        _scHardwareLabelSizeSlider = new StyledSlider
+        {
+            Minimum = 6,
+            Maximum = 24,
+            Value = 10,
+            Step = 1,
+            ShowLabel = false,
+            AccentColor = ThemeManager.Accent,
+            Margin = new Thickness(0, 0, 0, 10),
+        };
+        _scHardwareLabelSizeSlider.ValueChanged += (_, _) =>
+        {
+            int size = (int)Math.Round(_scHardwareLabelSizeSlider.Value);
+            if (_scHardwareLabelSizeLabel != null)
+                _scHardwareLabelSizeLabel.Text = $"Label Size: {size}";
+            if (_loading || _config == null) return;
+            var key = GetSelectedDisplayKeyConfig();
+            if (key == null) return;
+            key.HardwareMetricLabelSize = size;
+            UpdateEditorPreviewOnly();
+            QueueSave();
+        };
+        _scHardwarePanel.Children.Add(_scHardwareLabelSizeSlider);
+
+        _scHardwareLabelColorLabel = MakeEditorLabel("LABEL COLOR");
+        _scHardwarePanel.Children.Add(_scHardwareLabelColorLabel);
+        _scHardwareLabelColorSwatchPanel = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
+        _scHardwarePanel.Children.Add(_scHardwareLabelColorSwatchPanel);
         _scDisplayTabContent.Children.Add(_scHardwarePanel);
 
         var titleLabel = MakeEditorLabel("TITLE");
@@ -810,16 +894,20 @@ public partial class ButtonsView
         _scTextSizeSlider.ValueChanged += (_, _) =>
         {
             if (_scTextSizeLabel != null)
-                _scTextSizeLabel.Text = $"Font Size: {(int)Math.Round(_scTextSizeSlider.Value)}";
+            {
+                var display = GetSelectedDisplayKeyConfig();
+                string prefix = display?.DisplayType == DisplayKeyType.HardwareMonitor ? "Value Size" : "Font Size";
+                _scTextSizeLabel.Text = $"{prefix}: {(int)Math.Round(_scTextSizeSlider.Value)}";
+            }
             if (!_loading) { UpdateEditorPreviewOnly(); QueueSave(); }
         };
         _scDisplayTabContent.Children.Add(_scTextSizeSlider);
         _scNormalOnlyRows.Add(_scTextSizeSlider);
 
         // Text color palette
-        var textColorLabel = MakeEditorLabel("TEXT COLOR");
-        _scDisplayTabContent.Children.Add(textColorLabel);
-        _scNormalOnlyRows.Add(textColorLabel);
+        _scTextColorLabel = MakeEditorLabel("TEXT COLOR");
+        _scDisplayTabContent.Children.Add(_scTextColorLabel);
+        _scNormalOnlyRows.Add(_scTextColorLabel);
         _scTextColorSwatch = new Border(); // placeholder for tracking
         var textColorWrap = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
         _scTextColorSwatchPanel = textColorWrap;
@@ -2454,7 +2542,13 @@ public partial class ButtonsView
                 };
             }
             if (_scTextSizeSlider != null) _scTextSizeSlider.Value = Math.Clamp(key.TextSize, 6, 28);
-            if (_scTextSizeLabel != null) _scTextSizeLabel.Text = $"Font Size: {Math.Clamp(key.TextSize, 6, 28)}";
+            if (_scTextSizeLabel != null)
+            {
+                string prefix = key.DisplayType == DisplayKeyType.HardwareMonitor ? "Value Size" : "Font Size";
+                _scTextSizeLabel.Text = $"{prefix}: {Math.Clamp(key.TextSize, 6, 28)}";
+            }
+            if (_scTextColorLabel != null)
+                _scTextColorLabel.Text = key.DisplayType == DisplayKeyType.HardwareMonitor ? "VALUE COLOR" : "TEXT COLOR";
             BuildTextColorSwatches();
 
             // Display Type + Clock / Dynamic fields
@@ -2484,6 +2578,24 @@ public partial class ButtonsView
                 }
                 _scHardwareMetricPicker.SelectedIndex = idx;
             }
+            if (_scHardwareLabelBox != null)
+                _scHardwareLabelBox.Text = key.HardwareMetricLabel ?? "";
+            if (_scHardwareLayoutPicker != null)
+            {
+                _scHardwareLayoutPicker.SelectedIndex = key.HardwareMetricLayout switch
+                {
+                    HardwareMetricLayout.LabelAboveValue => 1,
+                    HardwareMetricLayout.ValueOnly => 2,
+                    HardwareMetricLayout.LabelOnly => 3,
+                    HardwareMetricLayout.SideBySide => 4,
+                    _ => 0,
+                };
+            }
+            if (_scHardwareLabelSizeSlider != null)
+                _scHardwareLabelSizeSlider.Value = Math.Clamp(key.HardwareMetricLabelSize <= 0 ? 10 : key.HardwareMetricLabelSize, 6, 24);
+            if (_scHardwareLabelSizeLabel != null)
+                _scHardwareLabelSizeLabel.Text = $"Label Size: {Math.Clamp(key.HardwareMetricLabelSize <= 0 ? 10 : key.HardwareMetricLabelSize, 6, 24)}";
+            BuildHardwareLabelColorSwatches();
             if (_scClockFormatBox != null)
                 _scClockFormatBox.Text = string.IsNullOrWhiteSpace(key.ClockFormat) ? "HH:mm" : key.ClockFormat;
             if (_scDynamicSourceLabel != null)
@@ -2842,6 +2954,12 @@ public partial class ButtonsView
                 display.TextPosition = textPos;
             if (_scTextSizeSlider != null)
                 display.TextSize = (int)Math.Round(_scTextSizeSlider.Value);
+            if (_scHardwareLabelBox != null)
+                display.HardwareMetricLabel = _scHardwareLabelBox.Text;
+            if (_scHardwareLayoutPicker?.SelectedTag is HardwareMetricLayout hardwareLayout)
+                display.HardwareMetricLayout = hardwareLayout;
+            if (_scHardwareLabelSizeSlider != null)
+                display.HardwareMetricLabelSize = (int)Math.Round(_scHardwareLabelSizeSlider.Value);
             }
 
         LoadStreamControllerConfig();
@@ -3036,7 +3154,7 @@ public partial class ButtonsView
             var anim = StreamControllerDisplayRenderer.CreateEditorPreviewAnimation(display, 360);
             if (anim != null)
             {
-                var sig = $"{display.Idx}|{display.ImagePath}|{display.PresetIconKind}|{display.Title}|{display.TextPosition}|{display.TextSize}|{display.TextColor}|{display.FontFamily}|360";
+                var sig = $"{display.Idx}|{display.ImagePath}|{display.PresetIconKind}|{display.Title}|{display.TextPosition}|{display.TextSize}|{display.TextColor}|{display.FontFamily}|{display.HardwareMetricSource}|{display.HardwareMetricLabel}|{display.HardwareMetricLabelSize}|{display.HardwareMetricLabelColor}|{display.HardwareMetricLayout}|360";
                 AnimatedImageDriver.Register(_scEditorPreview, anim, sig);
             }
             else
@@ -3579,6 +3697,88 @@ public partial class ButtonsView
 
     // ── Context menu ─────────────────────────────────────────────────────
 
+    private void BuildHardwareLabelColorSwatches()
+    {
+        if (_scHardwareLabelColorSwatchPanel == null) return;
+        _scHardwareLabelColorSwatchPanel.Children.Clear();
+
+        var display = GetSelectedDisplayKeyConfig();
+        string currentHex = string.IsNullOrWhiteSpace(display?.HardwareMetricLabelColor)
+            ? "#FFFFFF"
+            : display!.HardwareMetricLabelColor;
+
+        foreach (var (name, hex) in TextColorPresets)
+        {
+            var color = (Color)ColorConverter.ConvertFromString(hex);
+            bool selected = hex.Equals(currentHex, StringComparison.OrdinalIgnoreCase);
+            var swatch = new Border
+            {
+                Width = 26, Height = 26,
+                CornerRadius = new CornerRadius(13),
+                Background = new SolidColorBrush(color),
+                BorderThickness = new Thickness(2),
+                BorderBrush = selected ? new SolidColorBrush(Colors.White) : Brushes.Transparent,
+                Margin = new Thickness(0, 0, 6, 6),
+                Cursor = Cursors.Hand,
+                ToolTip = name,
+            };
+            string capturedHex = hex;
+            swatch.MouseLeftButtonDown += (_, _) =>
+            {
+                if (display == null) return;
+                display.HardwareMetricLabelColor = capturedHex;
+                BuildHardwareLabelColorSwatches();
+                UpdateEditorPreviewOnly();
+                QueueSave();
+            };
+            _scHardwareLabelColorSwatchPanel.Children.Add(swatch);
+        }
+
+        bool isCustom = display?.HardwareMetricLabelColor != null
+            && !TextColorPresets.Any(p => p.Hex.Equals(display.HardwareMetricLabelColor, StringComparison.OrdinalIgnoreCase));
+        var customSwatch = new Border
+        {
+            Width = 26, Height = 26,
+            CornerRadius = new CornerRadius(13),
+            Background = new LinearGradientBrush(
+                new GradientStopCollection
+                {
+                    new(Colors.Red, 0.0), new(Colors.Yellow, 0.17), new(Colors.Lime, 0.33),
+                    new(Colors.Cyan, 0.5), new(Colors.Blue, 0.67), new(Colors.Magenta, 0.83), new(Colors.Red, 1.0),
+                }, new Point(0, 0), new Point(1, 1)),
+            BorderThickness = new Thickness(2),
+            BorderBrush = isCustom ? new SolidColorBrush(Colors.White) : Brushes.Transparent,
+            Margin = new Thickness(0, 0, 6, 6),
+            Cursor = Cursors.Hand,
+            ToolTip = "Custom color",
+            Child = new TextBlock
+            {
+                Text = "+", FontSize = 13, FontWeight = FontWeights.Bold,
+                Foreground = Brushes.White,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            },
+        };
+        customSwatch.MouseLeftButtonDown += (_, _) =>
+        {
+            if (display == null) return;
+            Color initial;
+            try { initial = (Color)ColorConverter.ConvertFromString(currentHex); }
+            catch { initial = Colors.White; }
+            var dialog = new ColorPickerDialog(initial) { Owner = Window.GetWindow(this) };
+            dialog.ColorChanged += c =>
+            {
+                display.HardwareMetricLabelColor = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+                UpdateEditorPreviewOnly();
+            };
+            dialog.ShowDialog();
+            display.HardwareMetricLabelColor = $"#{dialog.SelectedColor.R:X2}{dialog.SelectedColor.G:X2}{dialog.SelectedColor.B:X2}";
+            BuildHardwareLabelColorSwatches();
+            QueueSave();
+        };
+        _scHardwareLabelColorSwatchPanel.Children.Add(customSwatch);
+    }
+
     private void ShowGlassMenu(FrameworkElement anchor, List<GlassMenuItem> items)
         => GlassContextMenuHost.Show(anchor, items);
 
@@ -3624,6 +3824,10 @@ public partial class ButtonsView
             DynamicStateGlowColor = srcKey.DynamicStateGlowColor,
             SpotifyAlbumArtLayout = srcKey.SpotifyAlbumArtLayout,
             HardwareMetricSource = srcKey.HardwareMetricSource,
+            HardwareMetricLabel = srcKey.HardwareMetricLabel,
+            HardwareMetricLabelSize = srcKey.HardwareMetricLabelSize,
+            HardwareMetricLabelColor = srcKey.HardwareMetricLabelColor,
+            HardwareMetricLayout = srcKey.HardwareMetricLayout,
         };
         var srcBtn = GetActiveN3ButtonList().FirstOrDefault(b => b.Idx == StreamControllerDisplayKeyBase + globalIdx);
         _scClipboardButton = srcBtn == null ? null : new ButtonConfig
@@ -3661,6 +3865,10 @@ public partial class ButtonsView
             target.DynamicStateGlowColor = _scClipboardKey.DynamicStateGlowColor;
             target.SpotifyAlbumArtLayout = _scClipboardKey.SpotifyAlbumArtLayout;
             target.HardwareMetricSource = _scClipboardKey.HardwareMetricSource;
+            target.HardwareMetricLabel = _scClipboardKey.HardwareMetricLabel;
+            target.HardwareMetricLabelSize = _scClipboardKey.HardwareMetricLabelSize;
+            target.HardwareMetricLabelColor = _scClipboardKey.HardwareMetricLabelColor;
+            target.HardwareMetricLayout = _scClipboardKey.HardwareMetricLayout;
         }
         if (_scClipboardButton != null)
         {
@@ -3697,6 +3905,10 @@ public partial class ButtonsView
             key.TextPosition = DisplayTextPosition.Bottom;
             key.TextSize = 14;
             key.TextColor = "#FFFFFF";
+            key.HardwareMetricLabel = "";
+            key.HardwareMetricLabelSize = 10;
+            key.HardwareMetricLabelColor = "#FFFFFF";
+            key.HardwareMetricLayout = HardwareMetricLayout.ValueAboveLabel;
         }
         var btn = GetActiveN3ButtonList().FirstOrDefault(b => b.Idx == StreamControllerDisplayKeyBase + globalIdx);
         if (btn != null)
@@ -3756,8 +3968,17 @@ public partial class ButtonsView
             _scDynamicPanel.Visibility = dt == DisplayKeyType.DynamicState ? Visibility.Visible : Visibility.Collapsed;
         if (_scHardwarePanel != null)
             _scHardwarePanel.Visibility = dt == DisplayKeyType.HardwareMonitor ? Visibility.Visible : Visibility.Collapsed;
+        if (_scTextColorLabel != null)
+            _scTextColorLabel.Text = dt == DisplayKeyType.HardwareMonitor ? "VALUE COLOR" : "TEXT COLOR";
+        if (_scTextSizeLabel != null && _scTextSizeSlider != null)
+        {
+            string prefix = dt == DisplayKeyType.HardwareMonitor ? "Value Size" : "Font Size";
+            _scTextSizeLabel.Text = $"{prefix}: {(int)Math.Round(_scTextSizeSlider.Value)}";
+        }
 
-        bool showNormal = dt == DisplayKeyType.Normal || dt == DisplayKeyType.SpotifyNowPlaying;
+        bool showNormal = dt == DisplayKeyType.Normal
+            || dt == DisplayKeyType.SpotifyNowPlaying
+            || dt == DisplayKeyType.HardwareMonitor;
         foreach (var row in _scNormalOnlyRows)
             row.Visibility = showNormal ? Visibility.Visible : Visibility.Collapsed;
     }
