@@ -352,6 +352,9 @@ public enum LightEffect
     OpalWave, Bloom, ColorTwinkle,
     AuroraVeil, SolarStorm, StarlightCanopy, PlasmaBloom, RippleRoom,
     PrismDrift, NebulaRain, ReactiveAurora, LiquidGlass, ChromaLayerStack,
+    ColorMelt, GradientFlow, Kaleidoscope, NeonFlux, PastelDrift,
+    DuetChase, CloudShift, SunsetGlow, CometTrail, SpectrumPulse,
+    Heatwave, Mirage, CandyStripe, Riptide, Moonbeam,
 }
 
 public class N3Config

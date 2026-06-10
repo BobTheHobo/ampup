@@ -722,6 +722,12 @@ public class RgbController : IDisposable
         LightEffect.PlasmaBloom, LightEffect.RippleRoom, LightEffect.PrismDrift,
         LightEffect.NebulaRain, LightEffect.ReactiveAurora, LightEffect.LiquidGlass,
         LightEffect.ChromaLayerStack,
+        LightEffect.ColorMelt, LightEffect.GradientFlow, LightEffect.Kaleidoscope,
+        LightEffect.NeonFlux, LightEffect.PastelDrift, LightEffect.DuetChase,
+        LightEffect.CloudShift, LightEffect.SunsetGlow, LightEffect.CometTrail,
+        LightEffect.SpectrumPulse,
+        LightEffect.Heatwave, LightEffect.Mirage, LightEffect.CandyStripe,
+        LightEffect.Riptide, LightEffect.Moonbeam,
     };
 
     /// <summary>
@@ -2142,6 +2148,21 @@ public class RgbController : IDisposable
             case LightEffect.ReactiveAurora:   GlobalReactiveAurora(gl); break;
             case LightEffect.LiquidGlass:      GlobalLiquidGlass(gl); break;
             case LightEffect.ChromaLayerStack: GlobalChromaLayerStack(gl); break;
+            case LightEffect.ColorMelt:        GlobalColorMelt(gl); break;
+            case LightEffect.GradientFlow:     GlobalGradientFlow(gl); break;
+            case LightEffect.Kaleidoscope:     GlobalKaleidoscope(gl); break;
+            case LightEffect.NeonFlux:         GlobalNeonFlux(gl); break;
+            case LightEffect.PastelDrift:      GlobalPastelDrift(gl); break;
+            case LightEffect.DuetChase:        GlobalDuetChase(gl); break;
+            case LightEffect.CloudShift:       GlobalCloudShift(gl); break;
+            case LightEffect.SunsetGlow:       GlobalSunsetGlow(gl); break;
+            case LightEffect.CometTrail:       GlobalCometTrail(gl); break;
+            case LightEffect.SpectrumPulse:    GlobalSpectrumPulse(gl); break;
+            case LightEffect.Heatwave:         GlobalHeatwave(gl); break;
+            case LightEffect.Mirage:           GlobalMirage(gl); break;
+            case LightEffect.CandyStripe:      GlobalCandyStripe(gl); break;
+            case LightEffect.Riptide:          GlobalRiptide(gl); break;
+            case LightEffect.Moonbeam:         GlobalMoonbeam(gl); break;
         }
     }
 
@@ -3752,6 +3773,459 @@ public class RgbController : IDisposable
         }
     }
 
+    // --- "Room-bright" blend pack ---
+    // These effects are designed to fill a room like SignalRGB ambient scenes:
+    // high luminance floors, color/hue blending instead of dimming, and NO
+    // brightness-squaring to near-black like the older spanning effects.
+
+    /// <summary>Scroll position accumulator for SpectrumPulse (bass speeds the flow).</summary>
+    private float _spectrumPulseScroll;
+
+    /// <summary>
+    /// Four large soft blobs of different palette colors drifting and melting together.
+    /// </summary>
+    private void GlobalColorMelt(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+
+        // Blob motion frequencies/phases + per-blob palette colors (computed once per tick)
+        Span<float> freq = stackalloc float[] { 0.5f, 0.8f, 0.35f, 0.65f };
+        Span<float> phase = stackalloc float[] { 0f, 2.1f, 4.2f, 1.3f };
+        Span<float> centers = stackalloc float[4];
+        Span<int> blobR = stackalloc int[4];
+        Span<int> blobG = stackalloc int[4];
+        Span<int> blobB = stackalloc int[4];
+        for (int k = 0; k < 4; k++)
+        {
+            centers[k] = 0.5f + 0.48f * MathF.Sin(t * freq[k] + phase[k]);
+            var (br, bg, bb) = GetGradientColor(gl, PingPong(k / 4f + t * 0.05f));
+            blobR[k] = br; blobG[k] = bg; blobB[k] = bb;
+        }
+        var (baseR, baseG, baseB) = GetGradientColor(gl, PingPong(t * 0.03f));
+        const float baseWeight = 0.35f;
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            float sumW = baseWeight;
+            float sumR = baseR * baseWeight, sumG = baseG * baseWeight, sumB = baseB * baseWeight;
+            float totalBlobWeight = 0f;
+            for (int k = 0; k < 4; k++)
+            {
+                float d = pos - centers[k];
+                float w = MathF.Exp(-7f * d * d);
+                totalBlobWeight += w;
+                sumW += w;
+                sumR += blobR[k] * w; sumG += blobG[k] * w; sumB += blobB[k] * w;
+            }
+            float cr = sumR / sumW, cg = sumG / sumW, cb = sumB / sumW;
+
+            // High floor, no squaring — colors melt, they don't go dark
+            float brightness = Math.Clamp(0.45f + 0.55f * Math.Min(1f, totalBlobWeight), 0f, 1f);
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(cr * brightness), 0, 255),
+                Math.Clamp((int)(cg * brightness), 0, 255),
+                Math.Clamp((int)(cb * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// The whole palette scrolls smoothly across the strip at full brightness.
+    /// Pure color motion, zero dark troughs.
+    /// </summary>
+    private void GlobalGradientFlow(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            // Ping-pong palette sampling so the non-cyclic gradient scrolls seamlessly
+            var (cr, cg, cb) = GetGradientColor(gl, PingPong(pos * 0.8f - t * 0.15f));
+            float brightness = 0.92f + 0.08f * MathF.Sin(t * 0.5f + pos * 2f);
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(cr * brightness), 0, 255),
+                Math.Clamp((int)(cg * brightness), 0, 255),
+                Math.Clamp((int)(cb * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// Palette colors mirrored around the strip center, slowly shifting.
+    /// </summary>
+    private void GlobalKaleidoscope(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            float m = MathF.Abs(2f * pos - 1f); // mirrored distance from center
+            var (cr, cg, cb) = GetGradientColor(gl, PingPong(m * 1.2f + t * 0.12f));
+            float brightness = 0.8f + 0.2f * MathF.Sin(t * 0.7f + m * 6f);
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(cr * brightness), 0, 255),
+                Math.Clamp((int)(cg * brightness), 0, 255),
+                Math.Clamp((int)(cb * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// Bright saturated bands with a periodic white-hot surge sweeping through.
+    /// </summary>
+    private void GlobalNeonFlux(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+        float head = Frac(t * 0.25f);
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            float band1 = MathF.Sin(pos * 6f - t * 1.8f);
+            float band2 = MathF.Sin(pos * 9f + t * 1.2f + 2f);
+            float palPos = Math.Clamp(0.5f + band1 * 0.3f + band2 * 0.2f, 0f, 1f);
+            var (cr, cg, cb) = GetGradientColor(gl, palPos);
+
+            float brightness = 0.55f + 0.45f * (Math.Max(band1, band2) * 0.5f + 0.5f);
+
+            // White-hot surge sweeping around the strip
+            float d = WrapDist(pos, head);
+            float s = MathF.Exp(-30f * d * d);
+            float r = cr + (255 - cr) * 0.3f * s;
+            float g = cg + (255 - cg) * 0.3f * s;
+            float b = cb + (255 - cb) * 0.3f * s;
+            brightness += (1f - brightness) * s;
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(r * brightness), 0, 255),
+                Math.Clamp((int)(g * brightness), 0, 255),
+                Math.Clamp((int)(b * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// Soft dreamy pastels — palette colors whitened and drifting, constant high brightness.
+    /// </summary>
+    private void GlobalPastelDrift(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            float n = (MathF.Sin(t * 0.6f + pos * 4f) + 0.6f * MathF.Sin(t * 0.9f + pos * 7f + 2f)) / 1.6f * 0.5f + 0.5f;
+            var (cr, cg, cb) = GetGradientColor(gl, PingPong(n));
+
+            // Lift toward white for the pastel look
+            float whiten = 0.25f + 0.15f * MathF.Sin(t * 0.4f + pos * 3f);
+            float r = cr + (255 - cr) * whiten;
+            float g = cg + (255 - cg) * whiten;
+            float b = cb + (255 - cb) * whiten;
+
+            const float brightness = 0.9f;
+            SetGlobalLed(i,
+                Math.Clamp((int)(r * brightness), 0, 255),
+                Math.Clamp((int)(g * brightness), 0, 255),
+                Math.Clamp((int)(b * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// Palette end colors chase from opposite directions and blend where they meet.
+    /// </summary>
+    private void GlobalDuetChase(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+
+        var (aR, aG, aB) = GetGradientColor(gl, 0f);
+        var (bR, bG, bB) = GetGradientColor(gl, 1f);
+        float ambR = (aR + bR) / 2f, ambG = (aG + bG) / 2f, ambB = (aB + bB) / 2f;
+        const float wamb = 0.25f;
+
+        float head1 = Frac(t * 0.22f);
+        float head2 = Frac(0.5f - t * 0.18f);
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            float d1 = WrapDist(pos, head1);
+            float d2 = WrapDist(pos, head2);
+            float w1 = MathF.Exp(-10f * d1 * d1);
+            float w2 = MathF.Exp(-10f * d2 * d2);
+            float sumW = w1 + w2 + wamb;
+
+            float cr = (aR * w1 + bR * w2 + ambR * wamb) / sumW;
+            float cg = (aG * w1 + bG * w2 + ambG * wamb) / sumW;
+            float cb = (aB * w1 + bB * w2 + ambB * wamb) / sumW;
+
+            float brightness = Math.Clamp(0.3f + 0.7f * Math.Max(w1, w2), 0f, 1f);
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(cr * brightness), 0, 255),
+                Math.Clamp((int)(cg * brightness), 0, 255),
+                Math.Clamp((int)(cb * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// Layered sine-noise field picks the palette position — slow, organic cloud drift.
+    /// </summary>
+    private void GlobalCloudShift(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            float n = (MathF.Sin(t * 0.5f + pos * 3.1f)
+                     + 0.7f * MathF.Sin(t * 0.83f + pos * 5.7f + 1.7f)
+                     + 0.5f * MathF.Sin(t * 0.31f + pos * 8.3f + 4.1f)) / 2.2f * 0.5f + 0.5f;
+            var (cr, cg, cb) = GetGradientColor(gl, PingPong(n + t * 0.02f));
+            float brightness = 0.6f + 0.4f * (MathF.Sin(t * 0.45f + pos * 2f) * 0.5f + 0.5f);
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(cr * brightness), 0, 255),
+                Math.Clamp((int)(cg * brightness), 0, 255),
+                Math.Clamp((int)(cb * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// Stable spatial gradient across the strip (palette mapped to position)
+    /// that slowly breathes and sways.
+    /// </summary>
+    private void GlobalSunsetGlow(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            float gpos = Math.Clamp(pos + 0.15f * MathF.Sin(t * 0.3f), 0f, 1f);
+            var (cr, cg, cb) = GetGradientColor(gl, gpos);
+            float brightness = 0.85f + 0.15f * MathF.Sin(t * 0.5f + pos * 2.5f);
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(cr * brightness), 0, 255),
+                Math.Clamp((int)(cg * brightness), 0, 255),
+                Math.Clamp((int)(cb * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// Bright ping-pong comet whose trail fades through palette hues rather than just dimming.
+    /// </summary>
+    private void GlobalCometTrail(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+
+        float hp = PingPong(t * 0.3f);                    // ping-pong head position 0..1
+        float dir = Frac(t * 0.3f) < 0.5f ? 1f : -1f;     // +1 = moving toward 1
+        float headHue = Frac(t * 0.07f);
+        const float trailLen = 0.6f;
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            float behind = (hp - pos) * dir;              // >0 = behind the head
+            float trailT = behind < 0f ? 1f : Math.Min(1f, behind / trailLen);
+
+            var (cr, cg, cb) = GetGradientColor(gl, PingPong(headHue + trailT * 0.5f));
+            float brightness = 1f - 0.75f * trailT;       // 1 at head → 0.25 floor at trail end
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(cr * brightness), 0, 255),
+                Math.Clamp((int)(cg * brightness), 0, 255),
+                Math.Clamp((int)(cb * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// Audio-reactive palette flow: bass speeds the scroll and lifts brightness,
+    /// treble adds white sparkles. Degrades to a gentle GradientFlow in silence.
+    /// </summary>
+    private void GlobalSpectrumPulse(GlobalLightConfig gl)
+    {
+        var bands = _getAudioBands?.Invoke();
+        float bass = bands != null && bands.Length > 1 ? Math.Clamp(bands[1], 0f, 1f) : 0f;
+        float treble = bands != null && bands.Length > 4 ? Math.Clamp(bands[4], 0f, 1f) : 0f;
+
+        _spectrumPulseScroll += 0.004f + bass * 0.012f;
+
+        float brightness = 0.45f + 0.55f * Math.Clamp(0.25f + bass * 1.2f, 0f, 1f);
+
+        // Treble sparkle: 1-2 random LEDs this tick get lifted toward white
+        int sparkle1 = -1, sparkle2 = -1;
+        if (treble > 0.45f)
+        {
+            sparkle1 = _rng.Next(15);
+            if (_rng.Next(2) == 0) sparkle2 = _rng.Next(15);
+        }
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            var (cr, cg, cb) = GetGradientColor(gl, PingPong(pos * 0.8f - _spectrumPulseScroll));
+
+            float r = cr, g = cg, b = cb;
+            if (i == sparkle1 || i == sparkle2)
+            {
+                r += (255 - r) * 0.6f;
+                g += (255 - g) * 0.6f;
+                b += (255 - b) * 0.6f;
+            }
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(r * brightness), 0, 255),
+                Math.Clamp((int)(g * brightness), 0, 255),
+                Math.Clamp((int)(b * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// Warm shimmering distortion — slow palette drift with a fast fine-grained
+    /// shimmer layered on top. Brightness stays in the 0.65–1.0 band.
+    /// </summary>
+    private void GlobalHeatwave(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            float wobble = 0.15f * MathF.Sin(t * 0.9f + pos * 5f);
+            var (cr, cg, cb) = GetGradientColor(gl, PingPong(pos * 0.7f + t * 0.06f + wobble));
+            float shimmer = MathF.Sin(t * 4f + pos * 12f) * 0.5f + 0.5f;
+            float brightness = 0.65f + 0.35f * shimmer;
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(cr * brightness), 0, 255),
+                Math.Clamp((int)(cg * brightness), 0, 255),
+                Math.Clamp((int)(cb * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// Two palette layers sliding in opposite directions, averaged together —
+    /// where they align the strip brightens like converging mirage layers.
+    /// </summary>
+    private void GlobalMirage(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            float ka = PingPong(pos * 0.7f - t * 0.1f);
+            float kb = PingPong(pos * 0.7f + t * 0.13f + 0.5f);
+            var (ar, ag, ab) = GetGradientColor(gl, ka);
+            var (br, bg, bb) = GetGradientColor(gl, kb);
+            float cr = (ar + br) * 0.5f, cg = (ag + bg) * 0.5f, cb = (ab + bb) * 0.5f;
+
+            // Layers "in phase" -> brighter; never below 0.6
+            float align = 1f - Math.Abs(ka - kb);
+            float brightness = 0.6f + 0.4f * align;
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(cr * brightness), 0, 255),
+                Math.Clamp((int)(cg * brightness), 0, 255),
+                Math.Clamp((int)(cb * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// Smooth scrolling candy-cane stripes alternating across the palette,
+    /// soft smoothstep edges, near-full constant brightness.
+    /// </summary>
+    private void GlobalCandyStripe(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            float s = MathF.Sin((pos * 3f - t * 0.45f) * MathF.Tau) * 0.5f + 0.5f;
+            s = s * s * (3f - 2f * s); // smoothstep for crisp-but-soft stripe edges
+            var (cr, cg, cb) = GetGradientColor(gl, s);
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(cr * 0.95f), 0, 255),
+                Math.Clamp((int)(cg * 0.95f), 0, 255),
+                Math.Clamp((int)(cb * 0.95f), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// Two crossing waves whose interference picks both the palette color and
+    /// a gentle brightness swell — bright crests, no dark troughs.
+    /// </summary>
+    private void GlobalRiptide(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            float w1 = MathF.Sin(pos * 4f * MathF.PI - t * 1.5f);
+            float w2 = MathF.Sin(pos * 6f * MathF.PI + t * 1.1f);
+            float k = Math.Clamp(0.5f + w1 * 0.35f + w2 * 0.25f, 0f, 1f);
+            var (cr, cg, cb) = GetGradientColor(gl, k);
+            float interference = Math.Abs(w1 + w2) * 0.5f;
+            float brightness = 0.55f + 0.45f * interference;
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(cr * brightness), 0, 255),
+                Math.Clamp((int)(cg * brightness), 0, 255),
+                Math.Clamp((int)(cb * brightness), 0, 255));
+        }
+    }
+
+    /// <summary>
+    /// A soft white-cored beam sweeping back and forth over a colored ambient
+    /// base — the base stays lit so the room never goes dark between passes.
+    /// </summary>
+    private void GlobalMoonbeam(GlobalLightConfig gl)
+    {
+        int speed = Math.Clamp(gl.EffectSpeed, 1, 100);
+        float t = _animTick * (0.01f + speed / 100f * 0.05f);
+        float center = PingPong(t * 0.18f);
+
+        for (int i = 0; i < 15; i++)
+        {
+            float pos = i / 14f;
+            var (cr, cg, cb) = GetGradientColor(gl, PingPong(pos * 0.5f + t * 0.03f));
+            float d = pos - center;
+            float w = MathF.Exp(-18f * d * d);
+
+            // Beam lifts color toward white and raises brightness above the ambient floor
+            float r = cr + (255 - cr) * w * 0.7f;
+            float g = cg + (255 - cg) * w * 0.7f;
+            float b = cb + (255 - cb) * w * 0.7f;
+            float brightness = 0.45f + 0.55f * w;
+
+            SetGlobalLed(i,
+                Math.Clamp((int)(r * brightness), 0, 255),
+                Math.Clamp((int)(g * brightness), 0, 255),
+                Math.Clamp((int)(b * brightness), 0, 255));
+        }
+    }
+
     private void AddPaletteVeil(GlobalLightConfig gl, float amount, float speed)
     {
         for (int i = 0; i < 15; i++)
@@ -3961,6 +4435,13 @@ public class RgbController : IDisposable
     {
         float t = Frac(value);
         return 1f - MathF.Abs(t * 2f - 1f);
+    }
+
+    /// <summary>Wrapped distance between two points on the 0-1 ring.</summary>
+    private static float WrapDist(float a, float b)
+    {
+        float d = MathF.Abs(a - b);
+        return MathF.Min(d, 1f - d);
     }
 
     /// <summary>

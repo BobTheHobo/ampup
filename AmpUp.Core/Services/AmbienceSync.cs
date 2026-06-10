@@ -464,7 +464,13 @@ public class AmbienceSync : IDisposable
             or LightEffect.AuroraVeil or LightEffect.SolarStorm or LightEffect.StarlightCanopy
             or LightEffect.PlasmaBloom or LightEffect.RippleRoom or LightEffect.PrismDrift
             or LightEffect.NebulaRain or LightEffect.ReactiveAurora or LightEffect.LiquidGlass
-            or LightEffect.ChromaLayerStack;
+            or LightEffect.ChromaLayerStack
+            or LightEffect.ColorMelt or LightEffect.GradientFlow or LightEffect.Kaleidoscope
+            or LightEffect.NeonFlux or LightEffect.PastelDrift or LightEffect.DuetChase
+            or LightEffect.CloudShift or LightEffect.SunsetGlow or LightEffect.CometTrail
+            or LightEffect.SpectrumPulse
+            or LightEffect.Heatwave or LightEffect.Mirage or LightEffect.CandyStripe
+            or LightEffect.Riptide or LightEffect.Moonbeam;
         if (!supported) return false;
 
         var c1 = ParseHexColor(cfg.RoomColor1, (0, 230, 118));
@@ -510,6 +516,21 @@ public class AmbienceSync : IDisposable
                 LightEffect.ReactiveAurora => SegmentReactiveAurora(x, t, devicePhase, c1, c2),
                 LightEffect.LiquidGlass => SegmentLiquidGlass(x, t, devicePhase, c1, c2),
                 LightEffect.ChromaLayerStack => SegmentChromaLayerStack(x, t, devicePhase, c1, c2),
+                LightEffect.ColorMelt => SegmentColorMelt(x, t, devicePhase, c1, c2),
+                LightEffect.GradientFlow => SegmentGradientFlow(x, t, devicePhase, c1, c2),
+                LightEffect.Kaleidoscope => SegmentKaleidoscope(x, t, devicePhase, c1, c2),
+                LightEffect.NeonFlux => SegmentNeonFlux(x, t, devicePhase, c1, c2),
+                LightEffect.PastelDrift => SegmentPastelDrift(x, t, devicePhase, c1, c2),
+                LightEffect.DuetChase => SegmentDuetChase(x, t, devicePhase, c1, c2),
+                LightEffect.CloudShift => SegmentCloudShift(x, t, devicePhase, c1, c2),
+                LightEffect.SunsetGlow => SegmentSunsetGlow(x, t, devicePhase, c1, c2),
+                LightEffect.CometTrail => SegmentCometTrail(x, t, devicePhase, c1, c2),
+                LightEffect.SpectrumPulse => SegmentSpectrumPulse(x, t, devicePhase, c1, c2),
+                LightEffect.Heatwave => SegmentHeatwave(x, t, devicePhase, c1, c2),
+                LightEffect.Mirage => SegmentMirage(x, t, devicePhase, c1, c2),
+                LightEffect.CandyStripe => SegmentCandyStripe(x, t, devicePhase, c1, c2),
+                LightEffect.Riptide => SegmentRiptide(x, t, devicePhase, c1, c2),
+                LightEffect.Moonbeam => SegmentMoonbeam(x, t, devicePhase, c1, c2),
                 _ => (0, 0, 0),
             };
             colors[i] = ApplySettings(raw.Item1, raw.Item2, raw.Item3, cfg);
@@ -738,6 +759,173 @@ public class AmbienceSync : IDisposable
         return Lerp(wave, Hsv((x + t * 0.08f) % 1f, 0.9f, 1f), scanner * 0.85f);
     }
 
+    // ---- Room-bright blend pack: high luminance floors, color blending instead of dimming to black ----
+
+    private static (int R, int G, int B) SegmentColorMelt(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        Span<float> freq = stackalloc float[] { 0.5f, 0.8f, 0.35f, 0.65f };
+        Span<float> off = stackalloc float[] { 0f, 2.1f, 4.2f, 1.3f };
+
+        var baseColor = Lerp(c1, c2, PingPong(t * 0.03f));
+        float sumW = 0.35f;
+        float r = baseColor.R * 0.35f, g = baseColor.G * 0.35f, b = baseColor.B * 0.35f;
+        float blobSum = 0f;
+        for (int k = 0; k < 4; k++)
+        {
+            float center = 0.5f + 0.48f * MathF.Sin(t * freq[k] + off[k] + phase * MathF.Tau);
+            float d = x - center;
+            float w = MathF.Exp(-7f * d * d);
+            var blob = Lerp(c1, c2, PingPong(k / 4f + t * 0.05f));
+            r += blob.R * w; g += blob.G * w; b += blob.B * w;
+            sumW += w;
+            blobSum += w;
+        }
+
+        float brightness = Math.Clamp(0.45f + 0.55f * MathF.Min(1f, blobSum), 0f, 1f);
+        return Scale(((int)MathF.Round(r / sumW), (int)MathF.Round(g / sumW), (int)MathF.Round(b / sumW)), brightness);
+    }
+
+    private static (int R, int G, int B) SegmentGradientFlow(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        var color = Lerp(c1, c2, PingPong(x * 0.8f - t * 0.15f + phase));
+        float brightness = 0.92f + 0.08f * MathF.Sin(t * 0.5f + x * 2f + phase * MathF.Tau);
+        return Scale(color, Math.Clamp(brightness, 0f, 1f));
+    }
+
+    private static (int R, int G, int B) SegmentKaleidoscope(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        float m = MathF.Abs(2f * x - 1f);
+        var color = Lerp(c1, c2, PingPong(m * 1.2f + t * 0.12f + phase));
+        float brightness = 0.8f + 0.2f * MathF.Sin(t * 0.7f + m * 6f + phase * MathF.Tau);
+        return Scale(color, Math.Clamp(brightness, 0f, 1f));
+    }
+
+    private static (int R, int G, int B) SegmentNeonFlux(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        float band1 = MathF.Sin(x * 6f - t * 1.8f + phase * MathF.Tau);
+        float band2 = MathF.Sin(x * 9f + t * 1.2f + 2f + phase * MathF.Tau);
+        float k = Math.Clamp(0.5f + band1 * 0.3f + band2 * 0.2f, 0f, 1f);
+        var color = Lerp(c1, c2, k);
+        float brightness = 0.55f + 0.45f * (MathF.Max(band1, band2) * 0.5f + 0.5f);
+
+        float head = Frac(t * 0.25f + phase);
+        float d = WrapDist(x, head);
+        float surge = MathF.Exp(-30f * d * d);
+        color = Lerp(color, (255, 255, 255), surge * 0.3f);
+        brightness += (1f - brightness) * surge;
+        return Scale(color, Math.Clamp(brightness, 0f, 1f));
+    }
+
+    private static (int R, int G, int B) SegmentPastelDrift(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        float n = (MathF.Sin(t * 0.6f + x * 4f + phase * MathF.Tau)
+            + 0.6f * MathF.Sin(t * 0.9f + x * 7f + 2f + phase * MathF.Tau)) / 1.6f * 0.5f + 0.5f;
+        var color = Lerp(c1, c2, PingPong(n));
+        float whiten = 0.25f + 0.15f * MathF.Sin(t * 0.4f + x * 3f + phase * MathF.Tau);
+        color = Lerp(color, (255, 255, 255), Math.Clamp(whiten, 0f, 1f));
+        return Scale(color, 0.9f);
+    }
+
+    private static (int R, int G, int B) SegmentDuetChase(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        float head1 = Frac(t * 0.22f + phase);
+        float head2 = Frac(0.5f - t * 0.18f + phase);
+        float d1 = WrapDist(x, head1);
+        float d2 = WrapDist(x, head2);
+        float w1 = MathF.Exp(-10f * d1 * d1);
+        float w2 = MathF.Exp(-10f * d2 * d2);
+        var amb = Lerp(c1, c2, 0.5f);
+        float sumW = w1 + w2 + 0.25f;
+        int r = (int)MathF.Round((c1.R * w1 + c2.R * w2 + amb.R * 0.25f) / sumW);
+        int g = (int)MathF.Round((c1.G * w1 + c2.G * w2 + amb.G * 0.25f) / sumW);
+        int b = (int)MathF.Round((c1.B * w1 + c2.B * w2 + amb.B * 0.25f) / sumW);
+        float brightness = Math.Clamp(0.3f + 0.7f * MathF.Max(w1, w2), 0f, 1f);
+        return Scale((r, g, b), brightness);
+    }
+
+    private static (int R, int G, int B) SegmentCloudShift(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        float n = (MathF.Sin(t * 0.5f + x * 3.1f + phase * MathF.Tau)
+            + 0.7f * MathF.Sin(t * 0.83f + x * 5.7f + 1.7f)
+            + 0.5f * MathF.Sin(t * 0.31f + x * 8.3f + 4.1f)) / 2.2f * 0.5f + 0.5f;
+        var color = Lerp(c1, c2, PingPong(n + t * 0.02f));
+        float brightness = 0.6f + 0.4f * (MathF.Sin(t * 0.45f + x * 2f) * 0.5f + 0.5f);
+        return Scale(color, Math.Clamp(brightness, 0f, 1f));
+    }
+
+    private static (int R, int G, int B) SegmentSunsetGlow(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        float gpos = Math.Clamp(x + 0.15f * MathF.Sin(t * 0.3f + phase * MathF.Tau), 0f, 1f);
+        var color = Lerp(c1, c2, gpos);
+        float brightness = 0.85f + 0.15f * MathF.Sin(t * 0.5f + x * 2.5f);
+        return Scale(color, Math.Clamp(brightness, 0f, 1f));
+    }
+
+    private static (int R, int G, int B) SegmentCometTrail(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        float tt = t * 0.3f + phase;
+        float head = PingPong(tt);
+        bool forward = Frac(tt) < 0.5f;
+        float behind = forward ? head - x : x - head;
+        float trailT = behind < 0f ? 1f : MathF.Min(behind / 0.6f, 1f);
+        float headHue = Frac(t * 0.07f + phase);
+        var color = Lerp(c1, c2, PingPong(headHue + trailT * 0.5f));
+        float brightness = 1f - 0.75f * trailT;
+        return Scale(color, Math.Clamp(brightness, 0f, 1f));
+    }
+
+    private static (int R, int G, int B) SegmentSpectrumPulse(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        // Segment renderers have no audio-band access — silence-degraded form (slow scroll, gentle pulse).
+        var color = Lerp(c1, c2, PingPong(x * 0.8f - t * 0.12f + phase));
+        float brightness = 0.55f + 0.1f * MathF.Sin(t * 0.8f + x * 3f);
+        return Scale(color, Math.Clamp(brightness, 0f, 1f));
+    }
+
+    private static (int R, int G, int B) SegmentHeatwave(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        float wobble = 0.15f * MathF.Sin(t * 0.9f + x * 5f + phase * MathF.Tau);
+        var color = Lerp(c1, c2, PingPong(x * 0.7f + t * 0.06f + wobble + phase));
+        float shimmer = MathF.Sin(t * 4f + x * 12f + phase * MathF.Tau) * 0.5f + 0.5f;
+        return Scale(color, 0.65f + 0.35f * shimmer);
+    }
+
+    private static (int R, int G, int B) SegmentMirage(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        float ka = PingPong(x * 0.7f - t * 0.1f + phase);
+        float kb = PingPong(x * 0.7f + t * 0.13f + 0.5f + phase);
+        var a = Lerp(c1, c2, ka);
+        var b = Lerp(c1, c2, kb);
+        var color = ((a.R + b.R) / 2, (a.G + b.G) / 2, (a.B + b.B) / 2);
+        float align = 1f - MathF.Abs(ka - kb);
+        return Scale(color, 0.6f + 0.4f * align);
+    }
+
+    private static (int R, int G, int B) SegmentCandyStripe(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        float s = MathF.Sin((x * 3f - t * 0.45f + phase) * MathF.Tau) * 0.5f + 0.5f;
+        return Scale(Lerp(c1, c2, Smooth(s)), 0.95f);
+    }
+
+    private static (int R, int G, int B) SegmentRiptide(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        float w1 = MathF.Sin(x * 4f * MathF.PI - t * 1.5f + phase * MathF.Tau);
+        float w2 = MathF.Sin(x * 6f * MathF.PI + t * 1.1f + phase * MathF.Tau);
+        float k = Math.Clamp(0.5f + w1 * 0.35f + w2 * 0.25f, 0f, 1f);
+        float interference = MathF.Abs(w1 + w2) * 0.5f;
+        return Scale(Lerp(c1, c2, k), 0.55f + 0.45f * interference);
+    }
+
+    private static (int R, int G, int B) SegmentMoonbeam(float x, float t, float phase, (int R, int G, int B) c1, (int R, int G, int B) c2)
+    {
+        var color = Lerp(c1, c2, PingPong(x * 0.5f + t * 0.03f + phase));
+        float center = PingPong(t * 0.18f + phase);
+        float d = x - center;
+        float w = MathF.Exp(-18f * d * d);
+        color = Lerp(color, (255, 255, 255), w * 0.7f);
+        return Scale(color, 0.45f + 0.55f * w);
+    }
+
     private static (int R, int G, int B) ParseHexColor(string? hex, (int R, int G, int B) fallback)
     {
         if (string.IsNullOrWhiteSpace(hex)) return fallback;
@@ -768,6 +956,7 @@ public class AmbienceSync : IDisposable
     private static float Smooth(float x) { x = Math.Clamp(x, 0f, 1f); return x * x * (3f - 2f * x); }
     private static float Frac(float x) => x - MathF.Floor(x);
     private static float PingPong(float x) { x = Frac(x); return x < 0.5f ? x * 2f : 2f - x * 2f; }
+    private static float WrapDist(float a, float b) { float d = MathF.Abs(a - b); return MathF.Min(d, 1f - d); }
 
     private static (int R, int G, int B) Hsv(float h, float s, float v)
     {

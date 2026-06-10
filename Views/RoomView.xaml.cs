@@ -1684,7 +1684,13 @@ public partial class RoomView : UserControl
                 or LightEffect.AuroraVeil or LightEffect.SolarStorm or LightEffect.StarlightCanopy
                 or LightEffect.PlasmaBloom or LightEffect.RippleRoom or LightEffect.PrismDrift
                 or LightEffect.NebulaRain or LightEffect.ReactiveAurora or LightEffect.LiquidGlass
-                or LightEffect.ChromaLayerStack => 3,
+                or LightEffect.ChromaLayerStack
+                or LightEffect.ColorMelt or LightEffect.GradientFlow or LightEffect.Kaleidoscope
+                or LightEffect.NeonFlux or LightEffect.PastelDrift or LightEffect.DuetChase
+                or LightEffect.CloudShift or LightEffect.SunsetGlow or LightEffect.CometTrail
+                or LightEffect.SpectrumPulse
+                or LightEffect.Heatwave or LightEffect.Mirage or LightEffect.CandyStripe
+                or LightEffect.Riptide or LightEffect.Moonbeam => 3,
 
             _ => -1,
         };

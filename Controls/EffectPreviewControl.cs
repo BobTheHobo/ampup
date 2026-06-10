@@ -315,6 +315,21 @@ namespace AmpUp.Controls
                 case LightEffect.ReactiveAurora:   RenderReactiveAurora(c);   break;
                 case LightEffect.LiquidGlass:      RenderLiquidGlass(c);      break;
                 case LightEffect.ChromaLayerStack: RenderChromaLayerStack(c); break;
+                case LightEffect.ColorMelt:        RenderColorMelt(c);        break;
+                case LightEffect.GradientFlow:     RenderGradientFlow(c);     break;
+                case LightEffect.Kaleidoscope:     RenderKaleidoscope(c);     break;
+                case LightEffect.NeonFlux:         RenderNeonFlux(c);         break;
+                case LightEffect.PastelDrift:      RenderPastelDrift(c);      break;
+                case LightEffect.DuetChase:        RenderDuetChase(c);        break;
+                case LightEffect.CloudShift:       RenderCloudShift(c);       break;
+                case LightEffect.SunsetGlow:       RenderSunsetGlow(c);       break;
+                case LightEffect.CometTrail:       RenderCometTrail(c);       break;
+                case LightEffect.SpectrumPulse:    RenderSpectrumPulse(c);    break;
+                case LightEffect.Heatwave:         RenderHeatwave(c);         break;
+                case LightEffect.Mirage:           RenderMirage(c);           break;
+                case LightEffect.CandyStripe:      RenderCandyStripe(c);      break;
+                case LightEffect.Riptide:          RenderRiptide(c);          break;
+                case LightEffect.Moonbeam:         RenderMoonbeam(c);         break;
 
                 default: RenderFallback(c); break;
             }

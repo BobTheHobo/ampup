@@ -601,5 +601,285 @@ namespace AmpUp.Controls
                 Rect(c.Dc, i * c.W / 5.0, 0, c.W / 5.0 + 1, c.H, Hsv(i / 5.0 + c.T * 0.08), a, 0);
             }
         }
+
+        // ── Room-bright ambient effects ──
+
+        private void RenderColorMelt(Ctx c)
+        {
+            // Bright base so there are never dark gaps
+            var baseBrush = new LinearGradientBrush(
+                Lerp(c.Color, c.Color2, 0.25), Lerp(c.Color2, c.Color, 0.25), 0);
+            c.Dc.DrawRoundedRectangle(baseBrush, null, new Rect(0, 0, c.W, c.H), 3, 3);
+
+            // Soft drifting blobs at different hue fractions, blending where they overlap
+            for (int i = 0; i < 4; i++)
+            {
+                double frac = i / 3.0;
+                double x = c.W * (0.5 + 0.42 * Math.Sin(c.T * (0.5 + i * 0.13) + i * 1.9));
+                double y = c.Cy + Math.Sin(c.T * 0.7 + i * 2.3) * c.H * 0.18;
+                var col = Lerp(c.Color, c.Color2, frac);
+                double r = c.W * (0.16 + 0.05 * Sin01(c.T * 0.8 + i));
+                Dot(c.Dc, x, y, r, col, 0.55);
+                Dot(c.Dc, x, y, r * 0.55, Lerp(col, Colors.White, 0.25), 0.45);
+            }
+        }
+
+        private void RenderGradientFlow(Ctx c)
+        {
+            // Full-width gradient bar scrolling smoothly — constant high brightness
+            int strips = 12;
+            double w = c.W / strips;
+            for (int i = 0; i < strips; i++)
+            {
+                double p = i / (double)(strips - 1);
+                double tri = Math.Abs(Saw(p * 0.75 + c.T * 0.25) * 2 - 1); // triangle wave 0..1
+                Rect(c.Dc, i * w, 0, w + 1, c.H, Lerp(c.Color, c.Color2, tri), 1.0, 0);
+            }
+        }
+
+        private void RenderKaleidoscope(Ctx c)
+        {
+            // Left half mirrors right half — gradient cycles outward from a bright core
+            int strips = 12;
+            double w = c.W / strips;
+            for (int i = 0; i < strips; i++)
+            {
+                double p = i / (double)(strips - 1);
+                double m = Math.Abs(p - 0.5) * 2.0; // 0 at center, 1 at edges (mirrored)
+                double cyc = Sin01(m * 4.5 - c.T * 1.2);
+                var col = Lerp(c.Color, c.Color2, cyc);
+                col = Lerp(col, Colors.White, Math.Max(0, 0.35 - m * 0.6)); // bright core
+                Rect(c.Dc, i * w, 0, w + 1, c.H, col, 0.95, 0);
+            }
+        }
+
+        private void RenderNeonFlux(Ctx c)
+        {
+            Rect(c.Dc, 0, 0, c.W, c.H, Lerp(c.Color, Colors.Black, 0.55), 0.9, 3);
+
+            // Saturated waving neon bands with soft glow
+            for (int b = 0; b < 3; b++)
+            {
+                double y = c.H * (0.25 + b * 0.25)
+                    + Math.Sin(c.T * (1.2 + b * 0.4) + b * 2.1) * c.H * 0.12;
+                var col = b == 1 ? c.Color2 : c.Color;
+                c.Dc.DrawLine(Pen(col, 6.0, 0.22), new Point(0, y), new Point(c.W, y)); // glow
+                c.Dc.DrawLine(Pen(col, 2.6, 0.95), new Point(0, y), new Point(c.W, y));
+            }
+
+            // Periodic white-hot highlight sweep
+            double sweep = Saw(c.T * 0.45);
+            if (sweep < 0.35)
+            {
+                double x = sweep / 0.35 * c.W;
+                Dot(c.Dc, x, c.Cy, 9, Colors.White, 0.2);
+                Dot(c.Dc, x, c.Cy, 4.5, Colors.White, 0.85);
+            }
+        }
+
+        private void RenderPastelDrift(Ctx c)
+        {
+            // Whitened, soft color field gently drifting — everything pale and bright
+            var stops = new GradientStopCollection();
+            for (int i = 0; i <= 6; i++)
+            {
+                double p = i / 6.0;
+                double drift = Sin01(p * 4.0 + c.T * 0.6) * 0.5 + Sin01(p * 9.0 - c.T * 0.35) * 0.5;
+                stops.Add(new GradientStop(
+                    Lerp(Lerp(c.Color, c.Color2, drift), Colors.White, 0.45), p));
+            }
+            c.Dc.DrawRoundedRectangle(new LinearGradientBrush(stops, 0), null,
+                new Rect(0, 0, c.W, c.H), 3, 3);
+        }
+
+        private void RenderDuetChase(Ctx c)
+        {
+            Rect(c.Dc, 0, 0, c.W, c.H, Lerp(c.Color, c.Color2, 0.5), 0.15, 3);
+
+            // Two glowing dots chasing in opposite directions
+            double p1 = Saw(c.T * 0.6);
+            double p2 = 1.0 - p1;
+            double x1 = 4 + p1 * (c.W - 8);
+            double x2 = 4 + p2 * (c.W - 8);
+            Dot(c.Dc, x1, c.Cy, 6, c.Color, 0.25);
+            Dot(c.Dc, x1, c.Cy, 3.2, c.Color, 1.0);
+            Dot(c.Dc, x2, c.Cy, 6, c.Color2, 0.25);
+            Dot(c.Dc, x2, c.Cy, 3.2, c.Color2, 1.0);
+
+            // Additive white flash where they cross
+            double cross = 1.0 - Math.Min(1.0, Math.Abs(x1 - x2) / (c.W * 0.18));
+            if (cross > 0.01)
+                Dot(c.Dc, (x1 + x2) * 0.5, c.Cy, 5 + cross * 4, Colors.White, cross * 0.85);
+        }
+
+        private void RenderCloudShift(Ctx c)
+        {
+            // Soft bright sky base
+            c.Dc.DrawRoundedRectangle(new LinearGradientBrush(
+                Lerp(c.Color, Colors.White, 0.25), Lerp(c.Color2, Colors.White, 0.25), 90),
+                null, new Rect(0, 0, c.W, c.H), 3, 3);
+
+            // Billowy low-alpha patches drifting at different rates, morphing as they overlap
+            for (int i = 0; i < 4; i++)
+            {
+                double x = c.W * (0.5 + 0.45 * Math.Sin(c.T * (0.18 + i * 0.05) + i * 1.7));
+                double y = c.H * (0.5 + 0.22 * Math.Sin(c.T * (0.12 + i * 0.04) + i * 2.6));
+                double r = c.W * (0.18 + 0.06 * Sin01(c.T * 0.3 + i * 1.3));
+                var col = Lerp(Lerp(c.Color, c.Color2, i / 3.0), Colors.White, 0.4);
+                Dot(c.Dc, x, y, r, col, 0.30);
+                Dot(c.Dc, x + r * 0.4, y, r * 0.7, col, 0.25);
+            }
+        }
+
+        private void RenderSunsetGlow(Ctx c)
+        {
+            // Stable left-to-right gradient with a slow breathing pulse and gentle sway
+            double breathe = 0.8 + 0.2 * Sin01(c.T * 0.7);
+            double sway = Math.Sin(c.T * 0.4) * 0.08;
+            var stops = new GradientStopCollection
+            {
+                new GradientStop(Scale(c.Color, breathe), 0),
+                new GradientStop(Scale(Lerp(c.Color, c.Color2, 0.5), breathe), Math.Clamp(0.5 + sway, 0, 1)),
+                new GradientStop(Scale(c.Color2, breathe), 1.0),
+            };
+            c.Dc.DrawRoundedRectangle(new LinearGradientBrush(stops, 0), null,
+                new Rect(0, 0, c.W, c.H), 3, 3);
+
+            // Warm sun halo
+            Dot(c.Dc, c.W * (0.3 + sway), c.Cy, c.H * 0.45,
+                Lerp(c.Color, Colors.White, 0.4), 0.18 * breathe);
+        }
+
+        private void RenderCometTrail(Ctx c)
+        {
+            // Bright head ping-pongs; long trail shifts hue toward Color2 along its length
+            double phase = Saw(c.T * 0.4);
+            bool fwd = phase < 0.5;
+            double pos = fwd ? phase * 2 : 2 - phase * 2;
+            double hx = 4 + pos * (c.W - 8);
+
+            int segs = 9;
+            for (int t = segs; t >= 1; t--)
+            {
+                double trail = Math.Clamp(pos + (fwd ? -1 : 1) * t * 0.07, 0, 1);
+                double tx = 4 + trail * (c.W - 8);
+                double frac = t / (double)segs;
+                var col = Lerp(c.Color, c.Color2, frac);     // hue shifts along trail
+                double a = Math.Max(0.25, 1.0 - frac * 0.8); // alpha floor keeps trail visible
+                Dot(c.Dc, tx, c.Cy, Math.Max(1.6, 3.6 - frac * 2.0), col, a);
+            }
+            Dot(c.Dc, hx, c.Cy, 6.5, c.Color, 0.3);
+            Dot(c.Dc, hx, c.Cy, 3.6, Lerp(c.Color, Colors.White, 0.35), 1.0);
+        }
+
+        private void RenderSpectrumPulse(Ctx c)
+        {
+            // Scrolling gradient with a ~1.5 Hz beat pulse
+            double beat = 0.55 + 0.45 * Math.Pow(Sin01(c.T * Math.PI * 3), 2);
+            int strips = 12;
+            double w = c.W / strips;
+            for (int i = 0; i < strips; i++)
+            {
+                double p = i / (double)(strips - 1);
+                double tri = Math.Abs(Saw(p * 0.85 + c.T * 0.3) * 2 - 1);
+                Rect(c.Dc, i * w, 0, w + 1, c.H, Scale(Lerp(c.Color, c.Color2, tri), beat), 1.0, 0);
+            }
+
+            // Brief white sparkle dots
+            for (int s = 0; s < 2; s++)
+            {
+                double seed = Rand(s * 17 + (int)(c.T * 2.5) * 31);
+                double tw = Math.Pow(Sin01(c.T * 6 + s * 2.7), 6);
+                if (tw < 0.2) continue;
+                Dot(c.Dc, c.W * Rand(s + (int)(c.T * 2.5) * 13), c.H * (0.3 + 0.4 * seed),
+                    1.6 + tw * 1.4, Colors.White, tw * 0.9);
+            }
+        }
+
+        private void RenderHeatwave(Ctx c)
+        {
+            // Slow drifting gradient with fast fine shimmer on top — never dark
+            int strips = 14;
+            double w = c.W / strips;
+            for (int i = 0; i < strips; i++)
+            {
+                double p = i / (double)(strips - 1);
+                double wobble = 0.15 * Math.Sin(c.T * 0.9 + p * 5);
+                double k = Math.Abs(Saw((p * 0.7 + c.T * 0.06 + wobble) * 0.5) * 2 - 1);
+                double shimmer = 0.65 + 0.35 * Sin01(c.T * 4 + p * 12);
+                Rect(c.Dc, i * w, 0, w + 1, c.H, Scale(Lerp(c.Color, c.Color2, k), shimmer), 1.0, 0);
+            }
+
+            // Rising heat-haze wisps
+            for (int s = 0; s < 3; s++)
+            {
+                double x = c.W * (0.2 + 0.3 * s + 0.06 * Math.Sin(c.T * 1.3 + s * 2.1));
+                double y = c.H * (1.0 - Saw(c.T * 0.35 + s * 0.37));
+                Dot(c.Dc, x, y, 2.5, Lerp(c.Color, Colors.White, 0.5), 0.25);
+            }
+        }
+
+        private void RenderMirage(Ctx c)
+        {
+            // Two gradient layers sliding opposite directions, averaged together
+            int strips = 14;
+            double w = c.W / strips;
+            for (int i = 0; i < strips; i++)
+            {
+                double p = i / (double)(strips - 1);
+                double ka = Math.Abs(Saw((p * 0.7 - c.T * 0.1) * 0.5) * 2 - 1);
+                double kb = Math.Abs(Saw((p * 0.7 + c.T * 0.13 + 0.5) * 0.5) * 2 - 1);
+                var col = Lerp(Lerp(c.Color, c.Color2, ka), Lerp(c.Color, c.Color2, kb), 0.5);
+                double align = 1.0 - Math.Abs(ka - kb);
+                Rect(c.Dc, i * w, 0, w + 1, c.H, Scale(col, 0.6 + 0.4 * align), 1.0, 0);
+            }
+        }
+
+        private void RenderCandyStripe(Ctx c)
+        {
+            // Smooth scrolling candy-cane stripes at near-full brightness
+            int strips = 16;
+            double w = c.W / strips;
+            for (int i = 0; i < strips; i++)
+            {
+                double p = i / (double)(strips - 1);
+                double s = Sin01((p * 3 - c.T * 0.45) * Math.PI * 2);
+                s = s * s * (3 - 2 * s);
+                Rect(c.Dc, i * w, 0, w + 1, c.H, Scale(Lerp(c.Color, c.Color2, s), 0.95), 1.0, 0);
+            }
+        }
+
+        private void RenderRiptide(Ctx c)
+        {
+            // Crossing waves — interference picks the color and brightens crests
+            int strips = 14;
+            double w = c.W / strips;
+            for (int i = 0; i < strips; i++)
+            {
+                double p = i / (double)(strips - 1);
+                double w1 = Math.Sin(p * 4 * Math.PI - c.T * 1.5);
+                double w2 = Math.Sin(p * 6 * Math.PI + c.T * 1.1);
+                double k = Math.Clamp(0.5 + w1 * 0.35 + w2 * 0.25, 0, 1);
+                double interference = Math.Abs(w1 + w2) * 0.5;
+                Rect(c.Dc, i * w, 0, w + 1, c.H,
+                    Scale(Lerp(c.Color, c.Color2, k), 0.55 + 0.45 * interference), 1.0, 0);
+            }
+        }
+
+        private void RenderMoonbeam(Ctx c)
+        {
+            // Lit ambient base
+            c.Dc.DrawRoundedRectangle(new LinearGradientBrush(
+                Scale(c.Color, 0.5), Scale(c.Color2, 0.5), 0),
+                null, new Rect(0, 0, c.W, c.H), 3, 3);
+
+            // White-cored beam sweeping back and forth
+            double phase = Saw(c.T * 0.18);
+            double pos = phase < 0.5 ? phase * 2 : 2 - phase * 2;
+            double x = 4 + pos * (c.W - 8);
+            Dot(c.Dc, x, c.Cy, c.H * 0.55, Lerp(c.Color, Colors.White, 0.6), 0.30);
+            Dot(c.Dc, x, c.Cy, c.H * 0.32, Lerp(c.Color, Colors.White, 0.8), 0.55);
+            Dot(c.Dc, x, c.Cy, c.H * 0.16, Colors.White, 0.95);
+        }
     }
 }

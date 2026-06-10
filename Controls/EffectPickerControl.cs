@@ -244,6 +244,23 @@ namespace AmpUp.Controls
             { LightEffect.ReactiveAurora,   Color.FromRgb(0x00, 0xE6, 0x76) }, // reactive green
             { LightEffect.LiquidGlass,      Color.FromRgb(0xB2, 0xEB, 0xF2) }, // glass aqua
             { LightEffect.ChromaLayerStack, Color.FromRgb(0xFF, 0x40, 0x81) }, // chroma pink
+
+            // Room-bright ambient effects
+            { LightEffect.ColorMelt,        Color.FromRgb(0xFF, 0x5E, 0x9E) }, // magenta-orange melt
+            { LightEffect.GradientFlow,     Color.FromRgb(0x4F, 0xC3, 0xF7) }, // flowing cyan
+            { LightEffect.Kaleidoscope,     Color.FromRgb(0xBA, 0x68, 0xC8) }, // kaleido purple
+            { LightEffect.NeonFlux,         Color.FromRgb(0x39, 0xFF, 0x14) }, // neon green
+            { LightEffect.PastelDrift,      Color.FromRgb(0xF8, 0xBB, 0xD0) }, // pastel pink
+            { LightEffect.DuetChase,        Color.FromRgb(0xFF, 0xA7, 0x26) }, // duet orange
+            { LightEffect.CloudShift,       Color.FromRgb(0x90, 0xCA, 0xF9) }, // soft cloud blue
+            { LightEffect.SunsetGlow,       Color.FromRgb(0xFF, 0x70, 0x43) }, // sunset orange
+            { LightEffect.CometTrail,       Color.FromRgb(0x7C, 0x4D, 0xFF) }, // comet violet
+            { LightEffect.SpectrumPulse,    Color.FromRgb(0x00, 0xE5, 0xFF) }, // bright cyan
+            { LightEffect.Heatwave,         Color.FromRgb(0xFF, 0x6E, 0x40) }, // heat orange
+            { LightEffect.Mirage,           Color.FromRgb(0x64, 0xB5, 0xF6) }, // mirage blue
+            { LightEffect.CandyStripe,      Color.FromRgb(0xFF, 0x4F, 0x9E) }, // candy pink
+            { LightEffect.Riptide,          Color.FromRgb(0x26, 0xC6, 0xDA) }, // riptide teal
+            { LightEffect.Moonbeam,         Color.FromRgb(0xCF, 0xD8, 0xDC) }, // moon silver
         };
 
         // ── Constructor ──────────────────────────────────────────────────
@@ -385,6 +402,21 @@ namespace AmpUp.Controls
                     (LightEffect.ReactiveAurora,   "RA", "R.Aurora", false),
                     (LightEffect.LiquidGlass,      "LG", "Glass",    false),
                     (LightEffect.ChromaLayerStack, "CL", "Chroma",   false),
+                    (LightEffect.ColorMelt,        "◉",  "Melt",     false),
+                    (LightEffect.GradientFlow,     "≋",  "Grad Flow",false),
+                    (LightEffect.Kaleidoscope,     "❖",  "Kaleido",  false),
+                    (LightEffect.NeonFlux,         "NF", "Neon Flux",false),
+                    (LightEffect.PastelDrift,      "✿",  "Pastel",   false),
+                    (LightEffect.DuetChase,        "⇄",  "Duet",     false),
+                    (LightEffect.CloudShift,       "☁",  "Clouds",   false),
+                    (LightEffect.SunsetGlow,       "☀",  "Sunset",   false),
+                    (LightEffect.CometTrail,       "⤳",  "C.Trail",  false),
+                    (LightEffect.SpectrumPulse,    "♫",  "Spectrum", false),
+                    (LightEffect.Heatwave,         "♨",  "Heatwave", false),
+                    (LightEffect.Mirage,           "≈",  "Mirage",   false),
+                    (LightEffect.CandyStripe,      "▥",  "Candy",    false),
+                    (LightEffect.Riptide,          "∿",  "Riptide",  false),
+                    (LightEffect.Moonbeam,         "☾",  "Moonbeam", false),
                 });
             }
         }
@@ -658,6 +690,21 @@ namespace AmpUp.Controls
                 LightEffect.ReactiveAurora   => Color.FromRgb(0x00, 0xE6, 0x76),
                 LightEffect.LiquidGlass      => Color.FromRgb(0xB2, 0xEB, 0xF2),
                 LightEffect.ChromaLayerStack => Color.FromRgb(0xFF, 0x40, 0x81),
+                LightEffect.ColorMelt        => Color.FromRgb(0xFF, 0x8A, 0x3D),
+                LightEffect.GradientFlow     => Color.FromRgb(0xBA, 0x68, 0xC8),
+                LightEffect.Kaleidoscope     => Color.FromRgb(0x4D, 0xD0, 0xE1),
+                LightEffect.NeonFlux         => Color.FromRgb(0xFF, 0x2D, 0xCE),
+                LightEffect.PastelDrift      => Color.FromRgb(0xB3, 0xE5, 0xFC),
+                LightEffect.DuetChase        => Color.FromRgb(0x40, 0xC4, 0xFF),
+                LightEffect.CloudShift       => Color.FromRgb(0xE1, 0xBE, 0xE7),
+                LightEffect.SunsetGlow       => Color.FromRgb(0xFF, 0xD5, 0x4F),
+                LightEffect.CometTrail       => Color.FromRgb(0x18, 0xFF, 0xFF),
+                LightEffect.SpectrumPulse    => Color.FromRgb(0xE0, 0x40, 0xFB),
+                LightEffect.Heatwave         => Color.FromRgb(0xFF, 0xC4, 0x00),
+                LightEffect.Mirage           => Color.FromRgb(0xCE, 0x93, 0xD8),
+                LightEffect.CandyStripe      => Color.FromRgb(0x82, 0xB1, 0xFF),
+                LightEffect.Riptide          => Color.FromRgb(0x00, 0xBF, 0xA5),
+                LightEffect.Moonbeam         => Color.FromRgb(0x90, 0xA4, 0xAE),
                 _ => primary,
             };
         }
