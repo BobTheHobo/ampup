@@ -199,6 +199,13 @@ public partial class ButtonsView
             designContent.Children.Add(_scDisplayTypePicker);
         }
 
+        if (_scHardwarePanel != null)
+        {
+            DetachFromParent(_scHardwarePanel);
+            _scHardwarePanel.Margin = new Thickness(0, 0, 0, 10);
+            designContent.Children.Add(_scHardwarePanel);
+        }
+
         _v2TitleLabel = MakeEditorLabel("TITLE");
         designContent.Children.Add(_v2TitleLabel);
         if (_scTitleBox == null)
@@ -371,12 +378,6 @@ public partial class ButtonsView
             DetachFromParent(_scDynamicPanel);
             _scDynamicPanel.Margin = new Thickness(0, 10, 0, 0);
             designContent.Children.Add(_scDynamicPanel);
-        }
-        if (_scHardwarePanel != null)
-        {
-            DetachFromParent(_scHardwarePanel);
-            _scHardwarePanel.Margin = new Thickness(0, 10, 0, 0);
-            designContent.Children.Add(_scHardwarePanel);
         }
 
         // The DESIGN tab itself is the section header now — drop the

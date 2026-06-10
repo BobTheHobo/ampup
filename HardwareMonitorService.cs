@@ -25,8 +25,15 @@ internal sealed class HardwareMonitorService : IDisposable
         ("gpu_temp", "GPU Temp"),
         ("cpu_load", "CPU Load"),
         ("gpu_load", "GPU Load"),
+        ("cpu_clock", "CPU Clock"),
+        ("gpu_clock", "GPU Clock"),
+        ("cpu_power", "CPU Power"),
+        ("gpu_power", "GPU Power"),
         ("memory_used", "Memory Used"),
         ("memory_load", "Memory Load"),
+        ("vram_used", "VRAM Used"),
+        ("vram_load", "VRAM Load"),
+        ("fan_speed", "Fan Speed"),
     };
 
     public HardwareMetricReading GetReading(string source)
@@ -47,8 +54,15 @@ internal sealed class HardwareMonitorService : IDisposable
                     "gpu_temp" => ReadSensor(source, "GPU Temp", IsGpu, SensorType.Temperature, PreferGpuCore),
                     "cpu_load" => ReadSensor(source, "CPU Load", IsCpu, SensorType.Load, PreferTotalOrCore, "%"),
                     "gpu_load" => ReadSensor(source, "GPU Load", IsGpu, SensorType.Load, PreferTotalOrCore, "%"),
+                    "cpu_clock" => ReadSensor(source, "CPU Clock", IsCpu, SensorType.Clock, PreferTotalOrCore, "MHz"),
+                    "gpu_clock" => ReadSensor(source, "GPU Clock", IsGpu, SensorType.Clock, PreferGpuCore, "MHz"),
+                    "cpu_power" => ReadSensor(source, "CPU Power", IsCpu, SensorType.Power, PreferPackageOrTotal, "W"),
+                    "gpu_power" => ReadSensor(source, "GPU Power", IsGpu, SensorType.Power, PreferPackageOrTotal, "W"),
                     "memory_used" => ReadMemoryUsed(),
                     "memory_load" => ReadSensor(source, "Memory", h => h.HardwareType == HardwareType.Memory, SensorType.Load, PreferUsedMemory, "%"),
+                    "vram_used" => ReadSensor(source, "VRAM", IsGpu, SensorType.Data, PreferMemoryData, "GB"),
+                    "vram_load" => ReadSensor(source, "VRAM", IsGpu, SensorType.Load, PreferMemoryData, "%"),
+                    "fan_speed" => ReadSensor(source, "Fan", h => true, SensorType.Fan, PreferAny, "RPM"),
                     _ => new HardwareMetricReading(source, GetSourceLabel(source), "--", false),
                 };
             }
@@ -115,7 +129,8 @@ internal sealed class HardwareMonitorService : IDisposable
         var sensor = EnumerateSensors()
             .Where(s => s.Value.HasValue
                 && s.SensorType == sensorType
-                && hardwareFilter(s.Hardware))
+                && hardwareFilter(s.Hardware)
+                && IsUsefulSensorValue(s))
             .OrderBy(preference)
             .ThenBy(s => s.Index)
             .FirstOrDefault();
@@ -123,9 +138,7 @@ internal sealed class HardwareMonitorService : IDisposable
         if (sensor == null)
             return new HardwareMetricReading(source, label, "--", false);
 
-        string value = unit == "%"
-            ? $"{Math.Round(sensor.Value!.Value):0}%"
-            : $"{Math.Round(sensor.Value!.Value):0}{unit}";
+        string value = FormatValue(sensor.Value!.Value, unit);
         var reading = new HardwareMetricReading(source, label, value, true);
         _lastFallback = reading;
         return reading;
@@ -136,7 +149,8 @@ internal sealed class HardwareMonitorService : IDisposable
         var sensor = EnumerateSensors()
             .Where(s => s.Value.HasValue
                 && s.Hardware.HardwareType == HardwareType.Memory
-                && s.SensorType == SensorType.Data)
+                && s.SensorType == SensorType.Data
+                && IsUsefulSensorValue(s))
             .OrderBy(PreferUsedMemory)
             .ThenBy(s => s.Index)
             .FirstOrDefault();
@@ -144,7 +158,7 @@ internal sealed class HardwareMonitorService : IDisposable
         if (sensor == null)
             return new HardwareMetricReading("memory_used", "Memory", "--", false);
 
-        var reading = new HardwareMetricReading("memory_used", "Memory", $"{sensor.Value!.Value:0.0} GB", true);
+        var reading = new HardwareMetricReading("memory_used", "Memory", FormatValue(sensor.Value!.Value, "GB"), true);
         _lastFallback = reading;
         return reading;
     }
@@ -193,6 +207,15 @@ internal sealed class HardwareMonitorService : IDisposable
         return 2;
     }
 
+    private static int PreferPackageOrTotal(ISensor sensor)
+    {
+        string name = sensor.Name ?? "";
+        if (name.Contains("package", StringComparison.OrdinalIgnoreCase)) return 0;
+        if (name.Contains("total", StringComparison.OrdinalIgnoreCase)) return 1;
+        if (name.Contains("gpu", StringComparison.OrdinalIgnoreCase)) return 2;
+        return 3;
+    }
+
     private static int PreferTotalOrCore(ISensor sensor)
     {
         string name = sensor.Name ?? "";
@@ -207,6 +230,47 @@ internal sealed class HardwareMonitorService : IDisposable
         if (name.Contains("used", StringComparison.OrdinalIgnoreCase)) return 0;
         if (name.Contains("memory", StringComparison.OrdinalIgnoreCase)) return 1;
         return 2;
+    }
+
+    private static int PreferMemoryData(ISensor sensor)
+    {
+        string name = sensor.Name ?? "";
+        if (name.Contains("memory", StringComparison.OrdinalIgnoreCase)) return 0;
+        if (name.Contains("vram", StringComparison.OrdinalIgnoreCase)) return 0;
+        if (name.Contains("dedicated", StringComparison.OrdinalIgnoreCase)) return 1;
+        return 2;
+    }
+
+    private static int PreferAny(ISensor sensor) => sensor.Index;
+
+    private static bool IsUsefulSensorValue(ISensor sensor)
+    {
+        float value = sensor.Value ?? float.NaN;
+        if (float.IsNaN(value) || float.IsInfinity(value)) return false;
+
+        return sensor.SensorType switch
+        {
+            SensorType.Temperature => value > 0.5f && value < 130f,
+            SensorType.Load => value >= 0f && value <= 100f,
+            SensorType.Clock => value > 0f,
+            SensorType.Power => value > 0f,
+            SensorType.Data => value > 0f,
+            SensorType.Fan => value >= 0f,
+            _ => true,
+        };
+    }
+
+    private static string FormatValue(float value, string unit)
+    {
+        return unit switch
+        {
+            "%" => $"{Math.Round(value):0}%",
+            "MHz" => value >= 1000f ? $"{value / 1000f:0.0} GHz" : $"{Math.Round(value):0} MHz",
+            "W" => $"{value:0} W",
+            "GB" => $"{value:0.0} GB",
+            "RPM" => $"{Math.Round(value):0} RPM",
+            _ => $"{Math.Round(value):0}{unit}",
+        };
     }
 
     public void Dispose()

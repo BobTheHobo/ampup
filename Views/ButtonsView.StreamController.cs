@@ -47,7 +47,7 @@ public partial class ButtonsView
     private TextBlock? _scDynamicDimLabel;
     private WrapPanel? _scDynamicGlowSwatchPanel;
     private StackPanel? _scHardwarePanel;
-    private SegmentedControl? _scHardwareMetricPicker;
+    private ListPicker? _scHardwareMetricPicker;
     // Panels that host the "Normal" editors — grouped so they can hide together.
     private readonly List<FrameworkElement> _scNormalOnlyRows = new();
     private SegmentedControl? _scTextPositionPicker;
@@ -745,13 +745,13 @@ public partial class ButtonsView
 
         _scHardwarePanel = new StackPanel { Visibility = Visibility.Collapsed };
         _scHardwarePanel.Children.Add(MakeEditorLabel("HARDWARE METRIC"));
-        _scHardwareMetricPicker = new SegmentedControl
+        _scHardwareMetricPicker = new ListPicker
         {
-            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             Margin = new Thickness(0, 0, 0, 10),
         };
         foreach (var (source, label) in HardwareMonitorService.Sources)
-            _scHardwareMetricPicker.AddSegment(label, source);
+            _scHardwareMetricPicker.AddItem(label, source);
         _scHardwareMetricPicker.SelectionChanged += (_, _) =>
         {
             if (_loading || _config == null) return;
@@ -3286,6 +3286,41 @@ public partial class ButtonsView
         string currentHex = usesBackgroundFill
             ? (display?.BackgroundColor ?? display?.AccentColor ?? "#00E676")
             : (display?.AccentColor ?? "#00E676");
+
+        if (display?.DisplayType == DisplayKeyType.HardwareMonitor)
+        {
+            bool isDefaultBackground = string.IsNullOrWhiteSpace(display.BackgroundColor)
+                || display.BackgroundColor.Equals("#1C1C1C", StringComparison.OrdinalIgnoreCase);
+            var none = new Border
+            {
+                Width = 26, Height = 26,
+                CornerRadius = new CornerRadius(13),
+                Background = FindBrush("InputBgBrush"),
+                BorderThickness = new Thickness(2),
+                BorderBrush = isDefaultBackground ? new SolidColorBrush(Colors.White) : Brushes.Transparent,
+                Margin = new Thickness(0, 0, 6, 6),
+                Cursor = Cursors.Hand,
+                ToolTip = "Default background",
+                Child = new TextBlock
+                {
+                    Text = "×",
+                    FontSize = 14,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = FindBrush("TextDimBrush"),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+            none.MouseLeftButtonDown += (_, _) =>
+            {
+                if (display == null) return;
+                display.BackgroundColor = "#1C1C1C";
+                BuildGlowColorSwatches();
+                UpdateEditorPreviewOnly();
+                QueueSave();
+            };
+            _scGlowColorSwatchPanel.Children.Add(none);
+        }
 
         foreach (var (name, hex) in TextColorPresets)
         {
