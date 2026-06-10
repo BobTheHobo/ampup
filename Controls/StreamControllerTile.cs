@@ -89,6 +89,24 @@ public class StreamControllerTile : Border
     private bool _dragArmed;
     private bool _dragHover;
 
+    // Cached visual-state packages — hover/selection transitions reuse these
+    // instead of allocating fresh brushes + DropShadowEffects every time.
+    // Rebuilt lazily when the accent color changes (ApplyVisualState runs on
+    // ThemeManager.OnAccentChanged / OnCardThemeChanged, so a theme swap
+    // naturally invalidates the cache). Brushes are frozen; the effects stay
+    // per-instance and unfrozen-but-unmutated so tiles can never trip on a
+    // shared mutable Freezable.
+    private Color _statePackAccent;
+    private SolidColorBrush? _dragHoverBorderBrush;
+    private SolidColorBrush? _dragHoverBackground;
+    private DropShadowEffect? _dragHoverEffect;
+    private LinearGradientBrush? _selectedBorderBrush;
+    private LinearGradientBrush? _selectedBackground;
+    private DropShadowEffect? _selectedEffect;
+    private SolidColorBrush? _hoverBorderBrush;
+    private SolidColorBrush? _hoverBackground;
+    private DropShadowEffect? _hoverEffect;
+
     public StreamControllerTile()
     {
         CornerRadius = new CornerRadius(14);
@@ -466,6 +484,7 @@ public class StreamControllerTile : Border
     {
         bool empty = IsEmpty();
         var accent = AccentColor; // live theme lookup
+        EnsureStatePackages(accent);
 
         // Opacity: dim empties unless hovered/selected.
         Opacity = empty && !_isHovered && !IsSelected ? 0.7 : 1.0;
@@ -477,15 +496,9 @@ public class StreamControllerTile : Border
         // so the user sees a clear drop target, regardless of selection.
         if (_dragHover)
         {
-            BorderBrush = new SolidColorBrush(Color.FromArgb(0xFF, accent.R, accent.G, accent.B));
-            Effect = new DropShadowEffect
-            {
-                Color = accent,
-                BlurRadius = 24,
-                ShadowDepth = 0,
-                Opacity = 0.85,
-            };
-            Background = new SolidColorBrush(Color.FromArgb(0x33, accent.R, accent.G, accent.B));
+            BorderBrush = _dragHoverBorderBrush;
+            Effect = _dragHoverEffect;
+            Background = _dragHoverBackground;
             return;
         }
 
@@ -495,55 +508,22 @@ public class StreamControllerTile : Border
             // and bottom-right "catch-light" corners, slightly dimmer in
             // the middle. Reads as a single continuous ring that wraps
             // the rounded corners instead of a flat hard outline.
-            BorderBrush = new LinearGradientBrush
-            {
-                StartPoint = new Point(0, 0),
-                EndPoint = new Point(1, 1),
-                GradientStops = new GradientStopCollection
-                {
-                    new GradientStop(Color.FromArgb(0xFF, accent.R, accent.G, accent.B), 0.0),
-                    new GradientStop(Color.FromArgb(0xC0, accent.R, accent.G, accent.B), 0.5),
-                    new GradientStop(Color.FromArgb(0xFF, accent.R, accent.G, accent.B), 1.0),
-                },
-            };
+            BorderBrush = _selectedBorderBrush;
 
             // Big, soft diffuse outer bloom — strong enough to read across
             // the corners so the glow feels like it's emanating from the
             // whole tile rather than four independent edges.
-            Effect = new DropShadowEffect
-            {
-                Color = accent,
-                BlurRadius = 28,
-                ShadowDepth = 0,
-                Opacity = 0.9,
-            };
+            Effect = _selectedEffect;
 
             // Subtle diagonal tinted fill so the inside catches some of
             // the same glow colour rather than staying flat dark.
-            Background = new LinearGradientBrush
-            {
-                StartPoint = new Point(0, 0),
-                EndPoint = new Point(1, 1),
-                GradientStops = new GradientStopCollection
-                {
-                    new GradientStop(Color.FromArgb(0x22, accent.R, accent.G, accent.B), 0.0),
-                    new GradientStop(Color.FromArgb(0x0C, accent.R, accent.G, accent.B), 1.0),
-                },
-            };
+            Background = _selectedBackground;
         }
         else if (_isHovered)
         {
-            BorderBrush = new SolidColorBrush(Color.FromArgb(
-                0x99, accent.R, accent.G, accent.B));
-            Effect = new DropShadowEffect
-            {
-                Color = accent,
-                BlurRadius = 14,
-                ShadowDepth = 0,
-                Opacity = 0.45,
-            };
-            Background = new SolidColorBrush(Color.FromArgb(
-                0x14, accent.R, accent.G, accent.B));
+            BorderBrush = _hoverBorderBrush;
+            Effect = _hoverEffect;
+            Background = _hoverBackground;
         }
         else
         {
@@ -551,6 +531,83 @@ public class StreamControllerTile : Border
             Effect = null;
             SetResourceReference(BackgroundProperty, "CardBgBrush");
         }
+    }
+
+    /// <summary>
+    /// (Re)builds the cached state brushes/effects when the accent changes.
+    /// Cheap no-op on every other ApplyVisualState call.
+    /// </summary>
+    private void EnsureStatePackages(Color accent)
+    {
+        if (_dragHoverBorderBrush != null && _statePackAccent == accent)
+            return;
+
+        _statePackAccent = accent;
+
+        static SolidColorBrush Solid(byte a, Color c)
+        {
+            var b = new SolidColorBrush(Color.FromArgb(a, c.R, c.G, c.B));
+            b.Freeze();
+            return b;
+        }
+
+        // Drag-hover package
+        _dragHoverBorderBrush = Solid(0xFF, accent);
+        _dragHoverBackground = Solid(0x33, accent);
+        _dragHoverEffect = new DropShadowEffect
+        {
+            Color = accent,
+            BlurRadius = 24,
+            ShadowDepth = 0,
+            Opacity = 0.85,
+        };
+
+        // Selected package
+        var selectedBorder = new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(1, 1),
+            GradientStops = new GradientStopCollection
+            {
+                new GradientStop(Color.FromArgb(0xFF, accent.R, accent.G, accent.B), 0.0),
+                new GradientStop(Color.FromArgb(0xC0, accent.R, accent.G, accent.B), 0.5),
+                new GradientStop(Color.FromArgb(0xFF, accent.R, accent.G, accent.B), 1.0),
+            },
+        };
+        selectedBorder.Freeze();
+        _selectedBorderBrush = selectedBorder;
+
+        var selectedBackground = new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(1, 1),
+            GradientStops = new GradientStopCollection
+            {
+                new GradientStop(Color.FromArgb(0x22, accent.R, accent.G, accent.B), 0.0),
+                new GradientStop(Color.FromArgb(0x0C, accent.R, accent.G, accent.B), 1.0),
+            },
+        };
+        selectedBackground.Freeze();
+        _selectedBackground = selectedBackground;
+
+        _selectedEffect = new DropShadowEffect
+        {
+            Color = accent,
+            BlurRadius = 28,
+            ShadowDepth = 0,
+            Opacity = 0.9,
+        };
+
+        // Hover package
+        _hoverBorderBrush = Solid(0x99, accent);
+        _hoverBackground = Solid(0x14, accent);
+        _hoverEffect = new DropShadowEffect
+        {
+            Color = accent,
+            BlurRadius = 14,
+            ShadowDepth = 0,
+            Opacity = 0.45,
+        };
     }
 
     private bool IsEmpty()

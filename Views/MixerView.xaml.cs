@@ -67,14 +67,42 @@ public partial class MixerView : UserControl
     // Audio Sessions section
     private bool _audioSessionsExpanded;
     private bool _showHiddenSessions;
-    private readonly DispatcherTimer _peakTimer;
     private readonly DispatcherTimer _sessionRefreshTimer;
     private readonly List<SessionRowCtrl> _sessionRows = new();
+    private readonly HashSet<string> _sessionKeys = new(); // "name:pid" keys of the rows currently shown
+    private bool _sessionListDirty; // force a full rebuild on the next refresh (assignments changed)
     private StackPanel? _sessionListPanel;
     private StackPanel? _expandedAssignPanel;
     private TextBlock? _showHiddenLabel;
-    private record SessionRowCtrl(string ProcessName, NAudio.CoreAudioApi.AudioSessionControl Session,
-        Border PeakFill, TextBlock VolumeLabel, Border PeakTrack);
+    private SolidColorBrush? _peakActiveBrush; // frozen accent brush for active peak fills
+
+    private sealed class SessionRowCtrl
+    {
+        public SessionRowCtrl(string processName, NAudio.CoreAudioApi.AudioSessionControl session,
+            Border peakFill, ScaleTransform peakScale, TextBlock volumeLabel, bool peakActive)
+        {
+            ProcessName = processName;
+            Session = session;
+            PeakFill = peakFill;
+            PeakScale = peakScale;
+            VolumeLabel = volumeLabel;
+            PeakActive = peakActive;
+        }
+
+        public string ProcessName { get; }
+        public NAudio.CoreAudioApi.AudioSessionControl Session { get; }
+        public Border PeakFill { get; }
+        public ScaleTransform PeakScale { get; }
+        public TextBlock VolumeLabel { get; }
+        public bool PeakActive { get; set; }
+        public int LastVolPct { get; set; } = -1;
+    }
+
+    // Session icon caches — Process.MainModule throws Win32Exception for protected
+    // processes and ExtractAssociatedIcon is expensive; resolve each once per
+    // process lifetime instead of on every 2s session-list rebuild.
+    private static readonly Dictionary<string, string?> s_sessionExePaths = new();   // "name:pid" → exe path (null = inaccessible, don't retry)
+    private static readonly Dictionary<string, BitmapSource?> s_sessionIcons = new(StringComparer.OrdinalIgnoreCase); // exe path → icon (null = extraction failed)
 
     // Smart Mix (ducking + auto-profile) controls — built in code-behind
     private bool _smartMixExpanded = false;
@@ -123,17 +151,17 @@ public partial class MixerView : UserControl
             CollectAndSave();
         };
 
+        // Single 75ms timer drives both the channel-strip visuals and the
+        // session peak bars (formerly a separate 75ms _peakTimer) — same
+        // cadence, one dispatcher wakeup.
         _liveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(75) };
         _liveTimer.Tick += LiveTimer_Tick;
-
-        _peakTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(75) };
-        _peakTimer.Tick += (_, _) => UpdateSessionPeaks();
 
         _sessionRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _sessionRefreshTimer.Tick += (_, _) => RefreshSessionList();
 
-        Loaded += (_, _) => _liveTimer.Start();
-        Unloaded += (_, _) => { _liveTimer.Stop(); _peakTimer.Stop(); _sessionRefreshTimer.Stop(); };
+        Loaded += (_, _) => { HookOwnerWindow(); StartTimersIfWindowActive(); };
+        Unloaded += (_, _) => { UnhookOwnerWindow(); _liveTimer.Stop(); _sessionRefreshTimer.Stop(); };
 
         ThemeManager.OnAccentChanged += () => Dispatcher.Invoke(RefreshAccentColors);
 
@@ -143,6 +171,61 @@ public partial class MixerView : UserControl
         SetupStripContextMenus();
         SetupSuggestionBanner();
         BuildSmartMixSection();
+    }
+
+    // ── Hidden-window timer quiesce ─────────────────────────────────────
+    // Hide-to-tray uses Hide(), which never raises Unloaded — without these
+    // window hooks the 75ms/2s timers tick forever with nothing visible.
+    // Mirrors the _hwPreviewTimer pattern in MainWindow.
+
+    private Window? _ownerWindow;
+
+    private void HookOwnerWindow()
+    {
+        var window = Window.GetWindow(this);
+        if (window == null || ReferenceEquals(window, _ownerWindow)) return;
+        UnhookOwnerWindow(); // guard against duplicate handlers when Loaded re-fires
+        _ownerWindow = window;
+        window.IsVisibleChanged += OwnerWindow_IsVisibleChanged;
+        window.StateChanged += OwnerWindow_StateChanged;
+    }
+
+    private void UnhookOwnerWindow()
+    {
+        if (_ownerWindow == null) return;
+        _ownerWindow.IsVisibleChanged -= OwnerWindow_IsVisibleChanged;
+        _ownerWindow.StateChanged -= OwnerWindow_StateChanged;
+        _ownerWindow = null;
+    }
+
+    private void OwnerWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        => UpdateTimersForWindowState();
+
+    private void OwnerWindow_StateChanged(object? sender, EventArgs e)
+        => UpdateTimersForWindowState();
+
+    private bool IsOwnerWindowQuiesced => _ownerWindow != null
+        && (!_ownerWindow.IsVisible || _ownerWindow.WindowState == WindowState.Minimized);
+
+    private void UpdateTimersForWindowState()
+    {
+        if (IsOwnerWindowQuiesced)
+        {
+            _liveTimer.Stop();
+            _sessionRefreshTimer.Stop();
+        }
+        else
+        {
+            StartTimersIfWindowActive();
+        }
+    }
+
+    private void StartTimersIfWindowActive()
+    {
+        if (IsOwnerWindowQuiesced) return;
+        _liveTimer.Start();
+        if (_audioSessionsExpanded && _sessionListPanel != null)
+            _sessionRefreshTimer.Start();
     }
 
     private void SetupStripHoverEffects()
@@ -402,7 +485,7 @@ public partial class MixerView : UserControl
 
         CheckAndShowSuggestionBanner();
 
-        _liveTimer.Start();
+        StartTimersIfWindowActive();
     }
 
     private async Task FetchHAEntitiesAsync()
@@ -461,6 +544,10 @@ public partial class MixerView : UserControl
         if (Window.GetWindow(this)?.WindowState == WindowState.Minimized) return;
         if (_mixer == null || _config == null) return;
         var config = _config; // local copy suppresses CS8602
+
+        // Session peak bars share this 75ms timer (merged from the old _peakTimer)
+        if (_audioSessionsExpanded && _sessionRows.Count > 0)
+            UpdateSessionPeaks();
 
         for (int i = 0; i < 5; i++)
         {
@@ -2359,13 +2446,12 @@ public partial class MixerView : UserControl
         {
             if (_sessionListPanel == null)
                 BuildSessionListPanel();
-            RefreshSessionList();
-            _peakTimer.Start();
+            RefreshSessionList(force: true);
             _sessionRefreshTimer.Start();
+            // Peak bars ride the always-running 75ms _liveTimer, gated on _audioSessionsExpanded
         }
         else
         {
-            _peakTimer.Stop();
             _sessionRefreshTimer.Stop();
         }
     }
@@ -2417,7 +2503,7 @@ public partial class MixerView : UserControl
         {
             _showHiddenSessions = !_showHiddenSessions;
             _expandedAssignPanel = null; // allow refresh
-            RefreshSessionList();
+            RefreshSessionList(force: true);
         };
         _showHiddenLabel.MouseEnter += (_, _) => _showHiddenLabel.Foreground = new SolidColorBrush(accent);
         _showHiddenLabel.MouseLeave += (_, _) => _showHiddenLabel.Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x8A, 0x8A));
@@ -2441,7 +2527,10 @@ public partial class MixerView : UserControl
         grid.Children.Add(tb);
     }
 
-    private void RefreshSessionList()
+    private static string SessionKey(AudioMixer.SessionInfo info)
+        => $"{info.ProcessName.ToLowerInvariant()}:{info.Pid}";
+
+    private void RefreshSessionList(bool force = false)
     {
         if (_mixer == null || _sessionListPanel == null) return;
 
@@ -2456,11 +2545,25 @@ public partial class MixerView : UserControl
             .ThenBy(s => s.ProcessName)
             .ToList();
 
+        // Diff by session key (name:pid) — when the set of sessions hasn't
+        // changed, skip the full row rebuild (and the per-row icon work).
+        // Volume/peak on surviving rows are kept fresh by the 75ms peak tick;
+        // ordering only re-sorts when sessions appear or vanish.
+        if (!force && !_sessionListDirty
+            && sessions.Count == _sessionKeys.Count
+            && sessions.All(s => _sessionKeys.Contains(SessionKey(s))))
+            return;
+
+        _sessionListDirty = false;
         _sessionListPanel.Children.Clear();
         _sessionRows.Clear();
+        _sessionKeys.Clear();
 
         foreach (var info in sessions)
+        {
+            _sessionKeys.Add(SessionKey(info));
             _sessionListPanel.Children.Add(BuildSessionRow(info));
+        }
 
         // Update show hidden label
         int hiddenCount = hidden.Count;
@@ -2470,23 +2573,43 @@ public partial class MixerView : UserControl
 
     private void UpdateSessionPeaks()
     {
+        if (_sessionRows.Count == 0) return;
+
+        // Hoisted out of the loop; frozen brush is reused across ticks and
+        // rebuilt only when the accent color changes.
+        var accent = ThemeManager.Accent;
+        if (_peakActiveBrush == null || _peakActiveBrush.Color != accent)
+        {
+            _peakActiveBrush = new SolidColorBrush(accent);
+            _peakActiveBrush.Freeze();
+        }
+
         foreach (var row in _sessionRows)
         {
             try
             {
                 float peak = row.Session.AudioMeterInformation.MasterPeakValue;
                 float vol = row.Session.SimpleAudioVolume.Volume;
-                row.VolumeLabel.Text = $"{(int)Math.Round(vol * 100)}%";
+                int volPct = (int)Math.Round(vol * 100);
+                if (volPct != row.LastVolPct)
+                {
+                    row.LastVolPct = volPct;
+                    row.VolumeLabel.Text = $"{volPct}%";
+                }
 
-                double trackWidth = row.PeakTrack.ActualWidth;
-                if (trackWidth <= 0) trackWidth = 120;
-                row.PeakFill.Width = Math.Clamp(peak * trackWidth, 0, trackWidth);
+                // ScaleTransform is render-only — no layout pass per tick
+                // (setting Width invalidated layout for every row, every 75ms)
+                row.PeakScale.ScaleX = Math.Clamp(peak, 0f, 1f);
 
-                var accent = ((SolidColorBrush)FindResource("AccentBrush")).Color;
-                if (peak > 0.02f)
-                    row.PeakFill.Background = new SolidColorBrush(accent);
-                else
-                    row.PeakFill.SetResourceReference(Border.BackgroundProperty, "InputBorderBrush");
+                bool active = peak > 0.02f;
+                if (active != row.PeakActive)
+                {
+                    row.PeakActive = active;
+                    if (active)
+                        row.PeakFill.Background = _peakActiveBrush;
+                    else
+                        row.PeakFill.SetResourceReference(Border.BackgroundProperty, "InputBorderBrush");
+                }
             }
             catch { }
         }
@@ -2543,18 +2666,20 @@ public partial class MixerView : UserControl
         Grid.SetColumn(volLabel, 2);
         grid.Children.Add(volLabel);
 
-        // Peak bar
+        // Peak bar — fill spans the full track and is driven by a ScaleTransform
+        // (render-only) instead of Width, so the 75ms peak tick never invalidates layout.
         var peakTrack = new Border
         {
             Height = 4, CornerRadius = new CornerRadius(2),
             VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0),
         };
         peakTrack.SetResourceReference(Border.BackgroundProperty, "CardBorderBrush");
+        var peakScale = new ScaleTransform(Math.Clamp(info.Peak, 0f, 1f), 1.0);
         var peakFill = new Border
         {
             Height = 4, CornerRadius = new CornerRadius(2),
-            Width = Math.Clamp(info.Peak * 104, 0, 104),
-            HorizontalAlignment = HorizontalAlignment.Left,
+            RenderTransform = peakScale,
+            RenderTransformOrigin = new Point(0, 0.5), // scale from the left edge
         };
         if (active)
             peakFill.Background = new SolidColorBrush(accent);
@@ -2602,38 +2727,25 @@ public partial class MixerView : UserControl
         // Track for peak updates
         var session = _mixer?.GetSessionForProcess(info.ProcessName);
         if (session != null)
-            _sessionRows.Add(new SessionRowCtrl(info.ProcessName, session, peakFill, volLabel, peakTrack));
+            _sessionRows.Add(new SessionRowCtrl(info.ProcessName, session, peakFill, peakScale, volLabel, active));
 
         return wrapper;
     }
 
     private UIElement BuildSessionIcon(string processName, int pid, Color accent)
     {
-        try
+        var bmpSrc = GetCachedSessionIcon(processName, pid);
+        if (bmpSrc != null)
         {
-            var proc = Process.GetProcessById(pid);
-            var exePath = proc.MainModule?.FileName;
-            if (!string.IsNullOrEmpty(exePath))
+            return new Border
             {
-                var sysIcon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
-                if (sysIcon != null)
-                {
-                    var bmpSrc = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
-                        sysIcon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                    bmpSrc.Freeze();
-                    sysIcon.Dispose();
-                    return new Border
-                    {
-                        Width = 28, Height = 28, CornerRadius = new CornerRadius(6),
-                        Background = new SolidColorBrush(Color.FromArgb(30, accent.R, accent.G, accent.B)),
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Child = new Image { Source = bmpSrc, Width = 18, Height = 18,
-                            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
-                    };
-                }
-            }
+                Width = 28, Height = 28, CornerRadius = new CornerRadius(6),
+                Background = new SolidColorBrush(Color.FromArgb(30, accent.R, accent.G, accent.B)),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new Image { Source = bmpSrc, Width = 18, Height = 18,
+                    HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
+            };
         }
-        catch { }
 
         return new Border
         {
@@ -2648,6 +2760,54 @@ public partial class MixerView : UserControl
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
             }
         };
+    }
+
+    /// <summary>
+    /// Resolves the icon for a session's process, with two-level caching:
+    /// pid → exe path (so MainModule — which throws for protected processes —
+    /// is only attempted once per process, failures included), then
+    /// exe path → frozen BitmapSource (one extraction per exe per app lifetime).
+    /// </summary>
+    private static BitmapSource? GetCachedSessionIcon(string processName, int pid)
+    {
+        string pidKey = $"{processName.ToLowerInvariant()}:{pid}";
+        if (!s_sessionExePaths.TryGetValue(pidKey, out var exePath))
+        {
+            // Bound the pid cache — pids churn over long uptimes
+            if (s_sessionExePaths.Count > 512)
+                s_sessionExePaths.Clear();
+
+            try
+            {
+                using var proc = Process.GetProcessById(pid);
+                exePath = proc.MainModule?.FileName;
+            }
+            catch
+            {
+                exePath = null; // protected/exited process — cache the failure, don't retry every tick
+            }
+            s_sessionExePaths[pidKey] = exePath;
+        }
+
+        if (string.IsNullOrEmpty(exePath)) return null;
+
+        if (!s_sessionIcons.TryGetValue(exePath, out var icon))
+        {
+            try
+            {
+                var sysIcon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
+                if (sysIcon != null)
+                {
+                    icon = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                        sysIcon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                    icon.Freeze();
+                    sysIcon.Dispose();
+                }
+            }
+            catch { icon = null; }
+            s_sessionIcons[exePath] = icon;
+        }
+        return icon;
     }
 
     private UIElement BuildSessionKnobBadge(string processName, Color accent)
@@ -2762,6 +2922,7 @@ public partial class MixerView : UserControl
         void SaveAndRebuildPanel()
         {
             _onSave?.Invoke(_config);
+            _sessionListDirty = true; // knob badges need a rebuild once the assign panel closes
             panel.Children.Clear();
             BuildAssignPills(panel, processName);
         }
@@ -2867,7 +3028,7 @@ public partial class MixerView : UserControl
                 _config.HiddenTrayApps.Add(processName);
             _onSave?.Invoke(_config);
             _expandedAssignPanel = null;
-            RefreshSessionList();
+            RefreshSessionList(force: true);
         };
         groupRow.Children.Add(hidePill);
 

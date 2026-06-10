@@ -31,6 +31,12 @@ namespace AmpUp.Controls
         private int _peakHoldCount;
         private int _peakSegment = -1;
 
+        // Last rendered (litCount, peakSegment) pair — UpdateVisuals early-returns
+        // when both are unchanged so silent meters don't re-record 16 rects at
+        // every Level set. Reset whenever the visual must rebuild (size change).
+        private int _lastLitCount = -1;
+        private int _lastPeakSegment = int.MinValue;
+
         private const int PeakHoldTicks = 30;   // 1.5s at 50ms
         private const int PeakDecayTicks = 8;   // ~400ms fade-out
 
@@ -100,6 +106,10 @@ namespace AmpUp.Controls
 
         private void ComputeSegmentRects(Size size)
         {
+            // Geometry changed — force the next UpdateVisuals to re-record.
+            _lastLitCount = -1;
+            _lastPeakSegment = int.MinValue;
+
             _segmentRects = new Rect[SegmentCount];
             double totalGaps = (SegmentCount - 1) * SegmentGap;
             double segHeight = (size.Height - totalGaps) / SegmentCount;
@@ -191,6 +201,12 @@ namespace AmpUp.Controls
 
             int litCount = (int)(_level * SegmentCount);
             litCount = Math.Clamp(litCount, 0, SegmentCount);
+
+            // Nothing visible changed — skip the re-record entirely.
+            if (litCount == _lastLitCount && _peakSegment == _lastPeakSegment)
+                return;
+            _lastLitCount = litCount;
+            _lastPeakSegment = _peakSegment;
 
             using (DrawingContext dc = _drawingVisual.RenderOpen())
             {

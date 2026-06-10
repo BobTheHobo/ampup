@@ -136,13 +136,56 @@ namespace AmpUp.Controls
             };
             _updateTimer.Tick += (_, _) =>
             {
+                // Second line of defense — the window hooks below stop the timer
+                // when hidden/minimized, but keep the per-tick guard regardless.
                 var window = Window.GetWindow(this);
                 if (IsVisible && window?.WindowState != WindowState.Minimized)
                     UpdateLiveState();
             };
 
-            Loaded += (_, _) => _updateTimer.Start();
-            Unloaded += (_, _) => _updateTimer.Stop();
+            Loaded += (_, _) => { HookOwnerWindow(); UpdateTimerForWindowState(); };
+            Unloaded += (_, _) => { UnhookOwnerWindow(); _updateTimer.Stop(); };
+        }
+
+        // ── Hidden-window timer quiesce ─────────────────────────────────
+        // Hide-to-tray uses Hide(), which never raises Unloaded — without
+        // these window hooks the 100ms timer ticks forever with nothing
+        // visible. Mirrors the _hwPreviewTimer pattern in MainWindow.
+
+        private Window? _ownerWindow;
+
+        private void HookOwnerWindow()
+        {
+            var window = Window.GetWindow(this);
+            if (window == null || ReferenceEquals(window, _ownerWindow)) return;
+            UnhookOwnerWindow(); // guard against duplicate handlers when Loaded re-fires
+            _ownerWindow = window;
+            window.IsVisibleChanged += OwnerWindow_IsVisibleChanged;
+            window.StateChanged += OwnerWindow_StateChanged;
+        }
+
+        private void UnhookOwnerWindow()
+        {
+            if (_ownerWindow == null) return;
+            _ownerWindow.IsVisibleChanged -= OwnerWindow_IsVisibleChanged;
+            _ownerWindow.StateChanged -= OwnerWindow_StateChanged;
+            _ownerWindow = null;
+        }
+
+        private void OwnerWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+            => UpdateTimerForWindowState();
+
+        private void OwnerWindow_StateChanged(object? sender, EventArgs e)
+            => UpdateTimerForWindowState();
+
+        private void UpdateTimerForWindowState()
+        {
+            bool quiesced = _ownerWindow != null
+                && (!_ownerWindow.IsVisible || _ownerWindow.WindowState == WindowState.Minimized);
+            if (quiesced)
+                _updateTimer.Stop();
+            else
+                _updateTimer.Start();
         }
 
         public void SetCallbacks(Action<int> onKnobClick, Action<int> onButtonClick)

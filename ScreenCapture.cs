@@ -28,6 +28,21 @@ public class ScreenCapture : IDisposable
     private Bitmap? _cachedBmp;
     private int _cachedSrcW, _cachedSrcH;
 
+    // Precomputed sRGB → linear (approximate gamma 2.2) table: LinSq[v] = (v/255.0)*(v/255.0).
+    // Replaces the per-pixel divide+square done for each channel in the sampling loops.
+    private static readonly double[] LinSq = BuildLinSqTable();
+
+    private static double[] BuildLinSqTable()
+    {
+        var t = new double[256];
+        for (int v = 0; v < 256; v++)
+        {
+            double l = v / 255.0;
+            t[v] = l * l;
+        }
+        return t;
+    }
+
     // Pixels darker than this (R+G+B sum) are ignored to prevent dark UI from washing out colors.
     // Set high enough to filter gray/near-black pixels that dilute saturated colors (e.g. red → pink).
     private const int DarkThreshold = 80; // ~27 per channel
@@ -416,13 +431,9 @@ public class ScreenCapture : IDisposable
                                 if (pr + pg + pb < DarkThreshold)
                                     continue;
 
-                                double rl = pr / 255.0; rl *= rl;
-                                double gl = pg / 255.0; gl *= gl;
-                                double bl = pb / 255.0; bl *= bl;
-
-                                rLin += rl;
-                                gLin += gl;
-                                bLin += bl;
+                                rLin += LinSq[pr];
+                                gLin += LinSq[pg];
+                                bLin += LinSq[pb];
                                 count++;
                             }
                         }
@@ -591,13 +602,9 @@ public class ScreenCapture : IDisposable
                             if (pr + pg + pb < DarkThreshold)
                                 continue;
 
-                            double rl = pr / 255.0; rl *= rl;
-                            double gl = pg / 255.0; gl *= gl;
-                            double bl = pb / 255.0; bl *= bl;
-
-                            rLin += rl;
-                            gLin += gl;
-                            bLin += bl;
+                            rLin += LinSq[pr];
+                            gLin += LinSq[pg];
+                            bLin += LinSq[pb];
                             count++;
                         }
                     }
@@ -669,14 +676,10 @@ public class ScreenCapture : IDisposable
                             if (pr + pg + pb < DarkThreshold)
                                 continue;
 
-                            // sRGB → linear (approximate gamma 2.2)
-                            double rl = pr / 255.0; rl *= rl;
-                            double gl = pg / 255.0; gl *= gl;
-                            double bl = pb / 255.0; bl *= bl;
-
-                            rLin += rl;
-                            gLin += gl;
-                            bLin += bl;
+                            // sRGB → linear (approximate gamma 2.2) via precomputed table
+                            rLin += LinSq[pr];
+                            gLin += LinSq[pg];
+                            bLin += LinSq[pb];
                             count++;
                         }
                     }
@@ -736,10 +739,9 @@ public class ScreenCapture : IDisposable
                         if (pr + pg + pb < DarkThreshold)
                             continue;
 
-                        double rl = pr / 255.0; rl *= rl;
-                        double gl = pg / 255.0; gl *= gl;
-                        double bl = pb / 255.0; bl *= bl;
-                        rLin += rl; gLin += gl; bLin += bl;
+                        rLin += LinSq[pr];
+                        gLin += LinSq[pg];
+                        bLin += LinSq[pb];
                         count++;
                     }
                 }

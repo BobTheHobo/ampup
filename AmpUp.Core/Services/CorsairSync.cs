@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using AmpUp.Core.Models;
@@ -165,6 +166,69 @@ public class CorsairSync : IDisposable
     // ── Keep delegate alive to prevent GC ───────────────────────────
     private SessionStateChangedHandler? _sessionCallback;
 
+    // ── Per-device LED geometry cache ───────────────────────────────
+    // CorsairGetLedPositions returns static geometry that only changes on
+    // device plug/unplug. The 20 FPS sync paths used to re-query it (plus a
+    // ~12KB CorsairLedPosition[512] allocation and, for native room effects,
+    // a full k-means pass) on EVERY frame. Cache it per device.Id and
+    // invalidate whenever the device list is re-enumerated or iCUE drops.
+
+    private sealed class LedGeometryCache
+    {
+        public CorsairLedPosition[] Positions = Array.Empty<CorsairLedPosition>();
+        public uint[] Ids = Array.Empty<uint>();
+        public CorsairLedColor[] Buf = Array.Empty<CorsairLedColor>();
+        public int LedCount;
+        public double MinX, MinY, Width, Height;
+        public float Phase;
+        public List<FanZone> FanZones = new();
+    }
+
+    private readonly ConcurrentDictionary<string, LedGeometryCache> _ledCache = new();
+
+    private LedGeometryCache? GetLedCache(CorsairDevice device)
+    {
+        string deviceId = device.Id ?? "";
+        if (deviceId.Length == 0) return null;
+        if (_ledCache.TryGetValue(deviceId, out var cached)) return cached;
+
+        var positions = new CorsairLedPosition[CORSAIR_DEVICE_LEDCOUNT_MAX];
+        int err = CorsairGetLedPositions(deviceId, CORSAIR_DEVICE_LEDCOUNT_MAX, positions, out int ledCount);
+        if (err != 0 || ledCount <= 0) return null;
+
+        var active = new CorsairLedPosition[ledCount];
+        Array.Copy(positions, active, ledCount);
+
+        double minX = double.MaxValue, maxX = double.MinValue;
+        double minY = double.MaxValue, maxY = double.MinValue;
+        var ids = new uint[ledCount];
+        for (int i = 0; i < ledCount; i++)
+        {
+            ids[i] = active[i].id;
+            if (active[i].cx < minX) minX = active[i].cx;
+            if (active[i].cx > maxX) maxX = active[i].cx;
+            if (active[i].cy < minY) minY = active[i].cy;
+            if (active[i].cy > maxY) maxY = active[i].cy;
+        }
+
+        var cache = new LedGeometryCache
+        {
+            Positions = active,
+            Ids = ids,
+            Buf = new CorsairLedColor[ledCount],
+            LedCount = ledCount,
+            MinX = minX,
+            MinY = minY,
+            Width = Math.Max(maxX - minX, 0.001),
+            Height = Math.Max(maxY - minY, 0.001),
+            Phase = Math.Abs((device.Id ?? device.Name ?? "").GetHashCode() % 997) / 997f,
+            FanZones = InferFanZones(active, device),
+        };
+
+        // If two threads raced to build, keep whichever landed first.
+        return _ledCache.GetOrAdd(deviceId, cache);
+    }
+
     // ── Public API ──────────────────────────────────────────────────
 
     public CorsairSync()
@@ -239,6 +303,7 @@ public class CorsairSync : IDisposable
         else
         {
             _connected = false;
+            _ledCache.Clear();
         }
         }
         catch (Exception ex)
@@ -286,6 +351,9 @@ public class CorsairSync : IDisposable
                 LedCount = d.ledCount
             });
         }
+        // Device set may have changed (plug/unplug) — drop cached LED geometry
+        // so it is re-queried lazily on the next frame.
+        _ledCache.Clear();
         Devices = list;
     }
 
@@ -415,28 +483,28 @@ public class CorsairSync : IDisposable
 
     private void SetDeviceColors(CorsairDevice device, byte[] rgbColors)
     {
-        // Get LED positions/IDs for this device
-        var positions = new CorsairLedPosition[CORSAIR_DEVICE_LEDCOUNT_MAX];
-        int err = CorsairGetLedPositions(device.Id, CORSAIR_DEVICE_LEDCOUNT_MAX, positions, out int ledCount);
-        if (err != 0 || ledCount <= 0) return;
+        // LED IDs come from the per-device geometry cache (queried once per plug event)
+        var cache = GetLedCache(device);
+        if (cache == null) return;
 
-        var colors = new CorsairLedColor[ledCount];
-        for (int i = 0; i < ledCount; i++)
+        int ledCount = cache.LedCount;
+        lock (cache) // Buf is shared per device — serialize fill + send
         {
-            // Map device LED index to one of the 15 Turn Up LEDs
-            int srcIdx = (i * 15 / ledCount) % 15;
-            int offset = srcIdx * 3;
-            colors[i] = new CorsairLedColor
+            var colors = cache.Buf;
+            for (int i = 0; i < ledCount; i++)
             {
-                id = positions[i].id,
-                r = rgbColors[offset],
-                g = rgbColors[offset + 1],
-                b = rgbColors[offset + 2],
-                a = 255
-            };
-        }
+                // Map device LED index to one of the 15 Turn Up LEDs
+                int srcIdx = (i * 15 / ledCount) % 15;
+                int offset = srcIdx * 3;
+                colors[i].id = cache.Ids[i];
+                colors[i].r = rgbColors[offset];
+                colors[i].g = rgbColors[offset + 1];
+                colors[i].b = rgbColors[offset + 2];
+                colors[i].a = 255;
+            }
 
-        CorsairSetLedColors(device.Id, ledCount, colors);
+            CorsairSetLedColors(device.Id, ledCount, colors);
+        }
     }
 
     private static bool SupportsNativeRoomEffect(LightEffect effect) => effect is
@@ -456,40 +524,40 @@ public class CorsairSync : IDisposable
         float t,
         float brightnessScale)
     {
-        var positions = new CorsairLedPosition[CORSAIR_DEVICE_LEDCOUNT_MAX];
-        int err = CorsairGetLedPositions(device.Id, CORSAIR_DEVICE_LEDCOUNT_MAX, positions, out int ledCount);
-        if (err != 0 || ledCount <= 0) return false;
+        // Bounds, phase, and fan zones are pure geometry — cached per device
+        // so the per-frame path is just the per-LED effect math.
+        var cache = GetLedCache(device);
+        if (cache == null) return false;
 
-        var activePositions = positions.Take(ledCount).ToArray();
-        double minX = activePositions.Min(p => p.cx);
-        double maxX = activePositions.Max(p => p.cx);
-        double minY = activePositions.Min(p => p.cy);
-        double maxY = activePositions.Max(p => p.cy);
-        double width = Math.Max(maxX - minX, 0.001);
-        double height = Math.Max(maxY - minY, 0.001);
-        float phase = Math.Abs((device.Id ?? device.Name ?? "").GetHashCode() % 997) / 997f;
-        var fanZones = InferFanZones(activePositions, device);
+        int ledCount = cache.LedCount;
+        var positions = cache.Positions;
+        double minX = cache.MinX;
+        double minY = cache.MinY;
+        double width = cache.Width;
+        double height = cache.Height;
+        float phase = cache.Phase;
+        var fanZones = cache.FanZones;
 
-        var colors = new CorsairLedColor[ledCount];
-        for (int i = 0; i < ledCount; i++)
+        lock (cache) // Buf is shared per device — serialize fill + send
         {
-            float nx = (float)((positions[i].cx - minX) / width);
-            float ny = (float)((positions[i].cy - minY) / height);
-            float x = Math.Clamp(nx * 0.72f + ny * 0.28f, 0f, 1f);
-            var raw = RenderNativeRoomEffect(effect, x, nx, ny, t, phase, color1, color2);
-            raw = ApplyFanRingAccent(raw, effect, x, nx, ny, positions[i], fanZones, t, phase, color1, color2);
-            raw = BoostEffectColor(raw);
-            colors[i] = new CorsairLedColor
+            var colors = cache.Buf;
+            for (int i = 0; i < ledCount; i++)
             {
-                id = positions[i].id,
-                r = (byte)Math.Clamp(raw.R * brightnessScale, 0, 255),
-                g = (byte)Math.Clamp(raw.G * brightnessScale, 0, 255),
-                b = (byte)Math.Clamp(raw.B * brightnessScale, 0, 255),
-                a = 255
-            };
-        }
+                float nx = (float)((positions[i].cx - minX) / width);
+                float ny = (float)((positions[i].cy - minY) / height);
+                float x = Math.Clamp(nx * 0.72f + ny * 0.28f, 0f, 1f);
+                var raw = RenderNativeRoomEffect(effect, x, nx, ny, t, phase, color1, color2);
+                raw = ApplyFanRingAccent(raw, effect, x, nx, ny, positions[i], fanZones, t, phase, color1, color2);
+                raw = BoostEffectColor(raw);
+                colors[i].id = cache.Ids[i];
+                colors[i].r = (byte)Math.Clamp(raw.R * brightnessScale, 0, 255);
+                colors[i].g = (byte)Math.Clamp(raw.G * brightnessScale, 0, 255);
+                colors[i].b = (byte)Math.Clamp(raw.B * brightnessScale, 0, 255);
+                colors[i].a = 255;
+            }
 
-        CorsairSetLedColors(device.Id!, ledCount, colors);
+            CorsairSetLedColors(device.Id!, ledCount, colors);
+        }
         return true;
     }
 
@@ -843,27 +911,27 @@ public class CorsairSync : IDisposable
 
     private void SetDeviceColors(CorsairDevice device, (int R, int G, int B)[] sampledColors, float brightnessScale)
     {
-        var positions = new CorsairLedPosition[CORSAIR_DEVICE_LEDCOUNT_MAX];
-        int err = CorsairGetLedPositions(device.Id, CORSAIR_DEVICE_LEDCOUNT_MAX, positions, out int ledCount);
-        if (err != 0 || ledCount <= 0) return;
+        var cache = GetLedCache(device);
+        if (cache == null) return;
 
-        var colors = new CorsairLedColor[ledCount];
+        int ledCount = cache.LedCount;
         int sourceCount = sampledColors.Length;
-        for (int i = 0; i < ledCount; i++)
+        lock (cache) // Buf is shared per device — serialize fill + send
         {
-            int srcIdx = (i * sourceCount / ledCount) % sourceCount;
-            var src = sampledColors[srcIdx];
-            colors[i] = new CorsairLedColor
+            var colors = cache.Buf;
+            for (int i = 0; i < ledCount; i++)
             {
-                id = positions[i].id,
-                r = (byte)Math.Clamp(src.R * brightnessScale, 0, 255),
-                g = (byte)Math.Clamp(src.G * brightnessScale, 0, 255),
-                b = (byte)Math.Clamp(src.B * brightnessScale, 0, 255),
-                a = 255
-            };
-        }
+                int srcIdx = (i * sourceCount / ledCount) % sourceCount;
+                var src = sampledColors[srcIdx];
+                colors[i].id = cache.Ids[i];
+                colors[i].r = (byte)Math.Clamp(src.R * brightnessScale, 0, 255);
+                colors[i].g = (byte)Math.Clamp(src.G * brightnessScale, 0, 255);
+                colors[i].b = (byte)Math.Clamp(src.B * brightnessScale, 0, 255);
+                colors[i].a = 255;
+            }
 
-        CorsairSetLedColors(device.Id, ledCount, colors);
+            CorsairSetLedColors(device.Id, ledCount, colors);
+        }
     }
 
     /// <summary>Send a single static color to all device LEDs.</summary>
@@ -887,16 +955,23 @@ public class CorsairSync : IDisposable
                 if (device.LedCount <= 0 || string.IsNullOrEmpty(device.Id)) continue;
                 try
                 {
-                    var positions = new CorsairLedPosition[CORSAIR_DEVICE_LEDCOUNT_MAX];
-                    int err = CorsairGetLedPositions(device.Id, CORSAIR_DEVICE_LEDCOUNT_MAX, positions, out int count);
-                    if (err != 0 || count <= 0) continue;
+                    var cache = GetLedCache(device);
+                    if (cache == null) continue;
 
-                    var colors = new CorsairLedColor[count];
-                    for (int i = 0; i < count; i++)
+                    int count = cache.LedCount;
+                    lock (cache) // Buf is shared per device — serialize fill + send
                     {
-                        colors[i] = new CorsairLedColor { id = positions[i].id, r = r, g = g, b = b, a = 255 };
+                        var colors = cache.Buf;
+                        for (int i = 0; i < count; i++)
+                        {
+                            colors[i].id = cache.Ids[i];
+                            colors[i].r = r;
+                            colors[i].g = g;
+                            colors[i].b = b;
+                            colors[i].a = 255;
+                        }
+                        CorsairSetLedColors(device.Id, count, colors);
                     }
-                    CorsairSetLedColors(device.Id, count, colors);
                 }
                 catch (Exception ex)
                 {

@@ -18,11 +18,15 @@
 
     <ui:FluentWindow.Resources>
         <FontFamily x:Key="MaterialSymbols">pack://application:,,,/Fonts/#Material Symbols Outlined</FontFamily>
-        <Storyboard x:Key="PulseAnimation" RepeatBehavior="Forever">
+        <!-- DesiredFrameRate=10: the dot carries a DropShadowEffect, so every animation
+             frame forces an effect re-rasterization. 10 FPS is visually identical for a
+             1s opacity fade and cuts the render cost to a sixth. -->
+        <Storyboard x:Key="PulseAnimation" RepeatBehavior="Forever" Timeline.DesiredFrameRate="10">
             <DoubleAnimation Storyboard.TargetName="ConnectionDot"
                              Storyboard.TargetProperty="Opacity"
                              From="1.0" To="0.4" Duration="0:0:1"
-                             AutoReverse="True" />
+                             AutoReverse="True"
+                             Timeline.DesiredFrameRate="10" />
         </Storyboard>
     </ui:FluentWindow.Resources>
 

@@ -66,6 +66,11 @@ namespace AmpUp.Controls
         // ── Visual backing ──────────────────────────────────────────────────
         private readonly DrawingVisual _visual = new();
 
+        // Frozen clip geometry — rebuilt only when the render size changes so
+        // the 30 FPS tick doesn't allocate a fresh RectangleGeometry per frame.
+        private RectangleGeometry? _clipGeometry;
+        private double _clipW, _clipH;
+
         protected override int VisualChildrenCount => 1;
         protected override Visual GetVisualChild(int index) => _visual;
 
@@ -152,7 +157,14 @@ namespace AmpUp.Controls
             };
 
             // Clip to bounds so renders don't bleed into padding/label
-            dc.PushClip(new RectangleGeometry(new Rect(0, 0, w, h)));
+            if (_clipGeometry == null || _clipW != w || _clipH != h)
+            {
+                _clipGeometry = new RectangleGeometry(new Rect(0, 0, w, h));
+                _clipGeometry.Freeze();
+                _clipW = w;
+                _clipH = h;
+            }
+            dc.PushClip(_clipGeometry);
 
             try
             {
@@ -310,26 +322,57 @@ namespace AmpUp.Controls
 
         // ── Shared helpers (usable from any partial file) ───────────────────
 
-        /// <summary>Fresh SolidColorBrush with the given alpha multiplier.</summary>
+        // Bounded frozen-brush/pen caches — ~30-60 visible tiles at 30 FPS each
+        // draw 5-30 primitives, so uncached helpers allocate 10k+ unfrozen
+        // Freezables/sec. Effects reuse a small color set per frame; a plain
+        // Dictionary with a clear-on-overflow cap keeps lookups cheap without
+        // unbounded growth from animated alpha values.
+        private const int BrushCacheCap = 512;
+        private const int PenCacheCap = 256;
+        private static readonly Dictionary<uint, SolidColorBrush> s_brushCache = new();
+        private static readonly Dictionary<(uint Argb, double Thickness), Pen> s_penCache = new();
+
+        private static SolidColorBrush CachedBrush(byte a, Color c)
+        {
+            uint key = (uint)((a << 24) | (c.R << 16) | (c.G << 8) | c.B);
+            if (s_brushCache.TryGetValue(key, out var brush))
+                return brush;
+            if (s_brushCache.Count >= BrushCacheCap)
+                s_brushCache.Clear();
+            brush = new SolidColorBrush(Color.FromArgb(a, c.R, c.G, c.B));
+            brush.Freeze();
+            s_brushCache[key] = brush;
+            return brush;
+        }
+
+        /// <summary>Frozen SolidColorBrush with the given alpha multiplier (cached).</summary>
         protected static SolidColorBrush Brush(Color c, double alpha = 1.0)
         {
             byte a = (byte)Math.Clamp(alpha * 255.0, 0, 255);
-            return new SolidColorBrush(Color.FromArgb(a, c.R, c.G, c.B));
+            return CachedBrush(a, c);
         }
 
-        /// <summary>Brush with alpha fixed as a byte.</summary>
+        /// <summary>Frozen brush with alpha fixed as a byte (cached).</summary>
         protected static SolidColorBrush BrushA(Color c, byte a)
-            => new(Color.FromArgb(a, c.R, c.G, c.B));
+            => CachedBrush(a, c);
 
         protected static Pen Pen(Color c, double thickness, double alpha = 1.0)
         {
             byte a = (byte)Math.Clamp(alpha * 255.0, 0, 255);
-            var p = new Pen(new SolidColorBrush(Color.FromArgb(a, c.R, c.G, c.B)), thickness)
+            uint argb = (uint)((a << 24) | (c.R << 16) | (c.G << 8) | c.B);
+            var key = (argb, thickness);
+            if (s_penCache.TryGetValue(key, out var pen))
+                return pen;
+            if (s_penCache.Count >= PenCacheCap)
+                s_penCache.Clear();
+            pen = new Pen(CachedBrush(a, c), thickness)
             {
                 StartLineCap = PenLineCap.Round,
                 EndLineCap = PenLineCap.Round,
             };
-            return p;
+            pen.Freeze();
+            s_penCache[key] = pen;
+            return pen;
         }
 
         /// <summary>Linearly scale a color's brightness (0..1+).</summary>

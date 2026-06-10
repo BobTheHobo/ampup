@@ -133,6 +133,23 @@ public class RgbController : IDisposable
     private volatile List<ColorPalette>? _customPalettes;
     private ColorPalette? _globalPalette; // cached for current tick
 
+    // Resolved-palette cache keyed by palette name. Avoids per-LED-per-frame closure
+    // allocations (custom lookup) and ColorPalette.FromTwoColors allocations for
+    // unknown names. Invalidated whenever configs/custom palettes change.
+    private readonly Dictionary<string, ColorPalette> _paletteCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _paletteCacheLock = new();
+
+    // Reusable scratch objects for the render path — the animation renders on the
+    // single refresh-timer callback, so these are mutated per tick instead of
+    // allocating fresh LightConfig/GlobalLightConfig objects at 20 FPS.
+    // They are always populated FROM the live config each tick, never aliased to it.
+    private readonly LightConfig _globalScratchLight = new();   // UpdateEffects global per-knob loop
+    private readonly LightConfig _idleScratchLight = new();     // RenderGlobalAudioBlend idle per-knob loop
+    private readonly LightConfig _blendScratchLight = new();    // RenderGlobalAudioBlend VU palette lookup
+    private readonly GlobalLightConfig _idleScratchGlobal = new(); // RenderGlobalAudioBlend idle spanning config
+    private readonly byte[] _idleLinearScratch = new byte[45];  // RenderGlobalAudioBlend idle frame snapshot
+    private readonly float[] _vuBrightScratch = new float[3];   // RenderGlobalAudioBlend per-knob VU levels
+
     // Transition state
     private ProfileTransition _transitionEffect = ProfileTransition.None;
     private int _transitionTick = -1;  // -1 = no transition active
@@ -394,17 +411,34 @@ public class RgbController : IDisposable
     /// <summary>
     /// Store reference to current light configs (called when config changes).
     /// </summary>
-    public void UpdateConfig(List<LightConfig> lights) => _lights = lights;
+    public void UpdateConfig(List<LightConfig> lights)
+    {
+        _lights = lights;
+        InvalidatePaletteCache();
+    }
 
     /// <summary>
     /// Update the global lighting override config.
     /// </summary>
-    public void UpdateGlobalConfig(GlobalLightConfig? config) => _globalLight = config;
+    public void UpdateGlobalConfig(GlobalLightConfig? config)
+    {
+        _globalLight = config;
+        InvalidatePaletteCache();
+    }
 
     /// <summary>
     /// Set the list of user-created custom palettes (from config).
     /// </summary>
-    public void UpdateCustomPalettes(List<ColorPalette>? palettes) => _customPalettes = palettes;
+    public void UpdateCustomPalettes(List<ColorPalette>? palettes)
+    {
+        _customPalettes = palettes;
+        InvalidatePaletteCache();
+    }
+
+    private void InvalidatePaletteCache()
+    {
+        lock (_paletteCacheLock) _paletteCache.Clear();
+    }
 
     /// <summary>
     /// Resolve a palette by name — checks built-in, then custom, then falls back to
@@ -416,16 +450,56 @@ public class RgbController : IDisposable
         {
             if (BuiltInPalettes.ByName.TryGetValue(name, out var builtIn))
                 return builtIn;
+
+            // Cached resolution — avoids per-LED-per-frame allocations on the render path.
+            lock (_paletteCacheLock)
+            {
+                if (_paletteCache.TryGetValue(name, out var cached))
+                {
+                    // Custom palettes (Name matches the key) are valid until the cache is
+                    // invalidated. Fallback palettes must still match the legacy colors.
+                    if (string.Equals(cached.Name, name, StringComparison.OrdinalIgnoreCase)
+                        || FallbackPaletteMatches(cached, r, g, b, r2, g2, b2))
+                        return cached;
+                }
+            }
+
             var custom = _customPalettes;
             if (custom != null)
             {
-                var found = custom.Find(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
-                if (found != null) return found;
+                for (int i = 0; i < custom.Count; i++)
+                {
+                    if (string.Equals(custom[i].Name, name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        lock (_paletteCacheLock) _paletteCache[name] = custom[i];
+                        return custom[i];
+                    }
+                }
             }
+
+            // Unknown name: cache the legacy 2-color fallback under this name.
+            var fb = ColorPalette.FromTwoColors(r, g, b, r2, g2, b2);
+            lock (_paletteCacheLock) _paletteCache[name] = fb;
+            return fb;
         }
-        // Fallback: legacy 2-color palette
-        return ColorPalette.FromTwoColors(r, g, b, r2, g2, b2);
+        // Fallback: legacy 2-color palette (no name). Cache the last instance so the
+        // once-per-tick global resolution doesn't allocate when colors are unchanged.
+        var legacy = _legacyFallbackPalette;
+        if (legacy == null || !FallbackPaletteMatches(legacy, r, g, b, r2, g2, b2))
+        {
+            legacy = ColorPalette.FromTwoColors(r, g, b, r2, g2, b2);
+            _legacyFallbackPalette = legacy;
+        }
+        return legacy;
     }
+
+    // Last legacy (unnamed) fallback palette — see ResolvePalette.
+    private ColorPalette? _legacyFallbackPalette;
+
+    private static bool FallbackPaletteMatches(ColorPalette p, int r, int g, int b, int r2, int g2, int b2)
+        => p.Stops.Count == 2
+           && p.Stops[0].R == (byte)r && p.Stops[0].G == (byte)g && p.Stops[0].B == (byte)b
+           && p.Stops[1].R == (byte)r2 && p.Stops[1].G == (byte)g2 && p.Stops[1].B == (byte)b2;
 
     /// <summary>
     /// Set or clear the audio bands provider used by the AudioReactive effect.
@@ -443,6 +517,10 @@ public class RgbController : IDisposable
     private static (int r, int g, int b) ScaleColorHsv(int r, int g, int b, float brightnessScale)
     {
         if (r == 0 && g == 0 && b == 0) return (0, 0, 0);
+        // Fast path: at full brightness (scale==1.0, the default at brightness 100)
+        // the HSV round-trip is an identity transform — skip it entirely.
+        if (brightnessScale >= 0.999f)
+            return (Math.Clamp(r, 0, 255), Math.Clamp(g, 0, 255), Math.Clamp(b, 0, 255));
         RgbToHsv(r, g, b, out float h, out float s, out float v);
         v = Math.Clamp(v * brightnessScale, 0f, 1f);
         HsvToRgb(h, s, v, out int ro, out int go, out int bo);
@@ -678,20 +756,20 @@ public class RgbController : IDisposable
 
             for (int k = 0; k < 5; k++)
             {
-                // Map each knob to its palette position for per-knob color
+                // Map each knob to its palette position for per-knob color.
+                // Reuse the scratch config (populated from _globalLight each tick,
+                // never aliased to it) to avoid 5 allocations per tick at 20 FPS.
                 var (kr, kg, kb) = GetGradientColor(_globalLight, k / 4f);
-                var light = new LightConfig
-                {
-                    Idx = k,
-                    Effect = _globalLight.Effect,
-                    R = kr, G = kg, B = kb,
-                    R2 = _globalLight.R2, G2 = _globalLight.G2, B2 = _globalLight.B2,
-                    R3 = _globalLight.R3, G3 = _globalLight.G3, B3 = _globalLight.B3,
-                    R4 = _globalLight.R4, G4 = _globalLight.G4, B4 = _globalLight.B4,
-                    EffectSpeed = _globalLight.EffectSpeed,
-                    ReactiveMode = _globalLight.ReactiveMode,
-                    PaletteName = _globalLight.PaletteName,
-                };
+                var light = _globalScratchLight;
+                light.Idx = k;
+                light.Effect = _globalLight.Effect;
+                light.R = kr; light.G = kg; light.B = kb;
+                light.R2 = _globalLight.R2; light.G2 = _globalLight.G2; light.B2 = _globalLight.B2;
+                light.R3 = _globalLight.R3; light.G3 = _globalLight.G3; light.B3 = _globalLight.B3;
+                light.R4 = _globalLight.R4; light.G4 = _globalLight.G4; light.B4 = _globalLight.B4;
+                light.EffectSpeed = _globalLight.EffectSpeed;
+                light.ReactiveMode = _globalLight.ReactiveMode;
+                light.PaletteName = _globalLight.PaletteName;
                 ApplyEffect(k, light);
             }
             _globalPalette = null;
@@ -1940,16 +2018,16 @@ public class RgbController : IDisposable
         _audioBlendFadeGlobal = fade;
 
         // ── 2. Render idle effect ──
-        var idleGl = new GlobalLightConfig
-        {
-            Enabled = true,
-            Effect = gl.IdleEffect,
-            R = gl.R, G = gl.G, B = gl.B,
-            R2 = gl.R2, G2 = gl.G2, B2 = gl.B2,
-            EffectSpeed = gl.EffectSpeed,
-            ReactiveMode = gl.ReactiveMode,
-            PaletteName = gl.PaletteName,
-        };
+        // Reuse scratch configs (populated from gl each tick, never aliased to it)
+        // to avoid per-tick allocations at 20 FPS.
+        var idleGl = _idleScratchGlobal;
+        idleGl.Enabled = true;
+        idleGl.Effect = gl.IdleEffect;
+        idleGl.R = gl.R; idleGl.G = gl.G; idleGl.B = gl.B;
+        idleGl.R2 = gl.R2; idleGl.G2 = gl.G2; idleGl.B2 = gl.B2;
+        idleGl.EffectSpeed = gl.EffectSpeed;
+        idleGl.ReactiveMode = gl.ReactiveMode;
+        idleGl.PaletteName = gl.PaletteName;
 
         if (SpanningEffects.Contains(gl.IdleEffect))
             ApplyGlobalSpanEffect(idleGl);
@@ -1958,14 +2036,12 @@ public class RgbController : IDisposable
             for (int k = 0; k < 5; k++)
             {
                 var (kr, kg, kb) = GetGradientColor(gl, k / 4f);
-                var light = new LightConfig
-                {
-                    Idx = k, Effect = gl.IdleEffect,
-                    R = kr, G = kg, B = kb,
-                    R2 = gl.R2, G2 = gl.G2, B2 = gl.B2,
-                    EffectSpeed = gl.EffectSpeed,
-                    PaletteName = gl.PaletteName,
-                };
+                var light = _idleScratchLight;
+                light.Idx = k; light.Effect = gl.IdleEffect;
+                light.R = kr; light.G = kg; light.B = kb;
+                light.R2 = gl.R2; light.G2 = gl.G2; light.B2 = gl.B2;
+                light.EffectSpeed = gl.EffectSpeed;
+                light.PaletteName = gl.PaletteName;
                 ApplyEffect(k, light);
             }
         }
@@ -1975,24 +2051,26 @@ public class RgbController : IDisposable
             return;
 
         // Capture idle frame (linear pre-gamma colors used by OnFrameReady)
-        byte[] idleLinear = new byte[45];
+        byte[] idleLinear = _idleLinearScratch;
         Array.Copy(_linearColors, idleLinear, 45);
 
         // ── 3. Render audio reactive (SpectrumBands per knob) ──
         float sensitivity = gl.EffectSpeed / 50f;
+        // Palette-lookup config is constant across the loops — populate once.
+        var blendLight = _blendScratchLight;
+        blendLight.R = gl.R; blendLight.G = gl.G; blendLight.B = gl.B;
+        blendLight.R2 = gl.R2; blendLight.G2 = gl.G2; blendLight.B2 = gl.B2;
+        blendLight.PaletteName = gl.PaletteName;
+        float[] vuBright = _vuBrightScratch;
         for (int k = 0; k < 5; k++)
         {
             float level = hasAudio ? Math.Clamp(bands![Math.Clamp(k, 0, 4)] * sensitivity, 0f, 1f) : 0f;
-            float[] vuBright = {
-                Math.Clamp(level * 3f, 0f, 1f),
-                Math.Clamp((level - 0.33f) * 3f, 0f, 1f),
-                Math.Clamp((level - 0.66f) * 3f, 0f, 1f),
-            };
+            vuBright[0] = Math.Clamp(level * 3f, 0f, 1f);
+            vuBright[1] = Math.Clamp((level - 0.33f) * 3f, 0f, 1f);
+            vuBright[2] = Math.Clamp((level - 0.66f) * 3f, 0f, 1f);
             for (int led = 0; led < 3; led++)
             {
-                var (cr, cg, cb) = GetKnobPaletteColor(
-                    new LightConfig { R = gl.R, G = gl.G, B = gl.B, R2 = gl.R2, G2 = gl.G2, B2 = gl.B2, PaletteName = gl.PaletteName },
-                    vuBright[led]);
+                var (cr, cg, cb) = GetKnobPaletteColor(blendLight, vuBright[led]);
                 SetColor(k, led, (int)(cr * vuBright[led]), (int)(cg * vuBright[led]), (int)(cb * vuBright[led]));
             }
         }

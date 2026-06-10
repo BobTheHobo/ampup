@@ -81,7 +81,8 @@ public class TrayMixerPopup : Window
         Button MuteBtn,
         Border? PeakBar = null,
         Border? RowBorder = null,
-        bool IsSystemSounds = false
+        bool IsSystemSounds = false,
+        ScaleTransform? PeakScale = null
     );
 
     public TrayMixerPopup()
@@ -595,12 +596,13 @@ public class TrayMixerPopup : Window
                     bool muted = row.Session.SimpleAudioVolume.Mute;
                     UpdateMuteButton(row.MuteBtn, muted);
 
-                    // Update peak activity bar
-                    if (row.PeakBar != null)
+                    // Update peak activity bar — drive the full-width fill via
+                    // ScaleTransform.ScaleX (composition-side) instead of
+                    // animating Width, which re-runs layout every 100ms tick.
+                    if (row.PeakScale != null)
                     {
                         float peak = row.Session.AudioMeterInformation.MasterPeakValue;
-                        double maxWidth = row.VolumeSlider.ActualWidth > 0 ? row.VolumeSlider.ActualWidth : 140;
-                        row.PeakBar.Width = peak * maxWidth;
+                        row.PeakScale.ScaleX = Math.Clamp(peak, 0f, 1f);
                     }
                 }
                 catch { }
@@ -1895,18 +1897,23 @@ public class TrayMixerPopup : Window
 
             var slider = BuildVolumeSlider(vol * 100);
 
-            // Audio activity bar — 3px tall, rounded, full width of row
+            // Audio activity bar — 3px tall, rounded, full width of row.
+            // The fill is full-width and scaled via ScaleTransform.ScaleX from
+            // PollVolumes — render-only, no per-tick layout pass.
+            var peakBrush = new SolidColorBrush(Color.FromArgb(0xCC, iconColor.R, iconColor.G, iconColor.B));
+            peakBrush.Freeze();
+            var peakScale = new ScaleTransform(0, 1);
             var peakBar = new Border
             {
                 Height = 3,
                 CornerRadius = new CornerRadius(1.5),
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Width = 0,
                 Margin = new Thickness(0, 2, 0, 0),
-                Background = new SolidColorBrush(Color.FromArgb(0xCC, iconColor.R, iconColor.G, iconColor.B)),
+                Background = peakBrush,
+                RenderTransform = peakScale,
+                RenderTransformOrigin = new Point(0, 0.5),
             };
 
-            _rows.Add(new SessionRow(processName, session, slider, volLabel, muteBtn, peakBar, row));
+            _rows.Add(new SessionRow(processName, session, slider, volLabel, muteBtn, peakBar, row, PeakScale: peakScale));
             slider.ValueChanged += (_, e) =>
             {
                 if (_updatingFromPoll) return;
@@ -2017,17 +2024,20 @@ public class TrayMixerPopup : Window
 
             var slider = BuildVolumeSlider(vol * 100);
 
+            var peakBrush = new SolidColorBrush(Color.FromArgb(0xCC, iconColor.R, iconColor.G, iconColor.B));
+            peakBrush.Freeze();
+            var peakScale = new ScaleTransform(0, 1);
             var peakBar = new Border
             {
                 Height = 3,
                 CornerRadius = new CornerRadius(1.5),
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Width = 0,
                 Margin = new Thickness(0, 2, 0, 0),
-                Background = new SolidColorBrush(Color.FromArgb(0xCC, iconColor.R, iconColor.G, iconColor.B)),
+                Background = peakBrush,
+                RenderTransform = peakScale,
+                RenderTransformOrigin = new Point(0, 0.5),
             };
 
-            _rows.Add(new SessionRow("System Sounds", session, slider, volLabel, muteBtn, peakBar, row, IsSystemSounds: true));
+            _rows.Add(new SessionRow("System Sounds", session, slider, volLabel, muteBtn, peakBar, row, IsSystemSounds: true, PeakScale: peakScale));
 
             slider.ValueChanged += (_, e) =>
             {

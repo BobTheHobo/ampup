@@ -66,8 +66,22 @@ public partial class App : Application
     private DateTime _lastHardwareMetricTick = DateTime.MinValue;
     private readonly int[] _lastKnobRaw = new int[5];
     private readonly Dictionary<int, N3AnimatedKeyState> _n3AnimatedKeys = new();
+    // Pre-sorted snapshot of _n3AnimatedKeys — rebuilt only when the dictionary
+    // mutates so the 80ms animated tick doesn't allocate an OrderBy per frame.
+    private KeyValuePair<int, N3AnimatedKeyState>[] _n3AnimatedKeysSorted =
+        Array.Empty<KeyValuePair<int, N3AnimatedKeyState>>();
     private HardwareMonitorService? _hardwareMonitor;
     private readonly SemaphoreSlim _n3DisplayWriteGate = new(1, 1);
+    // Per-slot content signature from the last display sync. A slot is only
+    // re-composed/encoded/sent when its signature changes (clock string,
+    // hardware metric value, dynamic state etc. are baked into the signature
+    // so dynamic keys still repaint exactly when their content changes).
+    private readonly string?[] _n3LastSlotSignature = new string?[N3Controller.DisplayKeyCount];
+    // OnConfigChanged gates: skip the HA HTTP test + full N3 resync when the
+    // relevant config subsections didn't actually change since the last call.
+    private string? _lastHaTestKey;
+    private string? _lastN3ConfigSignature;
+    private int _lastN3AppliedBrightness = -1;
     private const int N3DisplayKeyBase = 100;
     private const int N3SideButtonBase = 10000;
     private const int N3EncoderPressBase = 10003;
@@ -264,7 +278,7 @@ public partial class App : Application
         _signalRgbBridge.UpdateConfig(_config.SignalRgb);
 
         _n3 = new N3Controller();
-        _n3.OnInput += e => QueueHardwareInput($"N3 {e.Describe()}", () => HandleN3Input(e));
+        _n3.OnInput += e => QueueHardwareInput(() => $"N3 {e.Describe()}", () => HandleN3Input(e));
         _n3.OnConnectionChanged += HandleN3ConnectionChanged;
 
         // Let the display renderer resolve dynamic-state sources without
@@ -430,8 +444,8 @@ public partial class App : Application
 
         // Start serial reader
         _serial = new SerialReader(_config.Serial.Port, _config.Serial.Baud);
-        _serial.OnKnob += e => QueueHardwareInput($"Turn Up knob {e.Idx}{(e.IsBatch ? " batch" : "")} value={e.Value}", () => HandleKnob(e));
-        _serial.OnButton += e => QueueHardwareInput($"Turn Up button {e.Idx} {(e.IsDown ? "down" : "up")}", () => HandleButton(e));
+        _serial.OnKnob += e => QueueHardwareInput(() => $"Turn Up knob {e.Idx}{(e.IsBatch ? " batch" : "")} value={e.Value}", () => HandleKnob(e));
+        _serial.OnButton += e => QueueHardwareInput(() => $"Turn Up button {e.Idx} {(e.IsDown ? "down" : "up")}", () => HandleButton(e));
         _serial.OnConnectionChanged += HandleConnection;
         _startupTick = Environment.TickCount64; // reset just before serial starts
         _serial.Start();
@@ -893,6 +907,7 @@ public partial class App : Application
         {
             _n3.Wake();
             _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
+            ResetN3SlotSignatureCache();
             Dispatcher.BeginInvoke(() =>
             {
                 try { SyncStreamControllerDisplays(); }
@@ -1201,53 +1216,82 @@ public partial class App : Application
     /// Connected = full color, disconnected = grayscale.
     /// Draws current master volume % (or "M" if muted) as small white text in the bottom-right.
     /// </summary>
-    private Icon CreateTrayIcon(bool connected)
+    // Cached 32x32 base bitmaps (color + grayscale) — the source asset is an
+    // embedded resource that never changes at runtime, so decode/scale/grayscale
+    // happen exactly once instead of on every master-volume notification.
+    private Bitmap? _trayBaseBitmap;
+    private Bitmap? _trayBaseBitmapGray;
+    // Last-rendered overlay text + connection variant — identical renders are skipped.
+    private string? _lastTrayIconText;
+    private bool _lastTrayIconConnected;
+    private bool _trayIconRendered;
+    private long _lastTrayIconRenderTick;
+    private System.Windows.Threading.DispatcherTimer? _trayIconTrailingTimer;
+    private const int TrayIconUpdateThrottleMs = 100;
+
+    private Bitmap GetTrayBaseBitmap(bool connected)
     {
-        // Load logo from embedded WPF resource
-        var uri = new Uri("pack://application:,,,/Assets/icon/ampup-32.png", UriKind.Absolute);
-        var stream = System.Windows.Application.GetResourceStream(uri)?.Stream;
+        if (_trayBaseBitmap == null)
+        {
+            // Load logo from embedded WPF resource
+            var uri = new Uri("pack://application:,,,/Assets/icon/ampup-32.png", UriKind.Absolute);
+            var stream = System.Windows.Application.GetResourceStream(uri)?.Stream;
 
-        Bitmap original;
-        if (stream != null)
-        {
-            original = new Bitmap(stream);
-            stream.Dispose();
-        }
-        else
-        {
-            // Fallback: solid green square
-            original = new Bitmap(32, 32);
-            using var g = Graphics.FromImage(original);
-            g.Clear(Color.FromArgb(ThemeManager.Accent.R, ThemeManager.Accent.G, ThemeManager.Accent.B));
+            Bitmap original;
+            if (stream != null)
+            {
+                original = new Bitmap(stream);
+                stream.Dispose();
+            }
+            else
+            {
+                // Fallback: solid green square
+                original = new Bitmap(32, 32);
+                using var g = Graphics.FromImage(original);
+                g.Clear(Color.FromArgb(ThemeManager.Accent.R, ThemeManager.Accent.G, ThemeManager.Accent.B));
+            }
+
+            // Resize to 32x32
+            var bmp = new Bitmap(32, 32);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                g.Clear(Color.Transparent);
+                g.DrawImage(original, 0, 0, 32, 32);
+            }
+            original.Dispose();
+            _trayBaseBitmap = bmp;
         }
 
-        // Resize to 32x32
-        var bmp = new Bitmap(32, 32);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            g.Clear(Color.Transparent);
-            g.DrawImage(original, 0, 0, 32, 32);
-        }
-        original.Dispose();
+        if (connected) return _trayBaseBitmap;
 
-        // If disconnected, convert to grayscale
-        if (!connected)
+        if (_trayBaseBitmapGray == null)
         {
+            var gray32 = (Bitmap)_trayBaseBitmap.Clone();
             for (int y = 0; y < 32; y++)
             for (int x = 0; x < 32; x++)
             {
-                var px = bmp.GetPixel(x, y);
+                var px = gray32.GetPixel(x, y);
                 int gray = (int)(px.R * 0.3 + px.G * 0.59 + px.B * 0.11);
-                bmp.SetPixel(x, y, Color.FromArgb(px.A, gray, gray, gray));
+                gray32.SetPixel(x, y, Color.FromArgb(px.A, gray, gray, gray));
             }
+            _trayBaseBitmapGray = gray32;
         }
+
+        return _trayBaseBitmapGray;
+    }
+
+    private Icon CreateTrayIcon(bool connected)
+    {
+        string volText = _trayMuted ? "M" : $"{(int)Math.Round(_trayVolume * 100)}";
+
+        // Working copy of the cached base — text overlay is drawn per render.
+        var bmp = (Bitmap)GetTrayBaseBitmap(connected).Clone();
 
         // Draw volume % or "M" (muted) in bottom-right corner
         try
         {
-            string volText = _trayMuted ? "M" : $"{(int)Math.Round(_trayVolume * 100)}";
             using var g = Graphics.FromImage(bmp);
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
@@ -1269,28 +1313,78 @@ public partial class App : Application
         var result = (Icon)icon.Clone();
         NativeMethods.DestroyIcon(hIcon);
         bmp.Dispose();
+
+        // Record what's now showing so volume notifications can skip
+        // re-renders that would produce a pixel-identical icon.
+        _lastTrayIconText = volText;
+        _lastTrayIconConnected = connected;
+        _trayIconRendered = true;
         return result;
     }
 
     /// <summary>
     /// Updates tray icon with current volume/mute state. Called from volume notifications.
+    /// Throttled to ~100ms (last-value-wins, with a trailing render so the final
+    /// value always lands) and skipped entirely when the rendered text + connection
+    /// variant are unchanged.
     /// </summary>
     private void UpdateTrayIconVolume(float volume, bool muted)
     {
         _trayVolume = volume;
         _trayMuted = muted;
         if (_trayIcon == null) return;
-        Dispatcher.BeginInvoke(() =>
+        Dispatcher.BeginInvoke(ScheduleTrayIconVolumeRender);
+    }
+
+    // UI thread only.
+    private void ScheduleTrayIconVolumeRender()
+    {
+        try
         {
-            try
+            long elapsed = Environment.TickCount64 - _lastTrayIconRenderTick;
+            if (elapsed >= TrayIconUpdateThrottleMs)
             {
-                var oldIcon = _trayIcon?.Icon;
-                if (_trayIcon != null)
-                    _trayIcon.Icon = CreateTrayIcon(_isConnected || _isN3Connected);
-                oldIcon?.Dispose();
+                RenderTrayIconVolume();
+                return;
             }
-            catch { }
-        });
+
+            // Inside the throttle window — arm a trailing render that picks up
+            // the latest _trayVolume/_trayMuted so the icon never sticks on a
+            // stale percent.
+            if (_trayIconTrailingTimer == null)
+            {
+                _trayIconTrailingTimer = new System.Windows.Threading.DispatcherTimer();
+                _trayIconTrailingTimer.Tick += (_, _) =>
+                {
+                    _trayIconTrailingTimer?.Stop();
+                    RenderTrayIconVolume();
+                };
+            }
+            _trayIconTrailingTimer.Stop();
+            _trayIconTrailingTimer.Interval = TimeSpan.FromMilliseconds(
+                Math.Max(1, TrayIconUpdateThrottleMs - elapsed));
+            _trayIconTrailingTimer.Start();
+        }
+        catch { }
+    }
+
+    // UI thread only.
+    private void RenderTrayIconVolume()
+    {
+        try
+        {
+            if (_trayIcon == null) return;
+            bool connected = _isConnected || _isN3Connected;
+            string volText = _trayMuted ? "M" : $"{(int)Math.Round(_trayVolume * 100)}";
+            if (_trayIconRendered && volText == _lastTrayIconText && connected == _lastTrayIconConnected)
+                return; // identical icon already showing — skip the GDI rebuild
+
+            _lastTrayIconRenderTick = Environment.TickCount64;
+            var oldIcon = _trayIcon.Icon;
+            _trayIcon.Icon = CreateTrayIcon(connected);
+            oldIcon?.Dispose();
+        }
+        catch { }
     }
 
     private void OnConfigChanged(AppConfig config)
@@ -1306,7 +1400,21 @@ public partial class App : Application
         {
             _ha.UpdateConfig(_config.HomeAssistant);
             if (_config.HomeAssistant.Enabled)
-                _ = _ha.TestConnectionAsync();
+            {
+                // Only fire the live HTTP test when the HA settings actually
+                // changed — or when the last test failed, so a save can still
+                // recover a connection (matches the old retry-on-save behavior).
+                string haKey = $"{_config.HomeAssistant.Url}|{_config.HomeAssistant.Token}";
+                if (haKey != _lastHaTestKey || !_ha.IsAvailable)
+                {
+                    _lastHaTestKey = haKey;
+                    _ = _ha.TestConnectionAsync();
+                }
+            }
+            else
+            {
+                _lastHaTestKey = null; // re-test on next enable
+            }
         }
         _obs?.UpdateConfig(_config.Obs);
         // VoiceMeeter: connect/disconnect based on enabled state
@@ -1339,8 +1447,43 @@ public partial class App : Application
         ConfigureMutePollingTimer();
         if (_n3 != null && _isN3Connected)
         {
-            _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
-            SyncStreamControllerDisplays();
+            // Gate the brightness write + full display resync on the N3
+            // subsection (or HardwareMode) actually changing — every 300ms
+            // debounced save from ANY view used to re-render all six LCDs.
+            string n3Signature = ComputeN3ConfigSignature();
+            if (n3Signature != _lastN3ConfigSignature)
+            {
+                _lastN3ConfigSignature = n3Signature;
+                _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
+                // Brightness changes are device-level (no pixel change), but
+                // force a full repaint after one so the panel state is known-good.
+                // Content-only edits rely on the per-slot signature diff instead.
+                if (_config.N3.DisplayBrightness != _lastN3AppliedBrightness)
+                {
+                    _lastN3AppliedBrightness = _config.N3.DisplayBrightness;
+                    ResetN3SlotSignatureCache();
+                }
+                SyncStreamControllerDisplays();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Cheap change-detection signature for the N3-relevant config (keys,
+    /// buttons, folders, paging, brightness) plus HardwareMode, which gates
+    /// whether displays render at all.
+    /// </summary>
+    private string ComputeN3ConfigSignature()
+    {
+        try
+        {
+            return _config.HardwareMode + "|" + Newtonsoft.Json.JsonConvert.SerializeObject(_config.N3);
+        }
+        catch
+        {
+            // Serialization failure — return a unique value so the resync
+            // still happens rather than silently skipping.
+            return Guid.NewGuid().ToString();
         }
     }
 
@@ -1363,7 +1506,10 @@ public partial class App : Application
         return mask;
     }
 
-    private void QueueHardwareInput(string source, Action action)
+    // Takes a description FACTORY instead of a pre-built string — the
+    // interpolated source text is only materialized in the sampled-log /
+    // error / slow-handler branches, not on every knob tick.
+    private void QueueHardwareInput(Func<string> describeSource, Action action)
     {
         long now = Environment.TickCount64;
         Interlocked.Exchange(ref _lastHardwareActivityTick, now);
@@ -1372,25 +1518,25 @@ public partial class App : Application
         if (now - lastLog >= HardwareInputSampleLogMs
             && Interlocked.CompareExchange(ref _lastHardwareInputLogTick, now, lastLog) == lastLog)
         {
-            Logger.Log($"Hardware input received: {source}");
+            Logger.Log($"Hardware input received: {describeSource()}");
         }
 
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            var sw = System.Diagnostics.Stopwatch.StartNew();
+            long startTick = Environment.TickCount64;
             try
             {
                 action();
             }
             catch (Exception ex)
             {
-                Logger.Log($"Hardware input handler failed ({source}): {ex.Message}");
+                Logger.Log($"Hardware input handler failed ({describeSource()}): {ex.Message}");
             }
             finally
             {
-                sw.Stop();
-                if (sw.ElapsedMilliseconds >= HardwareInputSlowLogMs)
-                    Logger.Log($"Hardware input handler slow ({source}): {sw.ElapsedMilliseconds}ms");
+                long elapsedMs = Environment.TickCount64 - startTick;
+                if (elapsedMs >= HardwareInputSlowLogMs)
+                    Logger.Log($"Hardware input handler slow ({describeSource()}): {elapsedMs}ms");
             }
         });
     }
@@ -1941,6 +2087,7 @@ public partial class App : Application
                 _n3.Wake();
                 _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
                 _n3AsleepFromIdle = false;
+                ResetN3SlotSignatureCache();
                 SyncStreamControllerDisplays();
             }
             catch (Exception ex)
@@ -2155,7 +2302,11 @@ public partial class App : Application
         if (!connected)
         {
             _n3AnimatedKeys.Clear();
+            RebuildAnimatedN3Snapshot();
             _n3AsleepFromIdle = false;
+            // Device-side LCD state is gone — make sure the next sync after a
+            // reconnect repaints every slot instead of trusting stale signatures.
+            ResetN3SlotSignatureCache();
             Logger.Log($"N3: disconnected{(string.IsNullOrWhiteSpace(deviceName) ? "" : $" ({deviceName})")}");
         }
 
@@ -2351,6 +2502,7 @@ public partial class App : Application
         if (_n3 != null && _isN3Connected)
         {
             _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
+            ResetN3SlotSignatureCache();
             SyncStreamControllerDisplays();
         }
 
@@ -2430,6 +2582,7 @@ public partial class App : Application
                 _n3DeviceName = _n3!.DeviceName;
                 Logger.Log("N3: native HID bring-up active");
                 _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
+                ResetN3SlotSignatureCache();
 
                 Dispatcher.BeginInvoke(() =>
                 {
@@ -2542,6 +2695,7 @@ public partial class App : Application
                 {
                     _n3.Wake();
                     _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
+                    ResetN3SlotSignatureCache();
                     SyncStreamControllerDisplays();
                     _n3AsleepFromIdle = false;
                 }
@@ -2635,6 +2789,7 @@ public partial class App : Application
                 _n3AsleepFromIdle = false;
                 _forceN3Sleep = false;
                 _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
+                ResetN3SlotSignatureCache();
 
                 Dispatcher.BeginInvoke(() =>
                 {
@@ -2707,6 +2862,7 @@ public partial class App : Application
 
         _currentN3Folder = folderName;
         _config.N3.CurrentPage = 0;
+        ResetN3SlotSignatureCache();
 
         Dispatcher.BeginInvoke(() =>
         {
@@ -2838,8 +2994,11 @@ public partial class App : Application
                 if (showBackKey && i == 0)
                 {
                     RemoveAnimatedN3Slot(i);
+                    string backSig = $"BACK|{_currentN3Folder}";
+                    if (_n3LastSlotSignature[i] == backSig) continue;
                     var backKey = BuildBackKeyDisplay();
                     ops.Add((i, StreamControllerDisplayRenderer.ComposeDeviceBitmap(backKey), null, false));
+                    _n3LastSlotSignature[i] = backSig;
                     continue;
                 }
 
@@ -2852,8 +3011,12 @@ public partial class App : Application
                     bool drawSpanTitle = StreamControllerDisplayRenderer.ShouldDrawSpotifySpanTitle(
                         spotifySpanMaster, activeKeys, pageOffset);
                     RemoveAnimatedN3Slot(i);
+                    string spanSig = $"SPAN|{i}|{drawSpanTitle}|{BuildN3SlotContentSignature(spotifySpanMaster)}"
+                                     + $"||{BuildN3SlotContentSignature(overlayKey)}";
+                    if (_n3LastSlotSignature[i] == spanSig) continue;
                     ops.Add((i, StreamControllerDisplayRenderer.ComposeSpotifyAlbumArtDeviceBitmap(
                         spotifySpanMaster, overlayKey, i, drawSpanTitle), null, false));
+                    _n3LastSlotSignature[i] = spanSig;
                     continue;
                 }
 
@@ -2861,7 +3024,9 @@ public partial class App : Application
                 if (key == null)
                 {
                     RemoveAnimatedN3Slot(i);
+                    if (_n3LastSlotSignature[i] == "EMPTY") continue;
                     ops.Add((i, null, null, true));
+                    _n3LastSlotSignature[i] = "EMPTY";
                     continue;
                 }
 
@@ -2877,7 +3042,13 @@ public partial class App : Application
                 if (TryGetAnimatedN3State(i, key, buildIfMissing: false, out var animatedState))
                 {
                     activeAnimatedSlots.Add(i);
+                    // Frame advancement is owned by TrySyncAnimatedN3Displays —
+                    // only (re)send the current frame here when the slot's
+                    // animation changed or the cache was reset (wake/reconnect).
+                    string animSig = $"ANIM|{animatedState.Signature}";
+                    if (_n3LastSlotSignature[i] == animSig) continue;
                     ops.Add((i, null, animatedState.CurrentFrame, false));
+                    _n3LastSlotSignature[i] = animSig;
                     continue;
                 }
 
@@ -2898,67 +3069,86 @@ public partial class App : Application
 
                 if (!hasImage && !hasPreset && !hasText && !rendersWithoutNormalContent)
                 {
+                    if (_n3LastSlotSignature[i] == "EMPTY") continue;
                     ops.Add((i, null, null, true));
+                    _n3LastSlotSignature[i] = "EMPTY";
                     continue;
                 }
 
+                // Content signature includes the RESOLVED dynamic content
+                // (formatted clock string, hardware metric value, dynamic
+                // state, Spotify track) so clocks etc. still repaint exactly
+                // when their displayed content changes — and static keys stop
+                // burning a WPF render + JPEG encode + HID write every tick.
+                string sig = BuildN3SlotContentSignature(key);
+                if (_n3LastSlotSignature[i] == sig) continue;
+
                 ops.Add((i, StreamControllerDisplayRenderer.ComposeDeviceBitmap(key), null, false));
+                _n3LastSlotSignature[i] = sig;
             }
             catch (Exception ex)
             {
                 Logger.Log($"Stream Controller compose failed for slot {i}: {ex.Message}");
                 RemoveAnimatedN3Slot(i);
                 ops.Add((i, null, null, true));
+                _n3LastSlotSignature[i] = null; // retry on next sync
             }
         }
 
         RemoveStaleAnimatedN3Slots(activeAnimatedSlots);
 
-        var n3 = _n3;
-        _ = Task.Run(async () =>
+        // No slot changed — skip the encode/send task AND the display commit.
+        if (ops.Count > 0)
         {
-            try
+            var n3 = _n3;
+            _ = Task.Run(async () =>
             {
-                await _n3DisplayWriteGate.WaitAsync().ConfigureAwait(false);
-
-                foreach (var (slot, bitmap, encodedFrame, clear) in ops)
+                try
                 {
-                    if (clear)
-                    {
-                        n3.ClearDisplay(slot, commit: false);
-                        continue;
-                    }
+                    await _n3DisplayWriteGate.WaitAsync().ConfigureAwait(false);
 
-                    if (encodedFrame != null)
+                    foreach (var (slot, bitmap, encodedFrame, clear) in ops)
                     {
-                        n3.SendDisplayImage(slot, encodedFrame, commit: false);
-                        continue;
-                    }
+                        if (clear)
+                        {
+                            n3.ClearDisplay(slot, commit: false);
+                            continue;
+                        }
 
-                    if (bitmap != null)
-                    {
-                        byte[] jpeg;
-                        try { jpeg = StreamControllerDisplayRenderer.EncodeDeviceBitmap(bitmap); }
-                        finally { bitmap.Dispose(); }
+                        if (encodedFrame != null)
+                        {
+                            n3.SendDisplayImage(slot, encodedFrame, commit: false);
+                            continue;
+                        }
 
-                        n3.SendDisplayImage(slot, jpeg, commit: false);
+                        if (bitmap != null)
+                        {
+                            byte[] jpeg;
+                            try { jpeg = StreamControllerDisplayRenderer.EncodeDeviceBitmap(bitmap); }
+                            finally { bitmap.Dispose(); }
+
+                            n3.SendDisplayImage(slot, jpeg, commit: false);
+                        }
                     }
+                    n3.CommitDisplayChanges();
                 }
-                n3.CommitDisplayChanges();
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"Stream Controller display sync failed: {ex.Message}");
-                // Ensure bitmaps don't leak if we bail mid-loop.
-                foreach (var (_, bitmap, _, _) in ops)
-                    bitmap?.Dispose();
-            }
-            finally
-            {
-                if (_n3DisplayWriteGate.CurrentCount == 0)
-                    _n3DisplayWriteGate.Release();
-            }
-        });
+                catch (Exception ex)
+                {
+                    Logger.Log($"Stream Controller display sync failed: {ex.Message}");
+                    // Ensure bitmaps don't leak if we bail mid-loop.
+                    foreach (var (_, bitmap, _, _) in ops)
+                        bitmap?.Dispose();
+                    // Device state is now unknown — drop the signature cache so
+                    // the next sync re-sends every slot instead of skipping.
+                    _ = Dispatcher.BeginInvoke(ResetN3SlotSignatureCache);
+                }
+                finally
+                {
+                    if (_n3DisplayWriteGate.CurrentCount == 0)
+                        _n3DisplayWriteGate.Release();
+                }
+            });
+        }
 
         if (deferredAnimations.Count > 0)
         {
@@ -2978,7 +3168,7 @@ public partial class App : Application
             var dueFrames = new List<(int slot, byte[] frame)>();
             var nowUtc = DateTime.UtcNow;
 
-            foreach (var kvp in _n3AnimatedKeys.OrderBy(k => k.Key))
+            foreach (var kvp in _n3AnimatedKeysSorted)
             {
                 if (kvp.Value.TryAdvance(nowUtc, out var nextFrame) && nextFrame != null)
                 {
@@ -3043,6 +3233,7 @@ public partial class App : Application
 
         state = N3AnimatedKeyState.Create(signature, animation);
         _n3AnimatedKeys[slot] = state;
+        RebuildAnimatedN3Snapshot();
         UpdateStreamControllerRefreshCadence();
         return true;
     }
@@ -3073,6 +3264,7 @@ public partial class App : Application
 
         if (added)
         {
+            RebuildAnimatedN3Snapshot();
             UpdateStreamControllerRefreshCadence();
             TrySyncAnimatedN3Displays();
         }
@@ -3086,13 +3278,138 @@ public partial class App : Application
             _n3AnimatedKeys.Remove(slot);
         }
         if (staleSlots.Length > 0)
+        {
+            RebuildAnimatedN3Snapshot();
             UpdateStreamControllerRefreshCadence();
+        }
     }
 
     private void RemoveAnimatedN3Slot(int slot)
     {
         if (_n3AnimatedKeys.Remove(slot))
+        {
+            RebuildAnimatedN3Snapshot();
             UpdateStreamControllerRefreshCadence();
+        }
+    }
+
+    /// <summary>Refresh the pre-sorted snapshot used by the 80ms animated tick.
+    /// Must be called after every _n3AnimatedKeys mutation.</summary>
+    private void RebuildAnimatedN3Snapshot()
+    {
+        _n3AnimatedKeysSorted = _n3AnimatedKeys.OrderBy(k => k.Key).ToArray();
+    }
+
+    /// <summary>
+    /// Forget the last-sent per-slot content. The next SyncStreamControllerDisplays
+    /// re-composes and re-sends every slot. Call whenever the device-side LCD state
+    /// is unknown or about to be invalidated: wake from sleep, reconnect, profile
+    /// switch, folder/page navigation, brightness/config resync.
+    /// </summary>
+    private void ResetN3SlotSignatureCache()
+    {
+        Array.Clear(_n3LastSlotSignature, 0, _n3LastSlotSignature.Length);
+    }
+
+    /// <summary>
+    /// Full content signature for one LCD slot — all render-relevant config
+    /// fields PLUS the resolved dynamic content (formatted clock string,
+    /// hardware metric reading, dynamic state, Spotify track/art). Two equal
+    /// signatures are guaranteed to produce identical device frames, so
+    /// unchanged slots can skip compose + encode + HID write entirely.
+    /// </summary>
+    private string BuildN3SlotContentSignature(StreamControllerDisplayKeyConfig key)
+    {
+        long lastWriteTicks = 0;
+        if (!string.IsNullOrWhiteSpace(key.ImagePath) && File.Exists(key.ImagePath))
+            lastWriteTicks = File.GetLastWriteTimeUtc(key.ImagePath).Ticks;
+
+        var sb = new StringBuilder(320);
+        sb.Append(_currentN3Folder).Append('|')
+          .Append(_config.N3.CurrentPage).Append('|')
+          .Append(key.DisplayType).Append('|')
+          .Append(key.ImagePath).Append('|')
+          .Append(lastWriteTicks).Append('|')
+          .Append(key.PresetIconKind).Append('|')
+          .Append(key.Title).Append('|')
+          .Append(key.Subtitle).Append('|')
+          .Append(key.BackgroundColor).Append('|')
+          .Append(key.AccentColor).Append('|')
+          .Append(key.TextPosition).Append('|')
+          .Append(key.TextSize).Append('|')
+          .Append(key.TextColor).Append('|')
+          .Append(key.IconColor).Append('|')
+          .Append(key.FontFamily).Append('|')
+          .Append(key.Brightness);
+
+        switch (key.DisplayType)
+        {
+            case DisplayKeyType.Clock:
+            {
+                // Mirror ResolveEffectiveKey's clock formatting exactly so the
+                // signature flips precisely when the displayed string would
+                // (e.g. minute rollover).
+                string fmt = string.IsNullOrWhiteSpace(key.ClockFormat) ? "HH:mm" : key.ClockFormat;
+                string rendered;
+                try { rendered = DateTime.Now.ToString(fmt); }
+                catch { rendered = DateTime.Now.ToString("HH:mm"); }
+                sb.Append("|clock:").Append(rendered);
+                break;
+            }
+            case DisplayKeyType.HardwareMonitor:
+            {
+                sb.Append("|hw:").Append(key.HardwareMetricSource).Append('|')
+                  .Append(key.HardwareMetricLabel).Append('|')
+                  .Append(key.HardwareMetricLabelSize).Append('|')
+                  .Append(key.HardwareMetricLabelColor).Append('|')
+                  .Append(key.HardwareMetricLayout);
+                try
+                {
+                    var metric = StreamControllerDisplayRenderer.HardwareMetricProvider?.Invoke(key.HardwareMetricSource);
+                    if (metric.HasValue)
+                        sb.Append('|').Append(metric.Value.Label).Append('|')
+                          .Append(metric.Value.ValueText).Append('|')
+                          .Append(metric.Value.IsAvailable);
+                }
+                catch { sb.Append("|hw-err"); }
+                break;
+            }
+            case DisplayKeyType.DynamicState:
+            {
+                bool active = false;
+                try { active = StreamControllerDisplayRenderer.DynamicStateResolver?.Invoke(key.DynamicStateSource) ?? false; }
+                catch { }
+                sb.Append("|dyn:").Append(key.DynamicStateSource).Append('|')
+                  .Append(active).Append('|')
+                  .Append(key.DynamicStateActiveIcon).Append('|')
+                  .Append(key.DynamicStateActiveTitle).Append('|')
+                  .Append(key.DynamicStateInactiveBrightness).Append('|')
+                  .Append(key.DynamicStateDimWhenActive).Append('|')
+                  .Append(key.DynamicStateGlowColor);
+                break;
+            }
+            case DisplayKeyType.SpotifyNowPlaying:
+            {
+                sb.Append("|sp:").Append(key.SpotifyAlbumArtLayout);
+                try
+                {
+                    string artPath = StreamControllerDisplayRenderer.SpotifyNowPlayingImagePath ?? "";
+                    long artTicks = !string.IsNullOrWhiteSpace(artPath) && File.Exists(artPath)
+                        ? File.GetLastWriteTimeUtc(artPath).Ticks
+                        : 0;
+                    sb.Append('|').Append(artTicks);
+                    if (StreamControllerDisplayRenderer.SpotifyNowPlayingTitleProvider != null)
+                    {
+                        var info = StreamControllerDisplayRenderer.SpotifyNowPlayingTitleProvider();
+                        sb.Append('|').Append(info.Title).Append('|').Append(info.Subtitle);
+                    }
+                }
+                catch { sb.Append("|sp-err"); }
+                break;
+            }
+        }
+
+        return sb.ToString();
     }
 
     private static string BuildAnimatedN3Signature(StreamControllerDisplayKeyConfig key)
@@ -4182,10 +4499,10 @@ public partial class App : Application
                 _cachedMaster = null;
             }
 
-            // Poll program status states for app-aware LED effects
-            PollProgramMuteStates();
-            // Poll app group mute states for AppGroupMute LED effect
-            PollAppGroupMuteStates();
+            // Poll program status + app group mute states for app-aware LED
+            // effects — shares one process snapshot + one endpoint enumeration
+            // between both checks instead of re-snapshotting per session.
+            PollStatusEffectStates();
         }
         catch { }
         finally
@@ -4255,28 +4572,18 @@ public partial class App : Application
         catch (ObjectDisposedException) { }
     }
 
-    private void PollProgramMuteStates()
+    /// <summary>
+    /// Shared driver for the program-mute and app-group-mute status polls.
+    /// Builds the pid→name snapshot and the active render-device list ONCE per
+    /// poll cycle and passes both to the subroutines.
+    /// </summary>
+    private void PollStatusEffectStates()
     {
         try
         {
-            // Determine which lights need program mute polling
-            var lightsToCheck = new List<LightConfig>();
-            foreach (var l in _config.Lights)
-            {
-                if ((l.Effect == LightEffect.ProgramMute || l.Effect == LightEffect.ProgramStatus)
-                    && !string.IsNullOrWhiteSpace(l.ProgramName))
-                    lightsToCheck.Add(l);
-            }
-            if (_config.GlobalLight.Enabled
-                && (_config.GlobalLight.Effect == LightEffect.ProgramMute
-                    || _config.GlobalLight.Effect == LightEffect.ProgramStatus))
-            {
-                for (int i = 0; i < 5; i++)
-                    lightsToCheck.Add(new LightConfig { Idx = i, ProgramName = (_config.Lights.FirstOrDefault(l => l.Idx == i)?.ProgramName) ?? "" });
-            }
-
-            if (lightsToCheck.Count == 0) return;
-
+            var lightsToCheck = CollectProgramStatusLights();
+            var knobsToCheck = CollectAppGroupKnobs();
+            if (lightsToCheck.Count == 0 && knobsToCheck.Count == 0) return;
             if (_pollEnumerator == null) return;
 
             var processNamesById = GetRunningProcessNamesById();
@@ -4295,50 +4602,109 @@ public partial class App : Application
 
             try
             {
-                foreach (var light in lightsToCheck)
-                {
-                    if (string.IsNullOrWhiteSpace(light.ProgramName)) continue;
-                    bool running = processNamesById.Values.Any(name => ProcessNameMatches(name, light.ProgramName));
-                    bool muted = true; // default: muted/not-found
-                    bool foundSession = false;
-                    foreach (var device in devices)
-                    {
-                        if (foundSession) break;
-                        try
-                        {
-                            var sessions = device.AudioSessionManager.Sessions;
-                            for (int s = 0; s < sessions.Count; s++)
-                            {
-                                var session = sessions[s];
-                                try
-                                {
-                                    uint pid = session.GetProcessID;
-                                    if (pid == 0) continue;
-                                    if (processNamesById.TryGetValue((int)pid, out var processName)
-                                        && ProcessNameMatches(processName, light.ProgramName))
-                                    {
-                                        running = true;
-                                        muted = session.SimpleAudioVolume.Mute;
-                                        foundSession = true;
-                                        break;
-                                    }
-                                }
-                                catch { }
-                            }
-                        }
-                        catch { }
-                    }
-
-                    // Process is open but has no audio session yet: present, not offline.
-                    if (running && !foundSession)
-                        muted = false;
-
-                    _rgb.SetProgramState(light.Idx, running, muted);
-                }
+                if (lightsToCheck.Count > 0)
+                    PollProgramMuteStates(lightsToCheck, processNamesById, devices);
+                if (knobsToCheck.Count > 0)
+                    PollAppGroupMuteStates(knobsToCheck, processNamesById, devices);
             }
             finally
             {
                 foreach (var d in devices) d.Dispose();
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>Lights that need program mute/status polling this cycle.</summary>
+    private List<LightConfig> CollectProgramStatusLights()
+    {
+        var lightsToCheck = new List<LightConfig>();
+        foreach (var l in _config.Lights)
+        {
+            if ((l.Effect == LightEffect.ProgramMute || l.Effect == LightEffect.ProgramStatus)
+                && !string.IsNullOrWhiteSpace(l.ProgramName))
+                lightsToCheck.Add(l);
+        }
+        if (_config.GlobalLight.Enabled
+            && (_config.GlobalLight.Effect == LightEffect.ProgramMute
+                || _config.GlobalLight.Effect == LightEffect.ProgramStatus))
+        {
+            for (int i = 0; i < 5; i++)
+                lightsToCheck.Add(new LightConfig { Idx = i, ProgramName = (_config.Lights.FirstOrDefault(l => l.Idx == i)?.ProgramName) ?? "" });
+        }
+        return lightsToCheck;
+    }
+
+    /// <summary>Knobs whose app group needs mute polling this cycle.</summary>
+    private List<KnobConfig> CollectAppGroupKnobs()
+    {
+        var knobsToCheck = new List<KnobConfig>();
+        foreach (var l in _config.Lights)
+        {
+            if (l.Effect == LightEffect.AppGroupMute)
+            {
+                var knob = _config.Knobs.FirstOrDefault(k => k.Idx == l.Idx);
+                if (knob != null && knob.Target == "apps" && knob.Apps?.Count > 0)
+                    knobsToCheck.Add(knob);
+            }
+        }
+        if (_config.GlobalLight.Enabled && _config.GlobalLight.Effect == LightEffect.AppGroupMute)
+        {
+            foreach (var knob in _config.Knobs)
+            {
+                if (knob.Target == "apps" && knob.Apps?.Count > 0 && !knobsToCheck.Any(k => k.Idx == knob.Idx))
+                    knobsToCheck.Add(knob);
+            }
+        }
+        return knobsToCheck;
+    }
+
+    private void PollProgramMuteStates(
+        List<LightConfig> lightsToCheck,
+        Dictionary<int, string> processNamesById,
+        List<NAudio.CoreAudioApi.MMDevice> devices)
+    {
+        try
+        {
+            foreach (var light in lightsToCheck)
+            {
+                if (string.IsNullOrWhiteSpace(light.ProgramName)) continue;
+                bool running = processNamesById.Values.Any(name => ProcessNameMatches(name, light.ProgramName));
+                bool muted = true; // default: muted/not-found
+                bool foundSession = false;
+                foreach (var device in devices)
+                {
+                    if (foundSession) break;
+                    try
+                    {
+                        var sessions = device.AudioSessionManager.Sessions;
+                        for (int s = 0; s < sessions.Count; s++)
+                        {
+                            var session = sessions[s];
+                            try
+                            {
+                                uint pid = session.GetProcessID;
+                                if (pid == 0) continue;
+                                if (processNamesById.TryGetValue((int)pid, out var processName)
+                                    && ProcessNameMatches(processName, light.ProgramName))
+                                {
+                                    running = true;
+                                    muted = session.SimpleAudioVolume.Mute;
+                                    foundSession = true;
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
+                }
+
+                // Process is open but has no audio session yet: present, not offline.
+                if (running && !foundSession)
+                    muted = false;
+
+                _rgb.SetProgramState(light.Idx, running, muted);
             }
         }
         catch { }
@@ -4375,86 +4741,50 @@ public partial class App : Application
             || compactNeedle.Contains(compactProcessName, StringComparison.OrdinalIgnoreCase);
     }
 
-    private void PollAppGroupMuteStates()
+    private void PollAppGroupMuteStates(
+        List<KnobConfig> knobsToCheck,
+        Dictionary<int, string> processNamesById,
+        List<NAudio.CoreAudioApi.MMDevice> devices)
     {
         try
         {
-            // Determine which knobs use AppGroupMute and have an apps[] list
-            var knobsToCheck = new List<KnobConfig>();
-            foreach (var l in _config.Lights)
+            foreach (var knob in knobsToCheck)
             {
-                if (l.Effect == LightEffect.AppGroupMute)
+                bool anyUnmuted = false;
+                bool anyFound = false;
+                foreach (var device in devices)
                 {
-                    var knob = _config.Knobs.FirstOrDefault(k => k.Idx == l.Idx);
-                    if (knob != null && knob.Target == "apps" && knob.Apps?.Count > 0)
-                        knobsToCheck.Add(knob);
-                }
-            }
-            if (_config.GlobalLight.Enabled && _config.GlobalLight.Effect == LightEffect.AppGroupMute)
-            {
-                foreach (var knob in _config.Knobs)
-                {
-                    if (knob.Target == "apps" && knob.Apps?.Count > 0 && !knobsToCheck.Any(k => k.Idx == knob.Idx))
-                        knobsToCheck.Add(knob);
-                }
-            }
-
-            if (knobsToCheck.Count == 0) return;
-            if (_pollEnumerator == null) return;
-
-            // Scan ALL active render devices (multi-output setups)
-            var devices = new List<NAudio.CoreAudioApi.MMDevice>();
-            try
-            {
-                var allDevices = _pollEnumerator.EnumerateAudioEndPoints(
-                    NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.DeviceState.Active);
-                for (int d = 0; d < allDevices.Count; d++)
-                    devices.Add(allDevices[d]);
-            }
-            catch { return; }
-
-            try
-            {
-                foreach (var knob in knobsToCheck)
-                {
-                    bool anyUnmuted = false;
-                    bool anyFound = false;
-                    foreach (var device in devices)
+                    try
                     {
-                        try
+                        var sessions = device.AudioSessionManager.Sessions;
+                        for (int s = 0; s < sessions.Count; s++)
                         {
-                            var sessions = device.AudioSessionManager.Sessions;
-                            for (int s = 0; s < sessions.Count; s++)
+                            var session = sessions[s];
+                            try
                             {
-                                var session = sessions[s];
-                                try
+                                uint pid = session.GetProcessID;
+                                if (pid == 0) continue;
+                                // Shared snapshot lookup — no Process.GetProcessById per session.
+                                if (!processNamesById.TryGetValue((int)pid, out var processName))
+                                    continue;
+                                bool matchesGroup = knob.Apps!.Any(app =>
+                                    processName.Contains(app, StringComparison.OrdinalIgnoreCase));
+                                if (matchesGroup)
                                 {
-                                    uint pid = session.GetProcessID;
-                                    if (pid == 0) continue;
-                                    var proc = System.Diagnostics.Process.GetProcessById((int)pid);
-                                    bool matchesGroup = knob.Apps!.Any(app =>
-                                        proc.ProcessName.Contains(app, StringComparison.OrdinalIgnoreCase));
-                                    if (matchesGroup)
-                                    {
-                                        anyFound = true;
-                                        if (!session.SimpleAudioVolume.Mute)
-                                            anyUnmuted = true;
-                                    }
+                                    anyFound = true;
+                                    if (!session.SimpleAudioVolume.Mute)
+                                        anyUnmuted = true;
                                 }
-                                catch { }
                             }
+                            catch { }
                         }
-                        catch { }
                     }
-                    // allMuted = true only when apps were found and none are unmuted
-                    // if no apps found, default to false (show color1 / live appearance)
-                    bool allMuted = anyFound && !anyUnmuted;
-                    _rgb.SetAppGroupMuted(knob.Idx, allMuted);
+                    catch { }
                 }
-            }
-            finally
-            {
-                foreach (var d in devices) d.Dispose();
+                // allMuted = true only when apps were found and none are unmuted
+                // if no apps found, default to false (show color1 / live appearance)
+                bool allMuted = anyFound && !anyUnmuted;
+                _rgb.SetAppGroupMuted(knob.Idx, allMuted);
             }
         }
         catch { }

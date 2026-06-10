@@ -54,6 +54,33 @@ public class DreamSyncController : IDisposable
     private const int MaxSendFps = 30;
     private readonly System.Diagnostics.Stopwatch _sendThrottle = System.Diagnostics.Stopwatch.StartNew();
 
+    // Cached IP → device lookup for the send loop. Avoids a FirstOrDefault closure
+    // allocation per mapping per frame. Rebuilt when the device list instance or
+    // its count changes (only the capture-loop thread touches these fields).
+    private Dictionary<string, GoveeDeviceConfig>? _devicesByIp;
+    private List<GoveeDeviceConfig>? _devicesByIpSource;
+    private int _devicesByIpCount;
+
+    private Dictionary<string, GoveeDeviceConfig> GetDevicesByIp(List<GoveeDeviceConfig> devices)
+    {
+        if (_devicesByIp == null
+            || !ReferenceEquals(_devicesByIpSource, devices)
+            || _devicesByIpCount != devices.Count)
+        {
+            var map = new Dictionary<string, GoveeDeviceConfig>(devices.Count);
+            foreach (var d in devices)
+            {
+                // TryAdd keeps the FIRST device per IP — matches FirstOrDefault semantics.
+                if (!string.IsNullOrEmpty(d.Ip))
+                    map.TryAdd(d.Ip, d);
+            }
+            _devicesByIp = map;
+            _devicesByIpSource = devices;
+            _devicesByIpCount = devices.Count;
+        }
+        return _devicesByIp;
+    }
+
     // Raised each frame with current zone colors — used by the live preview in RoomView
     public event Action<(byte R, byte G, byte B)[]>? OnZoneColors;
 
@@ -205,6 +232,39 @@ public class DreamSyncController : IDisposable
 
                 if (zones != null)
                 {
+                    // Check if any device needs FullScreen (uncropped) colors. Resolve this
+                    // BEFORE the saturation boost: the original FullScreen path sampled raw
+                    // (unboosted) colors via a second capture, so when this frame's capture
+                    // had no effective crop we can snapshot the pre-boost zones instead of
+                    // running a second StretchBlt + LockBits + sampling pass.
+                    bool needFullScreen = false;
+                    foreach (var mapping in cfg.DeviceMappings)
+                    {
+                        if (mapping.CropMode == DeviceCropMode.FullScreen && !mapping.UseAutoSpatial)
+                        {
+                            needFullScreen = true;
+                            break;
+                        }
+                    }
+                    (byte R, byte G, byte B)[]? fullScreenZones = null;
+                    if (needFullScreen)
+                    {
+                        // grid path: crop is effective only if contentCrop has meaningful
+                        // percentages (auto-detect writes them back during CaptureZoneGrid).
+                        // fallback path: CaptureZones cropped only when CropBlackBars is on.
+                        bool zonesAreFullScreen = grid != null
+                            ? !HasEffectiveCrop(contentCrop)
+                            : !cfg.CropBlackBars;
+
+                        if (zonesAreFullScreen)
+                            fullScreenZones = ((byte R, byte G, byte B)[])zones.Clone();
+                        else
+                            // An actual crop was applied to this frame's sampling — the
+                            // IScreenCapture interface has no resample-last-frame API, so a
+                            // second (uncropped) capture is still required in this case.
+                            fullScreenZones = _capture.CaptureZones(cfg.MonitorIndex, cfg.ZoneCount, false);
+                    }
+
                     // Boost saturation on flat zones (used for UI preview + legacy path)
                     for (int i = 0; i < zones.Length; i++)
                     {
@@ -232,30 +292,17 @@ public class DreamSyncController : IDisposable
                     ScreenSpatialMapper? spatialMapper;
                     lock (_lock) { spatialMapper = _spatialMapper; }
 
-                    // Check if any device needs a FullScreen capture (no crop)
-                    bool needFullScreen = false;
-                    foreach (var mapping in cfg.DeviceMappings)
-                    {
-                        if (mapping.CropMode == DeviceCropMode.FullScreen && !mapping.UseAutoSpatial)
-                        {
-                            needFullScreen = true;
-                            break;
-                        }
-                    }
-                    (byte R, byte G, byte B)[]? fullScreenZones = null;
-                    if (needFullScreen)
-                        fullScreenZones = _capture.CaptureZones(cfg.MonitorIndex, cfg.ZoneCount, false);
-
                     // Push to each configured Govee device (capped at 30fps — hardware limit)
                     bool sendThisFrame = _sendThrottle.ElapsedMilliseconds >= (1000 / MaxSendFps);
                     if (sendThisFrame && amb.GoveeEnabled && amb.GoveeDevices.Count > 0)
                     {
+                        var devicesByIp = GetDevicesByIp(amb.GoveeDevices);
                         foreach (var mapping in cfg.DeviceMappings)
                         {
                             if (string.IsNullOrWhiteSpace(mapping.DeviceIp)) continue;
 
-                            var dev = amb.GoveeDevices.FirstOrDefault(d => d.Ip == mapping.DeviceIp);
-                            if (dev == null || !dev.PoweredOn || !dev.SyncWithAmpUp) continue;
+                            if (!devicesByIp.TryGetValue(mapping.DeviceIp, out var dev)) continue;
+                            if (!dev.PoweredOn || !dev.SyncWithAmpUp) continue;
 
                             int segCount = AmbienceSync.GetSegmentCount(dev);
                             bool useSegments = segCount > 0 && dev.UseSegmentProtocol;
@@ -389,6 +436,15 @@ public class DreamSyncController : IDisposable
 
         Status = "Stopped";
     }
+
+    /// <summary>
+    /// True when the content bounds describe a meaningful crop (&gt; 0.5% on any side).
+    /// Auto-detect writes detected percentages back into the ContentBounds during
+    /// CaptureZoneGrid, so this reflects the crop actually applied this frame.
+    /// </summary>
+    private static bool HasEffectiveCrop(ContentBounds? crop)
+        => crop != null && (crop.LeftPct > 0.005 || crop.RightPct > 0.005
+            || crop.TopPct > 0.005 || crop.BottomPct > 0.005);
 
     // ── Grid helpers ─────────────────────────────────────────────────────────
 

@@ -173,12 +173,7 @@ public class AmbienceSync : IDisposable
                 }
 
                 _lastSendTick[ip] = now;
-                _ = Task.Run(async () =>
-                {
-                    if (needEnable)
-                        await SendSegmentEnable(ip, true);
-                    await SendSegmentColors(ip, segColors);
-                });
+                _ = SendSegmentEnableThenColors(ip, needEnable, segColors);
             }
             else
             {
@@ -197,7 +192,7 @@ public class AmbienceSync : IDisposable
 
                 _lastSent[ip] = ((byte)r, (byte)g, (byte)b);
                 _lastSendTick[ip] = now;
-                _ = Task.Run(() => SendGoveeColor(ip, r, g, b));
+                _ = SendGoveeColor(ip, r, g, b);
             }
         }
     }
@@ -842,12 +837,7 @@ public class AmbienceSync : IDisposable
                 _segmentKeepAliveTick[ip] = now;
             }
             _lastSendTick[ip] = now;
-            _ = Task.Run(async () =>
-            {
-                if (needEnable)
-                    await SendSegmentEnable(ip, true);
-                await SendSegmentColors(ip, segColors);
-            });
+            _ = SendSegmentEnableThenColors(ip, needEnable, segColors);
         }
         else
         {
@@ -862,7 +852,7 @@ public class AmbienceSync : IDisposable
             }
             _lastSent[ip] = ((byte)r, (byte)g, (byte)b);
             _lastSendTick[ip] = now;
-            _ = Task.Run(() => SendGoveeColor(ip, r, g, b));
+            _ = SendGoveeColor(ip, r, g, b);
         }
     }
 
@@ -951,7 +941,7 @@ public class AmbienceSync : IDisposable
                 && device.SyncWithAmpUp;
             if (segmentSynced) continue;
             string ip = device.Ip;
-            _ = Task.Run(() => SendGoveeBrightness(ip, value));
+            _ = SendGoveeBrightness(ip, value);
         }
     }
 
@@ -973,7 +963,7 @@ public class AmbienceSync : IDisposable
                 if (GetSegmentCount(device) > 0 && device.UseSegmentProtocol)
                     ClearAllSegmentTracking();
                 string ip = device.Ip;
-                _ = Task.Run(() => SendTurnAsync(ip, true));
+                _ = SendTurnAsync(ip, true);
             }
         }
     }
@@ -991,7 +981,7 @@ public class AmbienceSync : IDisposable
             device.PoweredOn = true;
             if (GetSegmentCount(device) > 0 && device.UseSegmentProtocol)
                 ClearAllSegmentTracking();
-            _ = Task.Run(() => SendTurnAsync(ip, true));
+            _ = SendTurnAsync(ip, true);
         }
     }
 
@@ -1015,7 +1005,7 @@ public class AmbienceSync : IDisposable
                 && device.SyncWithAmpUp;
             if (segmentSynced) return;
         }
-        _ = Task.Run(() => SendGoveeBrightness(ip, value));
+        _ = SendGoveeBrightness(ip, value);
     }
 
     // ── LAN control commands (all send to device IP:4003) ──────────
@@ -1032,9 +1022,11 @@ public class AmbienceSync : IDisposable
     private static UdpClient? _sharedUdp;
     private static readonly object _udpLock = new();
 
-    private static async Task SendLanCommand(string ip, string json)
+    private static Task SendLanCommand(string ip, string json)
+        => SendLanCommandBytes(ip, Encoding.UTF8.GetBytes(json));
+
+    private static async Task SendLanCommandBytes(string ip, byte[] data)
     {
-        byte[] data = Encoding.UTF8.GetBytes(json);
         UdpClient udp;
         lock (_udpLock)
         {
@@ -1225,7 +1217,7 @@ public class AmbienceSync : IDisposable
     {
         _segmentEnabled.TryRemove(ip, out _);
         _segmentKeepAliveTick.TryRemove(ip, out _);
-        _ = Task.Run(() => SendSegmentEnable(ip, false));
+        _ = SendSegmentEnable(ip, false);
     }
 
     /// <summary>
@@ -1271,45 +1263,87 @@ public class AmbienceSync : IDisposable
             _segmentKeepAliveTick[ip] = now;
         }
         _lastSendTick[ip] = now;
-        _ = Task.Run(async () =>
-        {
-            if (needEnable)
-                await SendSegmentEnable(ip, true);
-            await SendSegmentColors(ip, colors);
-        });
+        _ = SendSegmentEnableThenColors(ip, needEnable, colors);
+    }
+
+    // Constant JSON wrapper around the base64 razer payload, precomputed as UTF-8
+    // bytes so the 20-30 FPS segment path skips the per-packet string.Format +
+    // Convert.ToBase64String + Encoding.GetBytes allocations.
+    private static readonly byte[] RazerJsonPrefix =
+        Encoding.UTF8.GetBytes("{\"msg\":{\"cmd\":\"razer\",\"data\":{\"pt\":\"");
+    private static readonly byte[] RazerJsonSuffix =
+        Encoding.UTF8.GetBytes("\"}}}");
+
+    /// <summary>
+    /// Wrap a binary razer packet in the LAN JSON envelope, base64-encoding it
+    /// directly into the output buffer. Wire bytes are identical to the old
+    /// string-based path (base64 + JSON are pure ASCII).
+    /// </summary>
+    private static byte[] BuildRazerCommand(byte[] pkt)
+    {
+        int b64Len = ((pkt.Length + 2) / 3) * 4;
+        var data = new byte[RazerJsonPrefix.Length + b64Len + RazerJsonSuffix.Length];
+        Buffer.BlockCopy(RazerJsonPrefix, 0, data, 0, RazerJsonPrefix.Length);
+        System.Buffers.Text.Base64.EncodeToUtf8(
+            pkt, data.AsSpan(RazerJsonPrefix.Length, b64Len), out _, out _);
+        Buffer.BlockCopy(RazerJsonSuffix, 0, data, RazerJsonPrefix.Length + b64Len, RazerJsonSuffix.Length);
+        return data;
     }
 
     private static async Task SendSegmentEnable(string ip, bool enable)
     {
-        var pkt = new byte[] { 0xBB, 0x00, 0x01, 0xB1, (byte)(enable ? 1 : 0), 0 };
-        pkt[5] = XorChecksum(pkt, 5);
-        string b64 = Convert.ToBase64String(pkt);
-        string json = $"{{\"msg\":{{\"cmd\":\"razer\",\"data\":{{\"pt\":\"{b64}\"}}}}}}";
-        await SendLanCommand(ip, json);
+        try
+        {
+            var pkt = new byte[] { 0xBB, 0x00, 0x01, 0xB1, (byte)(enable ? 1 : 0), 0 };
+            pkt[5] = XorChecksum(pkt, 5);
+            await SendLanCommandBytes(ip, BuildRazerCommand(pkt));
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Govee segment enable failed ({ip}): {ex.Message}");
+        }
     }
 
     private static async Task SendSegmentColors(string ip, (byte R, byte G, byte B)[] colors)
     {
-        int count = colors.Length;
-        int payloadLen = 2 + 1 + count * 3;
-        int totalLen = 3 + payloadLen + 1;
-        var pkt = new byte[totalLen];
-        pkt[0] = 0xBB;
-        pkt[1] = (byte)(payloadLen >> 8);
-        pkt[2] = (byte)(payloadLen & 0xFF);
-        pkt[3] = 0xB0;
-        pkt[4] = 0x00;
-        pkt[5] = (byte)count;
-        for (int i = 0; i < count; i++)
+        try
         {
-            pkt[6 + i * 3] = colors[i].R;
-            pkt[7 + i * 3] = colors[i].G;
-            pkt[8 + i * 3] = colors[i].B;
+            int count = colors.Length;
+            int payloadLen = 2 + 1 + count * 3;
+            int totalLen = 3 + payloadLen + 1;
+            var pkt = new byte[totalLen];
+            pkt[0] = 0xBB;
+            pkt[1] = (byte)(payloadLen >> 8);
+            pkt[2] = (byte)(payloadLen & 0xFF);
+            pkt[3] = 0xB0;
+            pkt[4] = 0x00;
+            pkt[5] = (byte)count;
+            for (int i = 0; i < count; i++)
+            {
+                pkt[6 + i * 3] = colors[i].R;
+                pkt[7 + i * 3] = colors[i].G;
+                pkt[8 + i * 3] = colors[i].B;
+            }
+            pkt[totalLen - 1] = XorChecksum(pkt, totalLen - 1);
+            await SendLanCommandBytes(ip, BuildRazerCommand(pkt));
         }
-        pkt[totalLen - 1] = XorChecksum(pkt, totalLen - 1);
-        string b64 = Convert.ToBase64String(pkt);
-        string json = $"{{\"msg\":{{\"cmd\":\"razer\",\"data\":{{\"pt\":\"{b64}\"}}}}}}";
-        await SendLanCommand(ip, json);
+        catch (Exception ex)
+        {
+            Logger.Log($"Govee segment colors failed ({ip}): {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Fire-and-forget helper for the segment frame paths: preserves the
+    /// enable-before-colors ordering inside a single async flow without the
+    /// per-packet Task.Run threadpool dispatch. Both awaited methods swallow
+    /// their own exceptions, so an unobserved fault can never escape.
+    /// </summary>
+    private static async Task SendSegmentEnableThenColors(string ip, bool needEnable, (byte R, byte G, byte B)[] colors)
+    {
+        if (needEnable)
+            await SendSegmentEnable(ip, true);
+        await SendSegmentColors(ip, colors);
     }
 
     private static async Task SendGoveeColor(string ip, int r, int g, int b)
@@ -1368,8 +1402,22 @@ public class AmbienceSync : IDisposable
 
     /// <summary>
     /// Get segment count, trying SKU first, then falling back to device name matching.
+    /// Memoized per (sku, name) — called multiple times per device per 20 FPS frame,
+    /// and SKU/name never change at runtime, so the ToUpper/ToLower + Contains chains
+    /// only run once per unique device identity.
     /// </summary>
     public static int GetSegmentCount(GoveeDeviceConfig dev)
+    {
+        var key = (dev.Sku ?? "", dev.Name ?? "");
+        if (_segmentCountCache.TryGetValue(key, out int cached)) return cached;
+        int count = ComputeSegmentCount(dev);
+        _segmentCountCache[key] = count;
+        return count;
+    }
+
+    private static readonly ConcurrentDictionary<(string Sku, string Name), int> _segmentCountCache = new();
+
+    private static int ComputeSegmentCount(GoveeDeviceConfig dev)
     {
         int count = GetSegmentCount(dev.Sku);
         if (count > 0) return count;

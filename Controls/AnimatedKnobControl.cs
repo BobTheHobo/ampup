@@ -164,6 +164,15 @@ namespace AmpUp.Controls
         private Brush _endDotRingBrush = null!;
         private Color _cachedArcColor;
 
+        // ── Cached geometry/transform (size-dependent) ─────────────────
+        // Track arc is identical per (cx, cy, radius) — rebuild only when the
+        // layout actually changes instead of every render. The rotate
+        // transform is a single mutable instance (NOT frozen — Angle/center
+        // are updated per render before PushTransform).
+        private StreamGeometry? _trackGeometry;
+        private double _trackCx, _trackCy, _trackRadius;
+        private readonly RotateTransform _knobRotate = new();
+
         public AnimatedKnobControl()
         {
             RebuildArcResources(ArcColor);
@@ -212,9 +221,15 @@ namespace AmpUp.Controls
             double radius = Math.Min(w, h) / 2.0 - ArcInset;
             float value = Value;
 
-            // 1. Track arc (full sweep background)
-            var trackGeometry = CreateArcGeometry(cx, cy, radius, StartAngleDeg, TotalSweepDeg);
-            dc.DrawGeometry(null, s_trackPen, trackGeometry);
+            // 1. Track arc (full sweep background) — cached per (cx, cy, radius)
+            if (_trackGeometry == null || cx != _trackCx || cy != _trackCy || radius != _trackRadius)
+            {
+                _trackGeometry = CreateArcGeometry(cx, cy, radius, StartAngleDeg, TotalSweepDeg);
+                _trackCx = cx;
+                _trackCy = cy;
+                _trackRadius = radius;
+            }
+            dc.DrawGeometry(null, s_trackPen, _trackGeometry);
 
             if (value > DirtyThreshold)
             {
@@ -247,7 +262,10 @@ namespace AmpUp.Controls
             double knobLeft = cx - knobSize / 2.0;
             double knobTop = cy - knobSize / 2.0;
 
-            dc.PushTransform(new RotateTransform(rotationDeg, cx, cy));
+            _knobRotate.Angle = rotationDeg;
+            _knobRotate.CenterX = cx;
+            _knobRotate.CenterY = cy;
+            dc.PushTransform(_knobRotate);
             dc.DrawImage(s_knobImage, new Rect(knobLeft, knobTop, knobSize, knobSize));
             dc.Pop();
 

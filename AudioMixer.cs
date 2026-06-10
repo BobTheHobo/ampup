@@ -21,11 +21,45 @@ public class AudioMixer : IDisposable
 
     /// <summary>
     /// Fuzzy process name match: strips spaces so "Apple Music" matches "AppleMusic".
-    /// Both strings should already be lowercase.
+    /// Allocation-free char walk — equivalent to
+    /// processName.Replace(" ", "").Contains(search.Replace(" ", "")), case-insensitive.
+    /// Called per session per VU tick, so no string allocs allowed here.
     /// </summary>
     private static bool FuzzyContains(string processName, string search)
-        => processName.Contains(search)
-        || processName.Replace(" ", "").Contains(search.Replace(" ", ""));
+    {
+        // First non-space needle char — an empty/all-space needle matches anything
+        int nStart = 0;
+        while (nStart < search.Length && search[nStart] == ' ') nStart++;
+        if (nStart >= search.Length) return true;
+
+        for (int start = 0; start < processName.Length; start++)
+        {
+            if (processName[start] == ' ') continue;
+
+            int h = start, n = nStart;
+            while (true)
+            {
+                while (n < search.Length && search[n] == ' ') n++;
+                if (n >= search.Length) return true; // consumed the whole needle
+                while (h < processName.Length && processName[h] == ' ') h++;
+                if (h >= processName.Length) break;
+                if (char.ToLowerInvariant(processName[h]) != char.ToLowerInvariant(search[n])) break;
+                h++; n++;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Lowercases without allocating when the string is already lowercase —
+    /// the common case for config target strings, checked per VU tick.
+    /// </summary>
+    private static string ToLowerNoAlloc(string s)
+    {
+        for (int i = 0; i < s.Length; i++)
+            if (s[i] != char.ToLowerInvariant(s[i])) return s.ToLowerInvariant();
+        return s;
+    }
     // Map of processId -> AudioSessionControl (for active_window lookups)
     private Dictionary<uint, AudioSessionControl> _sessionsByPid = new();
 
@@ -39,6 +73,23 @@ public class AudioMixer : IDisposable
 
     private MMDevice? _renderDevice; // kept alive so session COM objects remain valid
     private MMDevice? _masterPeakDevice; // dedicated persistent device for master peak metering
+    private MMDevice? _micPeakDevice; // dedicated persistent device for mic peak metering
+    private MMDevice? _masterControlDevice; // persistent default render endpoint (Role.Console) for SetVolume("master")
+    private MMDevice? _micControlDevice; // persistent default capture endpoint for SetVolume("mic")
+    private AudioSessionControl? _systemPeakSession; // PID-0 System Sounds session for peak metering
+    private readonly Dictionary<string, MMDevice> _devicePeakCache = new(); // deviceId -> metering device (guarded by _enumLock)
+    private string? _defaultRenderId; // last-seen default render endpoint ID (guarded by _enumLock)
+    private string? _defaultCaptureId; // last-seen default capture endpoint ID (guarded by _enumLock)
+
+    // PID -> process name cache. Process.GetProcessById snapshots the entire
+    // system process table per call, so resolve each PID once and reuse across
+    // the 2s refresh ticks. Entries for PIDs no longer in the session list are
+    // evicted each refresh so the cache can't grow unbounded.
+    private readonly Dictionary<int, string> _pidNameCache = new();
+    private readonly object _pidNameLock = new();
+
+    // Distinct AudioSessionControl wrappers from the last refresh — disposed on swap
+    private List<AudioSessionControl> _sessionWrappers = new();
 
     private void RefreshSessions()
     {
@@ -53,28 +104,43 @@ public class AudioMixer : IDisposable
                 device = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
             }
 
+            // Drop cached endpoint objects if the default device changed — otherwise
+            // the master/mic knob + VU caches keep pointing at the old endpoint.
+            InvalidateStaleEndpointCaches(device!);
+
             var newSessions = new Dictionary<string, AudioSessionControl>();
             var newPidSessions = new Dictionary<uint, AudioSessionControl>();
+            var newWrappers = new List<AudioSessionControl>();
+            var seenPids = new HashSet<int>();
 
             var sessionMgr = device!.AudioSessionManager;
             var sessions = sessionMgr.Sessions;
             for (int i = 0; i < sessions.Count; i++)
             {
                 var s = sessions[i];
+                bool stored = false;
                 try
                 {
                     var pid = (int)s.GetProcessID;
                     if (pid == 0) continue;
-                    var proc = System.Diagnostics.Process.GetProcessById(pid);
-                    var name = proc.ProcessName.ToLowerInvariant();
+                    seenPids.Add(pid);
+                    var rawName = ResolvePidName(pid);
+                    if (rawName == null) continue; // process gone
+                    var name = rawName.ToLowerInvariant();
                     // Use compound key (name:pid) to store ALL sessions per process
                     // (apps like Discord create multiple: voice, screenshare, notifications)
                     var sessionKey = $"{name}:{pid}";
                     if (!newSessions.ContainsKey(sessionKey))
+                    {
                         newSessions[sessionKey] = s;
+                        stored = true;
+                    }
                     // Also store by plain name for backward compat (first wins)
                     if (!newSessions.ContainsKey(name))
+                    {
                         newSessions[name] = s;
+                        stored = true;
+                    }
 
                     // Also index by WASAPI display name — catches UWP/packaged apps
                     // where audio runs in a helper process (e.g. AMPLibraryAgent for Apple Music)
@@ -85,32 +151,132 @@ public class AudioMixer : IDisposable
                         {
                             var dnKey = displayName.ToLowerInvariant();
                             if (!newSessions.ContainsKey(dnKey))
+                            {
                                 newSessions[dnKey] = s;
+                                stored = true;
+                            }
                         }
                     }
                     catch { }
 
                     var upid = (uint)pid;
                     if (!newPidSessions.ContainsKey(upid))
+                    {
                         newPidSessions[upid] = s;
+                        stored = true;
+                    }
                 }
                 catch { }
+                finally
+                {
+                    if (stored)
+                        newWrappers.Add(s);
+                    else
+                        try { s.Dispose(); } catch { }
+                }
             }
 
-            // Swap atomically — old device disposed after new sessions are live
+            // Evict cached names for PIDs that no longer have sessions
+            lock (_pidNameLock)
+            {
+                if (_pidNameCache.Count > 0)
+                {
+                    List<int>? stale = null;
+                    foreach (var p in _pidNameCache.Keys)
+                        if (!seenPids.Contains(p)) (stale ??= new List<int>()).Add(p);
+                    if (stale != null)
+                        foreach (var p in stale) _pidNameCache.Remove(p);
+                }
+            }
+
+            // Swap atomically — old device + old session wrappers disposed after new sessions are live
             lock (_lock)
             {
+                var oldWrappers = _sessionWrappers;
                 _sessions = newSessions;
                 _sessionsByPid = newPidSessions;
+                _sessionWrappers = newWrappers;
                 var oldDevice = _renderDevice;
                 _renderDevice = device;
                 oldDevice?.Dispose();
+                // Sessions are re-enumerated fresh each refresh (the SessionCollection
+                // indexer creates a new wrapper per access), so nothing from the previous
+                // refresh is carried forward — every old wrapper is safe to dispose.
+                // AudioSessionControl.Dispose only unregisters event callbacks (we register
+                // none) and suppresses the finalizer; the underlying COM object stays alive
+                // for any view still briefly holding a reference from GetSessionForProcess.
+                foreach (var w in oldWrappers)
+                    try { w.Dispose(); } catch { }
             }
         }
         catch (Exception ex)
         {
             // Don't clear _sessions on failure — keep stale data rather than empty
             Logger.Log($"Session refresh error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// PID -> process name with a persistent cache (raw casing — callers lowercase
+    /// as needed). Returns null if the process is gone.
+    /// </summary>
+    private string? ResolvePidName(int pid)
+    {
+        lock (_pidNameLock)
+        {
+            if (_pidNameCache.TryGetValue(pid, out var cached)) return cached;
+        }
+        try
+        {
+            using var proc = System.Diagnostics.Process.GetProcessById(pid);
+            var name = proc.ProcessName;
+            lock (_pidNameLock) _pidNameCache[pid] = name;
+            return name;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Compares the current default render/capture endpoint IDs against the last
+    /// refresh and drops the cached control/metering endpoints on change, so a
+    /// default-device switch (cycle_output, Windows settings) re-acquires the new
+    /// endpoint within one 2s refresh tick.
+    /// </summary>
+    private void InvalidateStaleEndpointCaches(MMDevice currentRenderDefault)
+    {
+        string? renderId = null;
+        try { renderId = currentRenderDefault.ID; } catch { }
+
+        string? captureId = null;
+        try
+        {
+            MMDevice? mic;
+            lock (_enumLock) mic = _enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
+            using (mic) { captureId = mic?.ID; }
+        }
+        catch { } // no default capture device — leave capture caches as-is
+
+        lock (_enumLock)
+        {
+            if (renderId != null && _defaultRenderId != null && renderId != _defaultRenderId)
+            {
+                try { _masterPeakDevice?.Dispose(); } catch { }
+                _masterPeakDevice = null;
+                try { _masterControlDevice?.Dispose(); } catch { }
+                _masterControlDevice = null;
+                try { _systemPeakSession?.Dispose(); } catch { }
+                _systemPeakSession = null;
+            }
+            if (renderId != null) _defaultRenderId = renderId;
+
+            if (captureId != null && _defaultCaptureId != null && captureId != _defaultCaptureId)
+            {
+                try { _micPeakDevice?.Dispose(); } catch { }
+                _micPeakDevice = null;
+                try { _micControlDevice?.Dispose(); } catch { }
+                _micControlDevice = null;
+            }
+            if (captureId != null) _defaultCaptureId = captureId;
         }
     }
 
@@ -150,21 +316,47 @@ public class AudioMixer : IDisposable
 
         try
         {
-            var target = knob.Target.ToLowerInvariant();
+            var target = ToLowerNoAlloc(knob.Target);
 
             if (target == "master")
             {
-                MMDevice? device;
-                lock (_enumLock) device = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
-                using (device) { SetRenderEndpointVolume(device!.AudioEndpointVolume, vol); }
+                // Persistent control endpoint — activating a fresh MMDevice per knob
+                // event is expensive. Invalidated on failure, device change (see
+                // InvalidateStaleEndpointCaches) and session lock (InvalidatePeakDevice).
+                lock (_enumLock)
+                {
+                    try
+                    {
+                        _masterControlDevice ??= _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
+                        SetRenderEndpointVolume(_masterControlDevice.AudioEndpointVolume, vol);
+                    }
+                    catch
+                    {
+                        // Endpoint went stale — drop it so the next knob event re-acquires
+                        try { _masterControlDevice?.Dispose(); } catch { }
+                        _masterControlDevice = null;
+                        throw;
+                    }
+                }
                 return;
             }
 
             if (target == "mic")
             {
-                MMDevice? mic;
-                lock (_enumLock) mic = _enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
-                using (mic) { mic!.AudioEndpointVolume.MasterVolumeLevelScalar = vol; }
+                lock (_enumLock)
+                {
+                    try
+                    {
+                        _micControlDevice ??= _enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
+                        _micControlDevice.AudioEndpointVolume.MasterVolumeLevelScalar = vol;
+                    }
+                    catch
+                    {
+                        try { _micControlDevice?.Dispose(); } catch { }
+                        _micControlDevice = null;
+                        throw;
+                    }
+                }
                 return;
             }
 
@@ -378,7 +570,7 @@ public class AudioMixer : IDisposable
     {
         try
         {
-            var target = knob.Target.ToLowerInvariant();
+            var target = ToLowerNoAlloc(knob.Target);
 
             if (target == "master")
             {
@@ -537,7 +729,7 @@ public class AudioMixer : IDisposable
     {
         try
         {
-            var target = knob.Target.ToLowerInvariant();
+            var target = ToLowerNoAlloc(knob.Target);
 
             if (target == "master")
             {
@@ -566,9 +758,23 @@ public class AudioMixer : IDisposable
 
             if (target == "mic")
             {
-                MMDevice? mic;
-                lock (_enumLock) mic = _enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
-                using (mic) { return mic!.AudioMeterInformation.MasterPeakValue; }
+                // Same persistent-device pattern as the master path — re-activating
+                // the capture endpoint per VU tick is expensive.
+                lock (_enumLock)
+                {
+                    try
+                    {
+                        _micPeakDevice ??= _enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
+                        return _micPeakDevice.AudioMeterInformation.MasterPeakValue;
+                    }
+                    catch
+                    {
+                        // Device may have changed — recreate on next call
+                        try { _micPeakDevice?.Dispose(); } catch { }
+                        _micPeakDevice = null;
+                        return 0f;
+                    }
+                }
             }
 
             if (target == "output_device")
@@ -588,24 +794,41 @@ public class AudioMixer : IDisposable
 
             if (target == "system")
             {
-                try
+                // System Sounds session (PID 0) cached off the persistent master peak
+                // device — re-activating the endpoint + enumerating sessions per VU
+                // tick is expensive. Invalidated on read failure, device change and
+                // session lock alongside _masterPeakDevice.
+                lock (_enumLock)
                 {
-                    MMDevice? device;
-                    lock (_enumLock) device = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-                    using (device)
+                    try
                     {
-                        var sessionMgr = device!.AudioSessionManager;
-                        var sessions = sessionMgr.Sessions;
-                        for (int i = 0; i < sessions.Count; i++)
+                        if (_systemPeakSession == null)
                         {
-                            var s = sessions[i];
-                            if (s.GetProcessID == 0)
-                                return s.AudioMeterInformation.MasterPeakValue;
+                            _masterPeakDevice ??= _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                            var sessionMgr = _masterPeakDevice.AudioSessionManager;
+                            sessionMgr.RefreshSessions();
+                            var sessions = sessionMgr.Sessions;
+                            for (int i = 0; i < sessions.Count; i++)
+                            {
+                                var s = sessions[i];
+                                bool keep = false;
+                                try { keep = _systemPeakSession == null && s.GetProcessID == 0; } catch { }
+                                if (keep)
+                                    _systemPeakSession = s;
+                                else
+                                    try { s.Dispose(); } catch { }
+                            }
                         }
+                        if (_systemPeakSession != null)
+                            return _systemPeakSession.AudioMeterInformation.MasterPeakValue;
                     }
+                    catch
+                    {
+                        try { _systemPeakSession?.Dispose(); } catch { }
+                        _systemPeakSession = null;
+                    }
+                    return 0f;
                 }
-                catch { }
-                return 0f;
             }
 
             if (target == "apps")
@@ -650,22 +873,51 @@ public class AudioMixer : IDisposable
     private float GetPeakLevelForDevice(string deviceId, DataFlow dataFlow)
     {
         if (string.IsNullOrEmpty(deviceId)) return 0f;
-        try
+        lock (_enumLock)
         {
-            MMDeviceCollection? devices;
-            lock (_enumLock) devices = _enumerator.EnumerateAudioEndPoints(dataFlow, DeviceState.Active);
-            if (devices != null)
+            // Persistent per-device metering cache — a full EnumerateAudioEndPoints
+            // per VU tick is expensive. Evicted on read failure and session lock.
+            if (_devicePeakCache.TryGetValue(deviceId, out var cached))
             {
-                for (int i = 0; i < devices.Count; i++)
+                try
                 {
-                    using var dev = devices[i];
-                    if (dev.ID == deviceId)
-                        return dev.AudioMeterInformation.MasterPeakValue;
+                    return cached.AudioMeterInformation.MasterPeakValue;
+                }
+                catch
+                {
+                    // Device removed/changed — re-resolve on next call
+                    try { cached.Dispose(); } catch { }
+                    _devicePeakCache.Remove(deviceId);
+                    return 0f;
                 }
             }
+
+            try
+            {
+                var devices = _enumerator.EnumerateAudioEndPoints(dataFlow, DeviceState.Active);
+                MMDevice? match = null;
+                if (devices != null)
+                {
+                    for (int i = 0; i < devices.Count; i++)
+                    {
+                        var dev = devices[i];
+                        bool isMatch = false;
+                        try { isMatch = match == null && dev.ID == deviceId; } catch { }
+                        if (isMatch)
+                            match = dev;
+                        else
+                            try { dev.Dispose(); } catch { }
+                    }
+                }
+                if (match != null)
+                {
+                    _devicePeakCache[deviceId] = match;
+                    return match.AudioMeterInformation.MasterPeakValue;
+                }
+            }
+            catch { }
+            return 0f;
         }
-        catch { }
-        return 0f;
     }
 
     private float GetActiveWindowPeakLevel()
@@ -871,9 +1123,8 @@ public class AudioMixer : IDisposable
                     if (pid == 0) continue;
 
                     // Use process name for dedup — skip display name entries (dupes)
-                    string procName;
-                    try { procName = System.Diagnostics.Process.GetProcessById(pid).ProcessName; }
-                    catch { continue; }
+                    string? procName = ResolvePidName(pid);
+                    if (procName == null) continue;
 
                     if (!seen.Add(procName.ToLowerInvariant())) continue;
 
@@ -949,6 +1200,17 @@ public class AudioMixer : IDisposable
         {
             try { _masterPeakDevice?.Dispose(); } catch { }
             _masterPeakDevice = null;
+            try { _micPeakDevice?.Dispose(); } catch { }
+            _micPeakDevice = null;
+            try { _masterControlDevice?.Dispose(); } catch { }
+            _masterControlDevice = null;
+            try { _micControlDevice?.Dispose(); } catch { }
+            _micControlDevice = null;
+            try { _systemPeakSession?.Dispose(); } catch { }
+            _systemPeakSession = null;
+            foreach (var dev in _devicePeakCache.Values)
+                try { dev.Dispose(); } catch { }
+            _devicePeakCache.Clear();
         }
     }
 
@@ -961,13 +1223,27 @@ public class AudioMixer : IDisposable
         {
             _sessions.Clear();
             _sessionsByPid.Clear();
+            foreach (var w in _sessionWrappers)
+                try { w.Dispose(); } catch { }
+            _sessionWrappers = new List<AudioSessionControl>();
         }
         lock (_enumLock)
         {
             try { _renderDevice?.Dispose(); } catch { }
             try { _masterPeakDevice?.Dispose(); } catch { }
+            try { _micPeakDevice?.Dispose(); } catch { }
+            try { _masterControlDevice?.Dispose(); } catch { }
+            try { _micControlDevice?.Dispose(); } catch { }
+            try { _systemPeakSession?.Dispose(); } catch { }
             _renderDevice = null;
             _masterPeakDevice = null;
+            _micPeakDevice = null;
+            _masterControlDevice = null;
+            _micControlDevice = null;
+            _systemPeakSession = null;
+            foreach (var dev in _devicePeakCache.Values)
+                try { dev.Dispose(); } catch { }
+            _devicePeakCache.Clear();
             _enumerator.Dispose();
         }
     }

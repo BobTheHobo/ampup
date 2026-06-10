@@ -11,7 +11,14 @@ public class SerialReader : IDisposable
     private SerialPort? _port;
     private readonly string _portName;
     private readonly int _baud;
-    private readonly List<byte> _buf = new();
+
+    // Frame assembly buffer: fixed array + length, compacted after each parse
+    // pass. Capacity = overflow cap (256) + one max read chunk (64) so a read
+    // can always be appended before the overflow check runs.
+    private const int BufOverflowCap = 256;
+    private const int ReadChunkSize = 64;
+    private readonly byte[] _buf = new byte[BufOverflowCap + ReadChunkSize];
+    private int _bufLen;
     private CancellationTokenSource _cts = new();
     private bool _running;
     private int _connectionState;
@@ -104,7 +111,7 @@ public class SerialReader : IDisposable
                 MarkReadActivity();
                 Logger.Log($"Connected to {portName} @ {_baud} baud");
                 NotifyConnectionChanged(true);
-                _buf.Clear();
+                _bufLen = 0;
 
                 // Request device info + knob positions (FE 01 FF)
                 TrySendInfoRequest(port);
@@ -220,7 +227,7 @@ public class SerialReader : IDisposable
 
     private async Task ReadLoop(CancellationToken ct)
     {
-        var tmp = new byte[64];
+        var tmp = new byte[ReadChunkSize];
         var lastReadUtc = DateTime.UtcNow;
         while (_running && !ct.IsCancellationRequested && _port?.IsOpen == true)
         {
@@ -238,13 +245,14 @@ public class SerialReader : IDisposable
 
                 lastReadUtc = DateTime.UtcNow;
                 MarkReadActivity(lastReadUtc);
-                for (int i = 0; i < n; i++) _buf.Add(tmp[i]);
+                Buffer.BlockCopy(tmp, 0, _buf, _bufLen, n);
+                _bufLen += n;
 
                 // Security: prevent unbounded buffer growth from malformed data
-                if (_buf.Count > 256)
+                if (_bufLen > BufOverflowCap)
                 {
-                    Logger.Log($"Serial buffer overflow ({_buf.Count} bytes), clearing");
-                    _buf.Clear();
+                    Logger.Log($"Serial buffer overflow ({_bufLen} bytes), clearing");
+                    _bufLen = 0;
                 }
 
                 ParseFrames();
@@ -319,23 +327,28 @@ public class SerialReader : IDisposable
 
     private void ParseFrames()
     {
-        while (_buf.Count >= 3)
+        // Parse in place: `pos` is the consumed prefix; remaining bytes are
+        // compacted to index 0 once at the end instead of shifting per byte.
+        int pos = 0;
+
+        while (_bufLen - pos >= 3)
         {
             // Find start byte
-            if (_buf[0] != 0xFE) { _buf.RemoveAt(0); continue; }
+            if (_buf[pos] != 0xFE) { pos++; continue; }
+
+            int avail = _bufLen - pos;
 
             // Try to match a known message type
             bool matched = false;
             foreach (var (id, len) in MessageTypes)
             {
-                if (_buf.Count < len) continue;
-                if (_buf[1] != id) continue;
-                if (_buf[len - 1] != 0xFF) continue;
+                if (avail < len) continue;
+                if (_buf[pos + 1] != id) continue;
+                if (_buf[pos + len - 1] != 0xFF) continue;
 
-                // Valid frame — extract and handle
-                var frame = _buf.GetRange(0, len).ToArray();
-                _buf.RemoveRange(0, len);
-                HandleFrame(id, frame);
+                // Valid frame — handle in place, then consume it
+                HandleFrame(id, _buf, pos);
+                pos += len;
                 matched = true;
                 break;
             }
@@ -346,7 +359,7 @@ public class SerialReader : IDisposable
                 bool mightMatch = false;
                 foreach (var (id, len) in MessageTypes)
                 {
-                    if (_buf.Count >= 2 && _buf[1] == id && _buf.Count < len)
+                    if (avail >= 2 && _buf[pos + 1] == id && avail < len)
                     {
                         mightMatch = true; // need more bytes
                         break;
@@ -355,7 +368,7 @@ public class SerialReader : IDisposable
                 if (!mightMatch)
                 {
                     // Garbage byte, skip it
-                    _buf.RemoveAt(0);
+                    pos++;
                 }
                 else
                 {
@@ -363,9 +376,18 @@ public class SerialReader : IDisposable
                 }
             }
         }
+
+        // Compact the unconsumed remainder to the front of the buffer
+        if (pos > 0)
+        {
+            int remaining = _bufLen - pos;
+            if (remaining > 0)
+                Buffer.BlockCopy(_buf, pos, _buf, 0, remaining);
+            _bufLen = remaining;
+        }
     }
 
-    private void HandleFrame(byte id, byte[] frame)
+    private void HandleFrame(byte id, byte[] buf, int off)
     {
         switch (id)
         {
@@ -376,8 +398,8 @@ public class SerialReader : IDisposable
             case 0x03:
                 // Knob: fe 03 [idx] [hi] [lo] ff
                 {
-                    int idx = frame[2];
-                    int raw = (frame[3] << 8) | frame[4];
+                    int idx = buf[off + 2];
+                    int raw = (buf[off + 3] << 8) | buf[off + 4];
                     if (idx >= 0 && idx < 5)
                     {
                         // Deadzone on RAW value first — prevents snap discontinuity from defeating jitter filter
@@ -398,7 +420,7 @@ public class SerialReader : IDisposable
                 // Always fire all values to restore initial state; update deadzone baseline
                 for (int i = 0; i < 5; i++)
                 {
-                    int val = (frame[2 + i * 2] << 8) | frame[3 + i * 2];
+                    int val = (buf[off + 2 + i * 2] << 8) | buf[off + 3 + i * 2];
                     if (val > 1000) val = 1023;
                     _lastFiredValues[i] = val;
                     OnKnob?.Invoke(new KnobEvent { Idx = i, Value = val, IsBatch = true });
@@ -408,7 +430,7 @@ public class SerialReader : IDisposable
             case 0x06:
                 // Button press (down): fe 06 [idx] ff
                 {
-                    int idx = frame[2];
+                    int idx = buf[off + 2];
                     if (idx >= 0 && idx < 5)
                         OnButton?.Invoke(new ButtonEvent { Idx = idx, IsDown = true });
                 }
@@ -417,7 +439,7 @@ public class SerialReader : IDisposable
             case 0x07:
                 // Button release (up): fe 07 [idx] ff
                 {
-                    int idx = frame[2];
+                    int idx = buf[off + 2];
                     if (idx >= 0 && idx < 5)
                         OnButton?.Invoke(new ButtonEvent { Idx = idx, IsDown = false });
                 }
@@ -425,7 +447,7 @@ public class SerialReader : IDisposable
 
             case 0x08:
                 // Device ID: fe 08 [4 bytes] ff
-                Logger.Log($"Device ID: {frame[2]:X2}{frame[3]:X2}{frame[4]:X2}{frame[5]:X2}");
+                Logger.Log($"Device ID: {buf[off + 2]:X2}{buf[off + 3]:X2}{buf[off + 4]:X2}{buf[off + 5]:X2}");
                 break;
         }
     }

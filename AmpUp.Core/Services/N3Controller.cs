@@ -73,7 +73,14 @@ public sealed class N3Controller : IDisposable
     private const int WriteTimeoutMs = 500;
     private const int KeepAliveMs = 5000;
 
+    // Write lock: serializes writers (display frames, brightness, sleep/wake,
+    // keepalive, feature probes) against each other and against stream disposal.
+    // The read loop deliberately does NOT take this lock — HidSharp's HidStream
+    // supports concurrent read/write on separate threads, and holding the lock
+    // across the blocking Read (ReadTimeoutMs=500) would queue every write
+    // behind an in-flight read for up to 500ms.
     private readonly object _streamLock = new();
+    private byte[] _writeBuffer = Array.Empty<byte>();
     private HidDevice? _device;
     private HidStream? _stream;
     private HidDevice? _keyboardDevice;
@@ -447,32 +454,25 @@ public sealed class N3Controller : IDisposable
     private async Task ReadLoop(HidStream stream, int reportLength, string channelName, bool parseKnownProtocol, CancellationToken ct)
     {
         reportLength = Math.Max(reportLength, 8);
+        var buffer = new byte[reportLength];
 
         while (!ct.IsCancellationRequested && !_disposed)
         {
-            var buffer = new byte[reportLength];
-
             try
             {
-                int read;
-
-                if (ReferenceEquals(stream, _stream))
-                {
-                    lock (_streamLock)
-                    {
-                        if (_stream == null) break;
-                        read = _stream.Read(buffer, 0, buffer.Length);
-                    }
-                }
-                else
-                {
-                    read = stream.Read(buffer, 0, buffer.Length);
-                }
+                // Read WITHOUT _streamLock — that lock only serializes writers.
+                // Stream lifetime: DisposeConnection cancels our token, then
+                // disposes the stream; a blocked Read then throws, which the
+                // catch below turns into a graceful exit (ct is already set).
+                int read = stream.Read(buffer, 0, buffer.Length);
 
                 if (read <= 0) continue;
+                if (IsAllZero(buffer, read)) continue;
 
+                // Copy only when a non-zero report actually arrived — handlers
+                // keep a reference via N3InputEvent.RawReport, and the shared
+                // buffer is overwritten on the next iteration.
                 var report = buffer.AsSpan(0, read).ToArray();
-                if (IsAllZero(report)) continue;
 
                 if (parseKnownProtocol && TryParseInput(report, out var parsed))
                 {
@@ -660,32 +660,50 @@ public sealed class N3Controller : IDisposable
     {
         int reportLength = Math.Max(OutputReportLength, DefaultPacketSize + 1);
         int payloadLength = Math.Max(1, reportLength - 1);
-        int offset = 0;
 
-        while (offset < imageData.Length)
+        // Hold the write lock across the entire chunk loop so an image frame
+        // is written contiguously — other writers can't interleave mid-frame.
+        lock (_streamLock)
         {
-            int chunkLength = Math.Min(payloadLength, imageData.Length - offset);
-            var report = new byte[reportLength];
-            imageData.Slice(offset, chunkLength).CopyTo(report.AsSpan(1, chunkLength));
+            var stream = _stream;
+            if (stream == null) return;
 
-            lock (_streamLock)
+            var report = EnsureWriteBuffer(reportLength);
+            int offset = 0;
+
+            while (offset < imageData.Length)
             {
-                _stream?.Write(report, 0, report.Length);
+                int chunkLength = Math.Min(payloadLength, imageData.Length - offset);
+                Array.Clear(report, 0, reportLength);
+                imageData.Slice(offset, chunkLength).CopyTo(report.AsSpan(1, chunkLength));
+                stream.Write(report, 0, reportLength);
+                offset += chunkLength;
             }
-
-            offset += chunkLength;
         }
     }
 
     private void WriteExtendedReport(params byte[] payload)
     {
-        var report = new byte[Math.Max(OutputReportLength, DefaultPacketSize + 1)];
-        Array.Copy(payload, report, Math.Min(payload.Length, report.Length));
+        int reportLength = Math.Max(OutputReportLength, DefaultPacketSize + 1);
 
         lock (_streamLock)
         {
-            _stream?.Write(report, 0, report.Length);
+            var stream = _stream;
+            if (stream == null) return;
+
+            var report = EnsureWriteBuffer(reportLength);
+            Array.Clear(report, 0, reportLength);
+            Array.Copy(payload, report, Math.Min(payload.Length, reportLength));
+            stream.Write(report, 0, reportLength);
         }
+    }
+
+    /// <summary>Reusable write buffer — callers must hold <see cref="_streamLock"/>.</summary>
+    private byte[] EnsureWriteBuffer(int length)
+    {
+        if (_writeBuffer.Length < length)
+            _writeBuffer = new byte[length];
+        return _writeBuffer;
     }
 
     private static bool TryGetAckOffset(ReadOnlySpan<byte> report, out int offset)
@@ -706,11 +724,11 @@ public sealed class N3Controller : IDisposable
         return false;
     }
 
-    private static bool IsAllZero(byte[] data)
+    private static bool IsAllZero(byte[] data, int count)
     {
-        foreach (byte b in data)
+        for (int i = 0; i < count; i++)
         {
-            if (b != 0) return false;
+            if (data[i] != 0) return false;
         }
         return true;
     }

@@ -23,6 +23,17 @@ public class AudioAnalyzer : IDisposable
     private bool _disposed;
     private bool _unsupportedFormatLogged;
 
+    // Wave format characteristics, derived ONCE in Start(). The device format cannot
+    // change during a capture's lifetime, so OnDataAvailable (~every 10ms) doesn't
+    // need to lock, re-read _capture, or re-normalize (ToStandardWaveFormat allocates
+    // a new WaveFormat per call for WaveFormatExtensible).
+    private WaveFormat? _sourceFormat;     // raw capture format (diagnostics only)
+    private WaveFormat? _normalizedFormat; // normalized format used for sample decoding
+    private int _formatChannels;
+    private int _formatBytesPerSample;
+    private int _formatFrameBytes;
+    private int _formatSampleRate;
+
     // Band frequency ranges (Hz): [min, max]
     private static readonly (float Min, float Max)[] BandRanges =
     {
@@ -62,6 +73,17 @@ public class AudioAnalyzer : IDisposable
                 _bufferPos = 0;
                 _analysisHop = 0;
                 _unsupportedFormatLogged = false;
+
+                // Derive format characteristics once — see field comments above.
+                var sourceFormat = capture.WaveFormat;
+                var normalized = NormalizeWaveFormat(sourceFormat);
+                _sourceFormat = sourceFormat;
+                _normalizedFormat = normalized;
+                _formatChannels = normalized.Channels;
+                _formatBytesPerSample = normalized.BitsPerSample / 8;
+                _formatFrameBytes = _formatChannels * _formatBytesPerSample;
+                _formatSampleRate = normalized.SampleRate;
+
                 _capture = capture;
                 _running = true;
             }
@@ -117,17 +139,17 @@ public class AudioAnalyzer : IDisposable
     {
         if (!_running || e.BytesRecorded == 0) return;
 
-        // Capture a local reference under lock — Stop() can null _capture between the
-        // _running check above and the dereference below (TOCTOU race).
-        WasapiLoopbackCapture? capture;
-        lock (_lock) { capture = _capture; }
-        if (capture == null) return;
+        // Format characteristics were captured once in Start() — no per-callback lock
+        // or WaveFormat allocation needed (the format can't change while capturing).
+        // A late callback racing Stop() only touches managed buffers below, which is
+        // safe; the _running check above filters the common case.
+        var sourceFormat = _sourceFormat;
+        var format = _normalizedFormat;
+        if (sourceFormat == null || format == null) return;
 
-        var sourceFormat = capture.WaveFormat;
-        var format = NormalizeWaveFormat(sourceFormat);
-        int channels = format.Channels;
-        int bytesPerSample = format.BitsPerSample / 8;
-        int frameBytes = bytesPerSample * channels;
+        int channels = _formatChannels;
+        int bytesPerSample = _formatBytesPerSample;
+        int frameBytes = _formatFrameBytes;
         if (channels <= 0 || bytesPerSample <= 0 || frameBytes <= 0)
         {
             LogUnsupportedFormatOnce(sourceFormat, format);
@@ -151,7 +173,7 @@ public class AudioAnalyzer : IDisposable
                 if (_analysisHop >= AnalysisHopBuffers)
                 {
                     _analysisHop = 0;
-                    ProcessFft(format.SampleRate);
+                    ProcessFft(_formatSampleRate);
                 }
                 _bufferPos = 0;
             }

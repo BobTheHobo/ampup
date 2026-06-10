@@ -75,6 +75,35 @@ public static class MonitorBrightness
     private static List<PHYSICAL_MONITOR>? _cachedMonitors;
     private static List<string>? _cachedDeviceNames; // GDI device name per handle, same order
 
+    // DDC/CI brightness min/max per handle, same order. Lazily filled on first use —
+    // min/max are static per monitor, so the 60ms throttle loop only issues the Set
+    // instead of paying a 40-100ms Get transaction before every Set.
+    // Invalidated together with the handle cache (monitor changes).
+    private static (uint Min, uint Max)?[]? _cachedRanges;
+
+    /// <summary>
+    /// Get the (cached) DDC/CI brightness range for the monitor at handle index.
+    /// Queries the monitor once and caches the result. Callers must hold _cacheLock.
+    /// </summary>
+    private static bool TryGetRange(int index, IntPtr hPhysicalMonitor, out uint min, out uint max)
+    {
+        var ranges = _cachedRanges;
+        if (ranges != null && index >= 0 && index < ranges.Length && ranges[index] is { } r)
+        {
+            min = r.Min;
+            max = r.Max;
+            return true;
+        }
+
+        if (GetMonitorBrightness(hPhysicalMonitor, out min, out _, out max))
+        {
+            if (ranges != null && index >= 0 && index < ranges.Length)
+                ranges[index] = (min, max);
+            return true;
+        }
+        return false;
+    }
+
     private static void EnsureCache()
     {
         if (_cachedMonitors != null) return;
@@ -108,6 +137,7 @@ public static class MonitorBrightness
 
         _cachedMonitors = monitors;
         _cachedDeviceNames = deviceNames;
+        _cachedRanges = new (uint Min, uint Max)?[monitors.Count];
     }
 
     private static List<PHYSICAL_MONITOR> GetCachedMonitors()
@@ -125,6 +155,7 @@ public static class MonitorBrightness
         }
         _cachedMonitors = null;
         _cachedDeviceNames = null;
+        _cachedRanges = null;
     }
 
     // ── Per-monitor throttled set (last-value-wins, 60ms interval) ──
@@ -188,11 +219,12 @@ public static class MonitorBrightness
             {
                 var monitors = GetCachedMonitors();
                 bool anyFailed = false;
-                foreach (var m in monitors)
+                for (int i = 0; i < monitors.Count; i++)
                 {
+                    var m = monitors[i];
                     try
                     {
-                        if (GetMonitorBrightness(m.hPhysicalMonitor, out uint min, out _, out uint max))
+                        if (TryGetRange(i, m.hPhysicalMonitor, out uint min, out uint max))
                         {
                             uint val = (uint)(min + (max - min) * brightness);
                             SetMonitorBrightness(m.hPhysicalMonitor, val);
@@ -222,7 +254,7 @@ public static class MonitorBrightness
                     var m = _cachedMonitors[i];
                     try
                     {
-                        if (GetMonitorBrightness(m.hPhysicalMonitor, out uint min, out _, out uint max))
+                        if (TryGetRange(i, m.hPhysicalMonitor, out uint min, out uint max))
                         {
                             uint val = (uint)(min + (max - min) * brightness);
                             SetMonitorBrightness(m.hPhysicalMonitor, val);
@@ -249,11 +281,12 @@ public static class MonitorBrightness
             try
             {
                 var monitors = GetCachedMonitors();
-                foreach (var m in monitors)
+                for (int i = 0; i < monitors.Count; i++)
                 {
+                    var m = monitors[i];
                     try
                     {
-                        if (GetMonitorBrightness(m.hPhysicalMonitor, out uint min, out _, out uint max))
+                        if (TryGetRange(i, m.hPhysicalMonitor, out uint min, out uint max))
                         {
                             uint val = (uint)(min + (max - min) * brightness);
                             SetMonitorBrightness(m.hPhysicalMonitor, val);

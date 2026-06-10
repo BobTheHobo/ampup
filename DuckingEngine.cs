@@ -37,6 +37,11 @@ public class DuckingEngine : IDisposable
 
     private enum FadeDirection { None, FadeOut, FadeIn }
 
+    // PID -> lowercase process name cache. Process.GetProcessById snapshots the
+    // entire system process table per call, so resolve each PID once and reuse.
+    // Guarded by _lock (only touched from Poll/EnumerateSessions).
+    private readonly Dictionary<int, string> _pidNameCache = new();
+
     public void Poll(DuckingConfig config)
     {
         if (!config.Enabled || config.Rules.Count == 0) return;
@@ -45,10 +50,12 @@ public class DuckingEngine : IDisposable
         {
             if (_disposed) return;
 
+            Dictionary<string, (AudioSessionControl Session, float Peak)>? sessions = null;
             try
             {
-                // Enumerate sessions once per Poll call
-                var sessions = EnumerateSessions();
+                // Enumerate sessions once per Poll call — shared by the trigger
+                // checks AND the fade steps (no re-enumeration mid-cycle)
+                sessions = EnumerateSessions();
 
                 for (int i = 0; i < config.Rules.Count; i++)
                 {
@@ -67,6 +74,15 @@ public class DuckingEngine : IDisposable
             catch (Exception ex)
             {
                 Logger.Log($"DuckingEngine.Poll error: {ex.Message}");
+            }
+            finally
+            {
+                // Session wrappers are re-created fresh each poll and nothing holds
+                // them across polls (RuleState stores names + volumes only), so
+                // dispose every wrapper from this cycle.
+                if (sessions != null)
+                    foreach (var kv in sessions)
+                        try { kv.Value.Session.Dispose(); } catch { }
             }
         }
     }
@@ -110,7 +126,7 @@ public class DuckingEngine : IDisposable
         // Advance any in-progress fade
         if (!state.FadeComplete)
         {
-            ApplyFadeStep(rule, state);
+            ApplyFadeStep(rule, state, sessions);
         }
     }
 
@@ -176,18 +192,13 @@ public class DuckingEngine : IDisposable
         }
     }
 
-    private void ApplyFadeStep(DuckingRule rule, RuleState state)
+    private void ApplyFadeStep(DuckingRule rule, RuleState state,
+        Dictionary<string, (AudioSessionControl Session, float Peak)> liveSessions)
     {
         double elapsed = (DateTime.UtcNow - state.FadeStartTime).TotalMilliseconds;
         float t = Math.Clamp((float)(elapsed / state.FadeMs), 0f, 1f);
 
-        // Enumerate fresh sessions to get current AudioSessionControl references
-        Dictionary<string, (AudioSessionControl Session, float Peak)> liveSessions;
-        try { liveSessions = EnumerateSessions(); }
-        catch { return; }
-
         bool allDone = true;
-        string trigger = rule.TriggerApp.ToLowerInvariant();
 
         foreach (var info in state.TrackedSessions.Values)
         {
@@ -248,6 +259,7 @@ public class DuckingEngine : IDisposable
     private Dictionary<string, (AudioSessionControl Session, float Peak)> EnumerateSessions()
     {
         var result = new Dictionary<string, (AudioSessionControl, float)>();
+        var seenPids = new HashSet<int>();
 
         var device = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
         using var dev = device;
@@ -257,21 +269,50 @@ public class DuckingEngine : IDisposable
         for (int i = 0; i < sessions.Count; i++)
         {
             var s = sessions[i];
+            bool stored = false;
             try
             {
                 var pid = (int)s.GetProcessID;
                 if (pid == 0) continue; // skip system sounds
 
-                var proc = System.Diagnostics.Process.GetProcessById(pid);
-                var name = proc.ProcessName.ToLowerInvariant();
+                seenPids.Add(pid);
+
+                // Resolve names through the cache — GetProcessById snapshots the
+                // whole process table, so only hit it for PIDs we haven't seen
+                if (!_pidNameCache.TryGetValue(pid, out var name))
+                {
+                    using var proc = System.Diagnostics.Process.GetProcessById(pid);
+                    name = proc.ProcessName.ToLowerInvariant();
+                    _pidNameCache[pid] = name;
+                }
 
                 float peak = 0f;
                 try { peak = s.AudioMeterInformation.MasterPeakValue; } catch { }
 
                 if (!result.ContainsKey(name))
+                {
                     result[name] = (s, peak);
+                    stored = true;
+                }
             }
             catch { }
+            finally
+            {
+                // Wrapper not kept (system sounds, dead process, duplicate name) —
+                // dispose it rather than leaving it for the finalizer queue
+                if (!stored)
+                    try { s.Dispose(); } catch { }
+            }
+        }
+
+        // Evict cached names for PIDs that no longer have sessions
+        if (_pidNameCache.Count > 0)
+        {
+            List<int>? stale = null;
+            foreach (var p in _pidNameCache.Keys)
+                if (!seenPids.Contains(p)) (stale ??= new List<int>()).Add(p);
+            if (stale != null)
+                foreach (var p in stale) _pidNameCache.Remove(p);
         }
 
         return result;

@@ -97,9 +97,58 @@ public partial class RoomView : UserControl
         _debounce.Tick += (_, _) => { _debounce.Stop(); Save(); };
 
         ThemeManager.OnAccentChanged += () => Dispatcher.Invoke(RefreshAccentColors);
-        Unloaded += (_, _) => StopScreenSyncPreviewTimers();
+        Loaded += (_, _) => HookOwnerWindow();
+        Unloaded += (_, _) => { UnhookOwnerWindow(); StopScreenSyncPreviewTimers(); };
 
         BuildTopBar();
+    }
+
+    // ── Hidden-window timer quiesce ─────────────────────────────────────
+    // Hide-to-tray uses Hide(), which never raises Unloaded — without these
+    // window hooks the screen-sync status/preview timers tick forever with
+    // nothing visible. Mirrors the _hwPreviewTimer pattern in MainWindow.
+
+    private Window? _ownerWindow;
+
+    private void HookOwnerWindow()
+    {
+        var window = Window.GetWindow(this);
+        if (window == null || ReferenceEquals(window, _ownerWindow)) return;
+        UnhookOwnerWindow(); // guard against duplicate handlers when Loaded re-fires
+        _ownerWindow = window;
+        window.IsVisibleChanged += OwnerWindow_IsVisibleChanged;
+        window.StateChanged += OwnerWindow_StateChanged;
+    }
+
+    private void UnhookOwnerWindow()
+    {
+        if (_ownerWindow == null) return;
+        _ownerWindow.IsVisibleChanged -= OwnerWindow_IsVisibleChanged;
+        _ownerWindow.StateChanged -= OwnerWindow_StateChanged;
+        _ownerWindow = null;
+    }
+
+    private void OwnerWindow_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        => UpdateScreenSyncTimersForWindowState();
+
+    private void OwnerWindow_StateChanged(object? sender, EventArgs e)
+        => UpdateScreenSyncTimersForWindowState();
+
+    private bool IsOwnerWindowQuiesced => _ownerWindow != null
+        && (!_ownerWindow.IsVisible || _ownerWindow.WindowState == WindowState.Minimized);
+
+    private void UpdateScreenSyncTimersForWindowState()
+    {
+        if (IsOwnerWindowQuiesced)
+        {
+            _screenSyncStatusTimer?.Stop();
+            _screenSyncPreviewTimer?.Stop();
+        }
+        else
+        {
+            _screenSyncStatusTimer?.Start();
+            _screenSyncPreviewTimer?.Start();
+        }
     }
 
     public void SetSync(AmbienceSync sync)
@@ -351,6 +400,15 @@ public partial class RoomView : UserControl
     private StackPanel? _screenSyncSettingsPanel;
     private StackPanel? _toggleRowContainer;
 
+    // Latest SCREEN SYNC tile status updater — the toggle row can be rebuilt
+    // independently of the screen-sync settings panel, so the panel's status
+    // timer routes through this field instead of capturing a stale delegate.
+    private Action<string, bool>? _screenSyncTileStatusUpdater;
+
+    // Live reference to the ROOM EFFECT tab's effect picker so toggle clicks
+    // can sync its enabled/selection state without rebuilding the whole tab.
+    private Controls.EffectPickerControl? _roomEffectPicker;
+
     private Border BuildRoomCard()
     {
         var wrapper = new Border { Margin = new Thickness(0) };
@@ -475,6 +533,7 @@ public partial class RoomView : UserControl
             BuildTabToggleRow(toggleRow, _roomTabIndex);
             _toggleRowContainer.Children.Add(toggleRow);
             BuildToggleSettingsRow(_toggleRowContainer);
+            RebuildScreenSyncSettingsPanel(); // BuildRoomEffectTab parents it at the bottom
         }
 
         switch (_roomTabIndex)
@@ -484,6 +543,58 @@ public partial class RoomView : UserControl
             case 2: BuildDevicesTab(_roomTabContent); break;
         }
         _loading = false;
+    }
+
+    /// <summary>
+    /// Rebuilds only the toggle tiles + their settings sub-row in place.
+    /// The toggle callbacks used to call RebuildRoomTabContent(), which tears
+    /// down the entire 6,600-line tab (including the EffectPickerControl and
+    /// its dozens of animated preview tiles) on every click. The interlock
+    /// side-effects (Screen Sync / Game Mode stopping Music Reactive + VU Fill
+    /// etc.) still run inside the toggle callbacks — only the UI refresh is
+    /// targeted now.
+    /// </summary>
+    private void RefreshToggleRow()
+    {
+        if (_toggleRowContainer == null || _config == null) return;
+        if (_roomTabIndex != 0) { RebuildRoomTabContent(); return; }
+
+        _loading = true;
+        _toggleRowContainer.Children.Clear();
+        var toggleRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4), HorizontalAlignment = HorizontalAlignment.Center };
+        BuildTabToggleRow(toggleRow, _roomTabIndex);
+        _toggleRowContainer.Children.Add(toggleRow);
+        BuildToggleSettingsRow(_toggleRowContainer);
+
+        // Keep the (untouched) effect picker in sync with the new toggle state
+        if (_roomEffectPicker != null)
+        {
+            _roomEffectPicker.IsEnabled = !_vuFillActive;
+            _roomEffectPicker.Opacity = _vuFillActive ? 0.4 : 1.0;
+            if (_activePattern == null || _activePattern == "__sync__"
+                || _activePattern == RoomTemperaturePatternId)
+                _roomEffectPicker.SelectedIndex = -1;
+            else if (Enum.TryParse<LightEffect>(_activePattern, true, out var eff))
+                _roomEffectPicker.SelectedEffect = eff; // setter doesn't raise SelectionChanged
+        }
+        _loading = false;
+    }
+
+    /// <summary>
+    /// (Re)creates the SCREEN SYNC settings card + its status/preview timers.
+    /// Split out of BuildTabToggleRow so RefreshToggleRow can rebuild the
+    /// toggle tiles without recreating this panel (and its timers).
+    /// </summary>
+    private void RebuildScreenSyncSettingsPanel()
+    {
+        if (_screenSyncSettingsPanel != null)
+            _roomTabContent?.Children.Remove(_screenSyncSettingsPanel);
+        var ssInner = new StackPanel();
+        BuildScreenSyncSettings(ssInner, (status, active) => _screenSyncTileStatusUpdater?.Invoke(status, active));
+        var ssCard = MakeSectionCard("SCREEN SYNC", ssInner);
+        ssCard.Margin = new Thickness(0, 8, 0, 0);
+        _screenSyncSettingsPanel = new StackPanel();
+        _screenSyncSettingsPanel.Children.Add(ssCard);
     }
 
     private void BuildTabToggleRow(WrapPanel row, int tabIndex)
@@ -498,7 +609,7 @@ public partial class RoomView : UserControl
                 if (_config == null) return;
                 if (on) { ResumeAllGoveeSync(); StopRoomPattern(); _activePattern = "__sync__"; _config.Ambience.LinkToLights = true; _config.Corsair.LightSyncMode = "vu_reactive"; }
                 else { _activePattern = null; _config.Ambience.LinkToLights = false; _config.Corsair.LightSyncMode = "static"; }
-                QueueSave(); RebuildRoomTabContent();
+                QueueSave(); RefreshToggleRow();
             }, Color.FromRgb(0x69, 0xF0, 0xAE)));
 
         // Music Reactive
@@ -509,7 +620,7 @@ public partial class RoomView : UserControl
                 if (_loading) return;
                 if (on) { StopVuFill(); StartGlobalMusicSync(); }
                 else { StopCorsairMusicSync(); if (_activePattern == "AudioReactive") StopRoomPattern(); }
-                QueueSave(); RebuildRoomTabContent();
+                QueueSave(); RefreshToggleRow();
             }, Color.FromRgb(0xFF, 0xB8, 0x00)));
 
         // VU Fill — segments fill up like VU meters with music
@@ -519,7 +630,7 @@ public partial class RoomView : UserControl
                 if (_loading) return;
                 if (on) { StopCorsairMusicSync(); StartVuFill(); }
                 else StopVuFill();
-                QueueSave(); RebuildRoomTabContent();
+                QueueSave(); RefreshToggleRow();
             }, Color.FromRgb(0xFF, 0x40, 0x81)));
 
         // Screen Sync
@@ -552,10 +663,11 @@ public partial class RoomView : UserControl
                 }
                 _dreamSync?.UpdateConfig(_config.Ambience.ScreenSync, _config.Ambience);
                 QueueSave();
-                RebuildRoomTabContent(); // update Music Reactive / VU Fill toggle states
+                RefreshToggleRow(); // update Music Reactive / VU Fill toggle states
             }, Color.FromRgb(0x44, 0x8A, 0xFF),
             syncRunning ? "ACTIVE" : "STANDBY",
             out var statusUpdater);
+        _screenSyncTileStatusUpdater = statusUpdater; // settings panel's status timer routes through this
         row.Children.Add(screenSyncTile);
 
         // Game Mode — auto-enable screen sync when fullscreen app detected
@@ -570,15 +682,9 @@ public partial class RoomView : UserControl
                 QueueSave();
             }, Color.FromRgb(0xFF, 0x6B, 0x35)));
 
-        // Screen Sync settings panel — always visible with live preview
-        if (_screenSyncSettingsPanel != null)
-            _roomTabContent?.Children.Remove(_screenSyncSettingsPanel);
-        var ssInner = new StackPanel();
-        BuildScreenSyncSettings(ssInner, statusUpdater!);
-        var ssCard = MakeSectionCard("SCREEN SYNC", ssInner);
-        ssCard.Margin = new Thickness(0, 8, 0, 0);
-        _screenSyncSettingsPanel = new StackPanel();
-        _screenSyncSettingsPanel.Children.Add(ssCard);
+        // Screen Sync settings panel (always visible with live preview) is built
+        // by RebuildScreenSyncSettingsPanel — kept out of this method so toggle
+        // clicks can rebuild the tile row without recreating the panel + timers.
     }
 
     // ── ROOM EFFECT TAB (unified: effect + palette + direction + canvas) ──
@@ -772,7 +878,7 @@ public partial class RoomView : UserControl
                     if (_config == null) return;
                     _config.Ambience.VuFillMode = capturedMode;
                     for (int i = 0; i < 15; i++) _vuFillPeaks[i] = 0;
-                    QueueSave(); RebuildRoomTabContent();
+                    QueueSave(); RefreshToggleRow(); // re-renders the mode pills' active state
                 };
                 var vuTransform = new TranslateTransform(0, 0);
                 tile.RenderTransform = vuTransform;
@@ -866,6 +972,7 @@ public partial class RoomView : UserControl
             IsEnabled = !_vuFillActive,
             Opacity = _vuFillActive ? 0.4 : 1.0,
         };
+        _roomEffectPicker = effectPicker; // RefreshToggleRow syncs enabled/selection state in place
 
         // Load persisted favorites into the picker
         var favList = new List<LightEffect>();
@@ -3613,6 +3720,10 @@ public partial class RoomView : UserControl
         _screenSyncStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _screenSyncStatusTimer.Tick += (_, _) =>
         {
+            // Visibility guard — the window hooks quiesce this timer on hide,
+            // but it also shouldn't do work while another tab is active.
+            if (!this.IsVisible) return;
+            if (Window.GetWindow(this)?.WindowState == WindowState.Minimized) return;
             if (_dreamStatusLabel != null && _dreamSync != null && _dreamSync.IsRunning)
                 _dreamStatusLabel.Text = _dreamSync.Status;
             bool active = _config?.Ambience.ScreenSync.Enabled == true;
@@ -3652,6 +3763,10 @@ public partial class RoomView : UserControl
             catch { /* preview is best-effort */ }
         };
         _screenSyncPreviewTimer.Start();
+
+        // Settings can be (re)built while the window is hidden in tray —
+        // immediately re-apply the quiesce state so the fresh timers don't run.
+        UpdateScreenSyncTimersForWindowState();
 
         // ── Device Zone Mapping ──
         if (_config!.Ambience.GoveeDevices.Count > 0)

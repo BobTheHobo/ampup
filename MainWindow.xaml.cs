@@ -36,6 +36,8 @@ public partial class MainWindow : FluentWindow
     private System.Windows.Threading.DispatcherTimer? _hwPreviewTimer;
     private volatile bool _windowActive = true; // safe to read from any thread
     private long _lastHwPreviewLedFrameTick;
+    private bool _pulseRunning; // PulseAnimation storyboard begun (connected state)
+    private DeviceSurface? _lastRenderedSurface; // surface the views were last rendered with
 
     public MainWindow()
     {
@@ -174,11 +176,13 @@ public partial class MainWindow : FluentWindow
             {
                 _windowActive = false;
                 _hwPreviewTimer.Stop();
+                SetPulsePaused(true);
             }
             else
             {
                 _windowActive = true;
                 _hwPreviewTimer.Start();
+                SetPulsePaused(false);
             }
         };
         IsVisibleChanged += (_, _) =>
@@ -187,13 +191,31 @@ public partial class MainWindow : FluentWindow
             {
                 _windowActive = false;
                 _hwPreviewTimer.Stop();
+                SetPulsePaused(true);
             }
             else if (WindowState != WindowState.Minimized)
             {
                 _windowActive = true;
                 _hwPreviewTimer.Start();
+                SetPulsePaused(false);
             }
         };
+    }
+
+    /// <summary>
+    /// Pause/resume the connection-dot pulse storyboard alongside the window
+    /// visibility hooks above — Hide() to tray never raises Unloaded, so a
+    /// Forever storyboard would otherwise keep its clock running 24/7.
+    /// Only acts when the storyboard is actually running (connected state).
+    /// </summary>
+    private void SetPulsePaused(bool paused)
+    {
+        if (!_pulseRunning) return;
+        var pulse = (System.Windows.Media.Animation.Storyboard)FindResource("PulseAnimation");
+        if (paused)
+            pulse.Pause(this);
+        else
+            pulse.Resume(this);
     }
 
     private void OnRgbFrameReady(byte[] frame)
@@ -235,6 +257,7 @@ public partial class MainWindow : FluentWindow
     {
         if (newConfig != null) _config = newConfig;
         ApplyHardwareSurfaceFromState(persist: false);
+        _lastRenderedSurface = GetEffectiveDeviceSurface();
         UpdateProfileButton();
         Action<AppConfig> saveHandler = cfg =>
         {
@@ -1610,11 +1633,7 @@ public partial class MainWindow : FluentWindow
             _settingsView.UpdateConnectionStatus(connected, portName);
             HwPreview.SetConnected(connected);
             UpdateAggregateConnectionUi();
-
-            if (_config.HardwareMode == HardwareMode.Auto)
-                RefreshViews();
-            else
-                _settingsView.RefreshActiveSurfaceVisibility();
+            RefreshViewsIfEffectiveSurfaceChanged();
         });
     }
 
@@ -1625,12 +1644,24 @@ public partial class MainWindow : FluentWindow
             _streamControllerConnected = connected;
             _settingsView.UpdateN3ConnectionStatus(connected, deviceName);
             UpdateAggregateConnectionUi();
-
-            if (_config.HardwareMode == HardwareMode.Auto)
-                RefreshViews();
-            else
-                _settingsView.RefreshActiveSurfaceVisibility();
+            RefreshViewsIfEffectiveSurfaceChanged();
         });
+    }
+
+    /// <summary>
+    /// Connection flaps are frequent (COM port drops, N3 retries every 5s while
+    /// disconnected). In Auto hardware mode the connect state feeds the computed
+    /// surface, but a full RefreshViews() — reloading config into all 8 views —
+    /// is only warranted when that computed surface actually changed. Everything
+    /// else gets the cheap surface-visibility refresh the non-Auto modes use.
+    /// </summary>
+    private void RefreshViewsIfEffectiveSurfaceChanged()
+    {
+        if (_config.HardwareMode == HardwareMode.Auto
+            && GetEffectiveDeviceSurface() != _lastRenderedSurface)
+            RefreshViews();
+        else
+            _settingsView.RefreshActiveSurfaceVisibility();
     }
 
     private void UpdateAggregateConnectionUi()
@@ -1647,9 +1678,17 @@ public partial class MainWindow : FluentWindow
 
         var pulse = (System.Windows.Media.Animation.Storyboard)FindResource("PulseAnimation");
         if (anyConnected)
+        {
             pulse.Begin(this, true);
+            _pulseRunning = true;
+            // Connection events fire while hidden in tray — don't leave the
+            // freshly-begun clock running with nothing visible.
+            if (!_windowActive)
+                pulse.Pause(this);
+        }
         else
         {
+            _pulseRunning = false;
             pulse.Stop(this);
             ConnectionDot.Opacity = 1.0;
         }
