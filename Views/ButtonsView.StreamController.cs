@@ -48,6 +48,11 @@ public partial class ButtonsView
     private WrapPanel? _scDynamicGlowSwatchPanel;
     private StackPanel? _scHardwarePanel;
     private ListPicker? _scHardwareMetricPicker;
+    private TextBlock? _scHardwareMetricHeaderLabel;
+    private TextBlock? _scHardwareCustomLabelLabel;
+    private TextBlock? _scHardwareLayoutLabel;
+    private TextBlock? _scHardwareSizeHeaderLabel;
+    private TextBlock? _scHardwareColorHeaderLabel;
     private TextBox? _scHardwareLabelBox;
     private SegmentedControl? _scHardwareLayoutPicker;
     private StyledSlider? _scHardwareLabelSizeSlider;
@@ -751,7 +756,8 @@ public partial class ButtonsView
         _scDisplayTabContent.Children.Add(_scDynamicPanel);
 
         _scHardwarePanel = new StackPanel { Visibility = Visibility.Collapsed };
-        _scHardwarePanel.Children.Add(MakeEditorLabel("HARDWARE METRIC"));
+        _scHardwareMetricHeaderLabel = MakeEditorLabel("HARDWARE METRIC");
+        _scHardwarePanel.Children.Add(_scHardwareMetricHeaderLabel);
         _scHardwareMetricPicker = new ListPicker
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -770,7 +776,8 @@ public partial class ButtonsView
         };
         _scHardwarePanel.Children.Add(_scHardwareMetricPicker);
 
-        _scHardwarePanel.Children.Add(MakeEditorLabel("LABEL"));
+        _scHardwareCustomLabelLabel = MakeEditorLabel("DISPLAY LABEL");
+        _scHardwarePanel.Children.Add(_scHardwareCustomLabelLabel);
         _scHardwareLabelBox = MakeEditorTextBox("CPU");
         _scHardwareLabelBox.Margin = new Thickness(0, 0, 0, 10);
         _scHardwareLabelBox.TextChanged += (_, _) =>
@@ -784,14 +791,15 @@ public partial class ButtonsView
         };
         _scHardwarePanel.Children.Add(_scHardwareLabelBox);
 
-        _scHardwarePanel.Children.Add(MakeEditorLabel("LAYOUT"));
+        _scHardwareLayoutLabel = MakeEditorLabel("LAYOUT");
+        _scHardwarePanel.Children.Add(_scHardwareLayoutLabel);
         _scHardwareLayoutPicker = new SegmentedControl
         {
             HorizontalAlignment = HorizontalAlignment.Left,
             Margin = new Thickness(0, 0, 0, 10),
         };
-        _scHardwareLayoutPicker.AddSegment("Value", HardwareMetricLayout.ValueAboveLabel);
-        _scHardwareLayoutPicker.AddSegment("Label", HardwareMetricLayout.LabelAboveValue);
+        _scHardwareLayoutPicker.AddSegment("Value Top", HardwareMetricLayout.ValueAboveLabel);
+        _scHardwareLayoutPicker.AddSegment("Label Top", HardwareMetricLayout.LabelAboveValue);
         _scHardwareLayoutPicker.AddSegment("Value Only", HardwareMetricLayout.ValueOnly);
         _scHardwareLayoutPicker.AddSegment("Label Only", HardwareMetricLayout.LabelOnly);
         _scHardwareLayoutPicker.AddSegment("Side", HardwareMetricLayout.SideBySide);
@@ -807,6 +815,8 @@ public partial class ButtonsView
         };
         _scHardwarePanel.Children.Add(_scHardwareLayoutPicker);
 
+        _scHardwareSizeHeaderLabel = MakeEditorLabel("SIZE");
+        _scHardwarePanel.Children.Add(_scHardwareSizeHeaderLabel);
         _scHardwareLabelSizeLabel = new TextBlock
         {
             Text = "Label Size: 10",
@@ -840,6 +850,8 @@ public partial class ButtonsView
         };
         _scHardwarePanel.Children.Add(_scHardwareLabelSizeSlider);
 
+        _scHardwareColorHeaderLabel = MakeEditorLabel("COLORS");
+        _scHardwarePanel.Children.Add(_scHardwareColorHeaderLabel);
         _scHardwareLabelColorLabel = MakeEditorLabel("LABEL COLOR");
         _scHardwarePanel.Children.Add(_scHardwareLabelColorLabel);
         _scHardwareLabelColorSwatchPanel = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };

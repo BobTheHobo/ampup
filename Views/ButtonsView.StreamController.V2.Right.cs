@@ -35,6 +35,7 @@ public partial class ButtonsView
     // ── Common-fields wrapper (LCD-only) ────────────────────────────────
     // Grouped so we can collapse them together for hardware selections.
     private StackPanel? _v2CommonFieldsPanel;
+    private StackPanel? _v2DesignContent;
     private Border? _v2PreviewCard;
     private StackPanel? _v2PreviewRow;
 
@@ -189,6 +190,7 @@ public partial class ButtonsView
         DetachFromParent(_scIconBox);
 
         var designContent = new StackPanel();
+        _v2DesignContent = designContent;
 
         if (_scDisplayTypePicker != null)
         {
@@ -798,6 +800,7 @@ public partial class ButtonsView
         {
             var selectedDisplay = GetSelectedDisplayKeyConfig();
             bool isHardwareMonitor = selectedDisplay?.DisplayType == DisplayKeyType.HardwareMonitor;
+            ArrangeHardwareMetricEditor(isHardwareMonitor);
             if (_v2TitleLabel != null) _v2TitleLabel.Visibility = isHardwareMonitor ? Visibility.Collapsed : Visibility.Visible;
             if (_scTitleBox != null) _scTitleBox.Visibility = isHardwareMonitor ? Visibility.Collapsed : Visibility.Visible;
             // _scIconBox intentionally stays hidden — see FillV2PreviewPanel.
@@ -1012,6 +1015,85 @@ public partial class ButtonsView
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
+
+    private void ArrangeHardwareMetricEditor(bool isHardwareMonitor)
+    {
+        if (_scHardwarePanel == null) return;
+
+        if (isHardwareMonitor)
+        {
+            _scHardwarePanel.Children.Clear();
+            AddHardwareEditorElement(_scHardwareMetricHeaderLabel);
+            AddHardwareEditorElement(_scHardwareMetricPicker, bottomMargin: 10);
+            AddHardwareEditorElement(_scHardwareCustomLabelLabel);
+            AddHardwareEditorElement(_scHardwareLabelBox, bottomMargin: 10);
+            AddHardwareEditorElement(_scHardwareLayoutLabel);
+            AddHardwareEditorElement(_scHardwareLayoutPicker, bottomMargin: 12);
+            AddHardwareEditorElement(_scHardwareSizeHeaderLabel);
+            AddHardwareEditorElement(_scTextSizeLabel, bottomMargin: 4);
+            AddHardwareEditorElement(_scTextSizeSlider, bottomMargin: 8);
+            AddHardwareEditorElement(_scHardwareLabelSizeLabel, bottomMargin: 4);
+            AddHardwareEditorElement(_scHardwareLabelSizeSlider, bottomMargin: 12);
+            AddHardwareEditorElement(_scHardwareColorHeaderLabel);
+            AddHardwareEditorElement(_scTextColorLabel);
+            AddHardwareEditorElement(_scTextColorSwatchPanel, bottomMargin: 8);
+            AddHardwareEditorElement(_scHardwareLabelColorLabel);
+            AddHardwareEditorElement(_scHardwareLabelColorSwatchPanel, bottomMargin: 10);
+
+            if (_scTextColorLabel != null)
+                _scTextColorLabel.Text = "VALUE COLOR";
+            if (_scTextSizeLabel != null && _scTextSizeSlider != null)
+                _scTextSizeLabel.Text = $"Value Size: {(int)Math.Round(_scTextSizeSlider.Value)}";
+            _scHardwarePanel.Visibility = Visibility.Visible;
+            return;
+        }
+
+        RestoreNormalEditorElements();
+    }
+
+    private void AddHardwareEditorElement(FrameworkElement? element, double bottomMargin = 0)
+    {
+        if (element == null || _scHardwarePanel == null) return;
+        DetachFromParent(element);
+        var margin = element.Margin;
+        element.Margin = new Thickness(margin.Left, margin.Top, margin.Right, bottomMargin);
+        element.Visibility = Visibility.Visible;
+        _scHardwarePanel.Children.Add(element);
+    }
+
+    private void RestoreNormalEditorElements()
+    {
+        if (_v2DesignContent == null) return;
+
+        FrameworkElement?[] elements =
+        {
+            _scTextSizeLabel,
+            _scTextSizeSlider,
+            _scTextColorLabel,
+            _scTextColorSwatchPanel,
+        };
+
+        foreach (var element in elements)
+        {
+            if (element == null) continue;
+            DetachFromParent(element);
+            element.Visibility = Visibility.Visible;
+        }
+
+        int insertAt = _v2DesignContent.Children.Count;
+        if (_scTextPositionPicker != null)
+        {
+            int pos = _v2DesignContent.Children.IndexOf(_scTextPositionPicker);
+            if (pos >= 0) insertAt = pos + 1;
+        }
+
+        foreach (var element in elements)
+        {
+            if (element == null) continue;
+            _v2DesignContent.Children.Insert(Math.Min(insertAt, _v2DesignContent.Children.Count), element);
+            insertAt++;
+        }
+    }
 
     /// <summary>
     /// True when the current selection is an LCD key (as opposed to a
