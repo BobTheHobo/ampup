@@ -799,9 +799,10 @@ public partial class ButtonsView
         {
             if (_loading || _config == null) return;
             var key = GetSelectedDisplayKeyConfig();
-            if (key != null && _scHardwareLayoutPicker.SelectedTag is HardwareMetricLayout layout)
-                key.HardwareMetricLayout = layout;
+            if (key != null)
+                key.HardwareMetricLayout = GetSelectedHardwareMetricLayout();
             UpdateEditorPreviewOnly();
+            RefreshV2LeftPanel();
             QueueSave();
         };
         _scHardwarePanel.Children.Add(_scHardwareLayoutPicker);
@@ -2953,8 +2954,8 @@ public partial class ButtonsView
                 display.TextSize = (int)Math.Round(_scTextSizeSlider.Value);
             if (_scHardwareLabelBox != null)
                 display.HardwareMetricLabel = _scHardwareLabelBox.Text;
-            if (_scHardwareLayoutPicker?.SelectedTag is HardwareMetricLayout hardwareLayout)
-                display.HardwareMetricLayout = hardwareLayout;
+            if (_scHardwareLayoutPicker != null)
+                display.HardwareMetricLayout = GetSelectedHardwareMetricLayout();
             if (_scHardwareLabelSizeSlider != null)
                 display.HardwareMetricLabelSize = (int)Math.Round(_scHardwareLabelSizeSlider.Value);
             }
@@ -3034,6 +3035,18 @@ public partial class ButtonsView
         }
 
         return key;
+    }
+
+    private HardwareMetricLayout GetSelectedHardwareMetricLayout()
+    {
+        return _scHardwareLayoutPicker?.SelectedIndex switch
+        {
+            1 => HardwareMetricLayout.LabelAboveValue,
+            2 => HardwareMetricLayout.ValueOnly,
+            3 => HardwareMetricLayout.LabelOnly,
+            4 => HardwareMetricLayout.SideBySide,
+            _ => HardwareMetricLayout.ValueAboveLabel,
+        };
     }
 
     /// <summary>
@@ -3122,6 +3135,15 @@ public partial class ButtonsView
             display.TextPosition = pos;
         if (_scTextSizeSlider != null)
             display.TextSize = (int)Math.Round(_scTextSizeSlider.Value);
+        if (display.DisplayType == DisplayKeyType.HardwareMonitor)
+        {
+            if (_scHardwareLabelBox != null)
+                display.HardwareMetricLabel = _scHardwareLabelBox.Text;
+            if (_scHardwareLayoutPicker != null)
+                display.HardwareMetricLayout = GetSelectedHardwareMetricLayout();
+            if (_scHardwareLabelSizeSlider != null)
+                display.HardwareMetricLabelSize = (int)Math.Round(_scHardwareLabelSizeSlider.Value);
+        }
 
         bool spotifySpan = StreamControllerDisplayRenderer.IsSpotifyAlbumArtSpanned(display);
         // In root the folder key Idx == local slot. In a folder, local slot = Idx + 1
