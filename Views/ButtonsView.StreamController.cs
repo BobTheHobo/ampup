@@ -33,7 +33,7 @@ public partial class ButtonsView
     private Image? _scEditorPreview;
     private TextBox? _scTitleBox;
 
-    // Display type (Normal / Clock / Dynamic / Solid / Spotify) + related editors
+    // Display type (Normal / Clock / Dynamic / Solid / Spotify / Hardware) + related editors
     private SegmentedControl? _scDisplayTypePicker;
     private StackPanel? _scClockPanel;
     private TextBox? _scClockFormatBox;
@@ -46,6 +46,8 @@ public partial class ButtonsView
     private StyledSlider? _scDynamicDimSlider;
     private TextBlock? _scDynamicDimLabel;
     private WrapPanel? _scDynamicGlowSwatchPanel;
+    private StackPanel? _scHardwarePanel;
+    private SegmentedControl? _scHardwareMetricPicker;
     // Panels that host the "Normal" editors — grouped so they can hide together.
     private readonly List<FrameworkElement> _scNormalOnlyRows = new();
     private SegmentedControl? _scTextPositionPicker;
@@ -607,6 +609,7 @@ public partial class ButtonsView
         _scDisplayTypePicker.AddSegment("Dynamic", DisplayKeyType.DynamicState);
         _scDisplayTypePicker.AddSegment("Solid", DisplayKeyType.Solid);
         _scDisplayTypePicker.AddSegment("Spotify", DisplayKeyType.SpotifyNowPlaying);
+        _scDisplayTypePicker.AddSegment("Hardware", DisplayKeyType.HardwareMonitor);
         _scDisplayTypePicker.SelectionChanged += (_, _) =>
         {
             if (_loading || _config == null) return;
@@ -739,6 +742,27 @@ public partial class ButtonsView
         _scDynamicPanel.Children.Add(_scDynamicGlowSwatchPanel);
 
         _scDisplayTabContent.Children.Add(_scDynamicPanel);
+
+        _scHardwarePanel = new StackPanel { Visibility = Visibility.Collapsed };
+        _scHardwarePanel.Children.Add(MakeEditorLabel("HARDWARE METRIC"));
+        _scHardwareMetricPicker = new SegmentedControl
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 0, 0, 10),
+        };
+        foreach (var (source, label) in HardwareMonitorService.Sources)
+            _scHardwareMetricPicker.AddSegment(label, source);
+        _scHardwareMetricPicker.SelectionChanged += (_, _) =>
+        {
+            if (_loading || _config == null) return;
+            var key = GetSelectedDisplayKeyConfig();
+            if (key != null && _scHardwareMetricPicker.SelectedTag is string source)
+                key.HardwareMetricSource = source;
+            UpdateEditorPreviewOnly();
+            QueueSave();
+        };
+        _scHardwarePanel.Children.Add(_scHardwareMetricPicker);
+        _scDisplayTabContent.Children.Add(_scHardwarePanel);
 
         var titleLabel = MakeEditorLabel("TITLE");
         _scDisplayTabContent.Children.Add(titleLabel);
@@ -2442,8 +2466,23 @@ public partial class ButtonsView
                     DisplayKeyType.DynamicState => 2,
                     DisplayKeyType.Solid => 3,
                     DisplayKeyType.SpotifyNowPlaying => 4,
+                    DisplayKeyType.HardwareMonitor => 5,
                     _ => 0
                 };
+            }
+            if (_scHardwareMetricPicker != null)
+            {
+                string src = string.IsNullOrWhiteSpace(key.HardwareMetricSource) ? "cpu_temp" : key.HardwareMetricSource;
+                int idx = 0;
+                for (int i = 0; i < HardwareMonitorService.Sources.Length; i++)
+                {
+                    if (HardwareMonitorService.Sources[i].Source == src)
+                    {
+                        idx = i;
+                        break;
+                    }
+                }
+                _scHardwareMetricPicker.SelectedIndex = idx;
             }
             if (_scClockFormatBox != null)
                 _scClockFormatBox.Text = string.IsNullOrWhiteSpace(key.ClockFormat) ? "HH:mm" : key.ClockFormat;
@@ -2883,7 +2922,8 @@ public partial class ButtonsView
     }
 
     /// <summary>
-    /// Re-renders the 6 key tiles + editor preview so Clock and DynamicState keys
+    /// Re-renders the 6 key tiles + editor preview so Clock, DynamicState,
+    /// and HardwareMonitor keys
     /// pick up time/state changes without the user needing to interact.
     /// </summary>
     private void RefreshLiveDisplayPreviews()
@@ -2896,7 +2936,9 @@ public partial class ButtonsView
         bool anyLive = false;
         foreach (var k in activeKeys)
         {
-            if (k.DisplayType == DisplayKeyType.Clock || k.DisplayType == DisplayKeyType.DynamicState)
+            if (k.DisplayType == DisplayKeyType.Clock
+                || k.DisplayType == DisplayKeyType.DynamicState
+                || k.DisplayType == DisplayKeyType.HardwareMonitor)
             {
                 anyLive = true;
                 break;
@@ -2918,7 +2960,9 @@ public partial class ButtonsView
 
         var selected = GetSelectedDisplayKeyConfig();
         if (selected != null && _scEditorPreview != null
-            && (selected.DisplayType == DisplayKeyType.Clock || selected.DisplayType == DisplayKeyType.DynamicState))
+            && (selected.DisplayType == DisplayKeyType.Clock
+                || selected.DisplayType == DisplayKeyType.DynamicState
+                || selected.DisplayType == DisplayKeyType.HardwareMonitor))
         {
             _scEditorPreview.Source = StreamControllerDisplayRenderer.CreateHardwarePreview(selected);
         }
@@ -3534,6 +3578,16 @@ public partial class ButtonsView
             Title = srcKey.Title,
             BackgroundColor = srcKey.BackgroundColor, AccentColor = srcKey.AccentColor,
             TextPosition = srcKey.TextPosition, TextSize = srcKey.TextSize, TextColor = srcKey.TextColor,
+            IconColor = srcKey.IconColor, FontFamily = srcKey.FontFamily, Brightness = srcKey.Brightness,
+            DisplayType = srcKey.DisplayType, ClockFormat = srcKey.ClockFormat,
+            DynamicStateSource = srcKey.DynamicStateSource,
+            DynamicStateActiveIcon = srcKey.DynamicStateActiveIcon,
+            DynamicStateActiveTitle = srcKey.DynamicStateActiveTitle,
+            DynamicStateInactiveBrightness = srcKey.DynamicStateInactiveBrightness,
+            DynamicStateDimWhenActive = srcKey.DynamicStateDimWhenActive,
+            DynamicStateGlowColor = srcKey.DynamicStateGlowColor,
+            SpotifyAlbumArtLayout = srcKey.SpotifyAlbumArtLayout,
+            HardwareMetricSource = srcKey.HardwareMetricSource,
         };
         var srcBtn = GetActiveN3ButtonList().FirstOrDefault(b => b.Idx == StreamControllerDisplayKeyBase + globalIdx);
         _scClipboardButton = srcBtn == null ? null : new ButtonConfig
@@ -3558,6 +3612,19 @@ public partial class ButtonsView
             target.TextPosition = _scClipboardKey.TextPosition;
             target.TextSize = _scClipboardKey.TextSize;
             target.TextColor = _scClipboardKey.TextColor;
+            target.IconColor = _scClipboardKey.IconColor;
+            target.FontFamily = _scClipboardKey.FontFamily;
+            target.Brightness = _scClipboardKey.Brightness;
+            target.DisplayType = _scClipboardKey.DisplayType;
+            target.ClockFormat = _scClipboardKey.ClockFormat;
+            target.DynamicStateSource = _scClipboardKey.DynamicStateSource;
+            target.DynamicStateActiveIcon = _scClipboardKey.DynamicStateActiveIcon;
+            target.DynamicStateActiveTitle = _scClipboardKey.DynamicStateActiveTitle;
+            target.DynamicStateInactiveBrightness = _scClipboardKey.DynamicStateInactiveBrightness;
+            target.DynamicStateDimWhenActive = _scClipboardKey.DynamicStateDimWhenActive;
+            target.DynamicStateGlowColor = _scClipboardKey.DynamicStateGlowColor;
+            target.SpotifyAlbumArtLayout = _scClipboardKey.SpotifyAlbumArtLayout;
+            target.HardwareMetricSource = _scClipboardKey.HardwareMetricSource;
         }
         if (_scClipboardButton != null)
         {
@@ -3651,6 +3718,8 @@ public partial class ButtonsView
             _scClockPanel.Visibility = dt == DisplayKeyType.Clock ? Visibility.Visible : Visibility.Collapsed;
         if (_scDynamicPanel != null)
             _scDynamicPanel.Visibility = dt == DisplayKeyType.DynamicState ? Visibility.Visible : Visibility.Collapsed;
+        if (_scHardwarePanel != null)
+            _scHardwarePanel.Visibility = dt == DisplayKeyType.HardwareMonitor ? Visibility.Visible : Visibility.Collapsed;
 
         bool showNormal = dt == DisplayKeyType.Normal || dt == DisplayKeyType.SpotifyNowPlaying;
         foreach (var row in _scNormalOnlyRows)

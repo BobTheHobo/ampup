@@ -65,6 +65,7 @@ public partial class App : Application
     private DateTime _lastDynamicStateTick = DateTime.MinValue;
     private readonly int[] _lastKnobRaw = new int[5];
     private readonly Dictionary<int, N3AnimatedKeyState> _n3AnimatedKeys = new();
+    private HardwareMonitorService? _hardwareMonitor;
     private readonly SemaphoreSlim _n3DisplayWriteGate = new(1, 1);
     private const int N3DisplayKeyBase = 100;
     private const int N3SideButtonBase = 10000;
@@ -278,6 +279,13 @@ public partial class App : Application
             if (t == null || string.IsNullOrEmpty(t.TrackId))
                 return ("Spotify", "— nothing playing —");
             return (t.Title, t.Artists);
+        };
+
+        _hardwareMonitor = new HardwareMonitorService();
+        StreamControllerDisplayRenderer.HardwareMetricProvider = source =>
+        {
+            var reading = _hardwareMonitor.GetReading(source);
+            return new HardwareMetricDisplay(reading.Label, reading.ValueText, reading.IsAvailable);
         };
 
         StartStreamControllerRefreshTimer();
@@ -1167,6 +1175,7 @@ public partial class App : Application
         foreach (var timer in _osdFinalTimers)
             timer?.Dispose();
         _streamControllerRefreshTimer?.Stop();
+        _hardwareMonitor?.Dispose();
         _signalRgbBridge?.Dispose();
         _duckingEngine?.Dispose();
         Dispatcher.Invoke(() => Shutdown());
@@ -2549,23 +2558,25 @@ public partial class App : Application
 
             bool hasDynamic = false;
             bool hasClock = false;
+            bool hasHardwareMetric = false;
             var activeKeys = GetActiveDisplayKeys();
             foreach (var k in activeKeys)
             {
                 if (k.DisplayType == DisplayKeyType.Clock) hasClock = true;
                 else if (k.DisplayType == DisplayKeyType.DynamicState) hasDynamic = true;
-                if (hasClock && hasDynamic) break;
+                else if (k.DisplayType == DisplayKeyType.HardwareMonitor) hasHardwareMetric = true;
+                if (hasClock && hasDynamic && hasHardwareMetric) break;
             }
 
             bool hasAnimation = _n3AnimatedKeys.Count > 0;
-            if (!hasClock && !hasDynamic && !hasAnimation) return;
+            if (!hasClock && !hasDynamic && !hasHardwareMetric && !hasAnimation) return;
 
             // Throttle the clock/dynamic refresh. The refresh timer ticks
             // at 1s (for idle-sleep responsiveness) but redrawing all six
             // LCDs every second is wasteful — clocks only change at minute
             // boundaries and dynamic state updates every few seconds is
             // plenty. 3s cadence cuts HID traffic and JPEG encode load.
-            bool fullRefreshDue = (hasClock || hasDynamic)
+            bool fullRefreshDue = (hasClock || hasDynamic || hasHardwareMetric)
                 && (DateTime.Now - _lastDynamicStateTick).TotalMilliseconds >= StreamControllerDynamicRefreshMs;
 
             if (fullRefreshDue)
@@ -2811,6 +2822,7 @@ public partial class App : Application
         }
 
         var ops = new List<(int slot, System.Drawing.Bitmap? bitmap, byte[]? encodedFrame, bool clear)>(N3Controller.DisplayKeyCount);
+        var deferredAnimations = new List<(int slot, StreamControllerDisplayKeyConfig key, string signature)>();
         var activeAnimatedSlots = new HashSet<int>();
 
         for (int i = 0; i < N3Controller.DisplayKeyCount; i++)
@@ -2856,12 +2868,16 @@ public partial class App : Application
                         key.DynamicStateSource = derived;
                 }
 
-                if (TryGetAnimatedN3State(i, key, out var animatedState))
+                if (TryGetAnimatedN3State(i, key, buildIfMissing: false, out var animatedState))
                 {
                     activeAnimatedSlots.Add(i);
                     ops.Add((i, null, animatedState.CurrentFrame, false));
                     continue;
                 }
+
+                string animationSignature = BuildAnimatedN3Signature(key);
+                if (StreamControllerDisplayRenderer.HasDeviceAnimation(key))
+                    deferredAnimations.Add((i, key, animationSignature));
 
                 RemoveAnimatedN3Slot(i);
 
@@ -2937,6 +2953,13 @@ public partial class App : Application
                     _n3DisplayWriteGate.Release();
             }
         });
+
+        if (deferredAnimations.Count > 0)
+        {
+            Dispatcher.BeginInvoke(
+                new Action(() => BuildDeferredN3Animations(deferredAnimations)),
+                System.Windows.Threading.DispatcherPriority.Background);
+        }
     }
 
     private bool TrySyncAnimatedN3Displays()
@@ -2995,6 +3018,9 @@ public partial class App : Application
     }
 
     private bool TryGetAnimatedN3State(int slot, StreamControllerDisplayKeyConfig key, out N3AnimatedKeyState state)
+        => TryGetAnimatedN3State(slot, key, buildIfMissing: true, out state);
+
+    private bool TryGetAnimatedN3State(int slot, StreamControllerDisplayKeyConfig key, bool buildIfMissing, out N3AnimatedKeyState state)
     {
         state = null!;
         string signature = BuildAnimatedN3Signature(key);
@@ -3004,6 +3030,8 @@ public partial class App : Application
             return true;
         }
 
+        if (!buildIfMissing) return false;
+
         var animation = StreamControllerDisplayRenderer.CreateDeviceAnimation(key);
         if (animation == null || animation.Frames.Length == 0) return false;
 
@@ -3011,6 +3039,37 @@ public partial class App : Application
         _n3AnimatedKeys[slot] = state;
         UpdateStreamControllerRefreshCadence();
         return true;
+    }
+
+    private void BuildDeferredN3Animations(IReadOnlyList<(int slot, StreamControllerDisplayKeyConfig key, string signature)> animations)
+    {
+        if (_n3 == null || !_isN3Connected || animations.Count == 0) return;
+
+        bool added = false;
+        foreach (var (slot, key, signature) in animations)
+        {
+            try
+            {
+                if (BuildAnimatedN3Signature(key) != signature) continue;
+                if (_n3AnimatedKeys.TryGetValue(slot, out var existing) && existing.Signature == signature) continue;
+
+                var animation = StreamControllerDisplayRenderer.CreateDeviceAnimation(key);
+                if (animation == null || animation.Frames.Length == 0) continue;
+
+                _n3AnimatedKeys[slot] = N3AnimatedKeyState.Create(signature, animation);
+                added = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Deferred N3 animation build failed for slot {slot}: {ex.Message}");
+            }
+        }
+
+        if (added)
+        {
+            UpdateStreamControllerRefreshCadence();
+            TrySyncAnimatedN3Displays();
+        }
     }
 
     private void RemoveStaleAnimatedN3Slots(HashSet<int> activeAnimatedSlots)
@@ -4831,6 +4890,7 @@ public partial class App : Application
         foreach (var timer in _osdFinalTimers)
             timer?.Dispose();
         _streamControllerRefreshTimer?.Stop();
+        _hardwareMonitor?.Dispose();
         _duckingEngine?.Dispose();
         _osdOverlay?.Close();
         _radialWheel?.Close();

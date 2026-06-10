@@ -451,6 +451,9 @@ public class StreamControllerDisplayKeyConfig
     /// Single = one key, FourLeft/FourRight = 2x2 span, SixFull = 3x2 page span.</summary>
     [JsonConverter(typeof(StringEnumConverter))]
     public SpotifyAlbumArtLayout SpotifyAlbumArtLayout { get; set; } = SpotifyAlbumArtLayout.Single;
+
+    /// <summary>HardwareMonitor metric key (cpu_temp, gpu_temp, memory_used, etc.).</summary>
+    public string HardwareMetricSource { get; set; } = "cpu_temp";
 }
 
 public enum DisplayKeyType
@@ -464,6 +467,8 @@ public enum DisplayKeyType
     /// album JPG (AmpUp writes it on every track change) and composites
     /// a dim title/artist strip over the bottom 30% of the LCD.</summary>
     SpotifyNowPlaying,
+    /// <summary>Live hardware-monitor metric rendered as a large value.</summary>
+    HardwareMonitor,
 }
 
 public enum DisplayTextPosition

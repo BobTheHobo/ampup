@@ -83,6 +83,24 @@
 - `StreamControllerDisplayRenderer.CreateDeviceJpeg(key)` / `ComposeDeviceBitmap` + `EncodeDeviceBitmap` — 60x60 rotated JPEG for the actual hardware. Compose is UI-thread-bound (WPF `RenderTargetBitmap`), encode + HID write are thread-safe, so the SC pipeline composes on UI then Task.Run's the I/O. Keeps folder/page navigation from freezing the UI for ~500ms.
 - Keys honor `IconColor` (MaterialIcon tint) and `AccentColor` (radial glow). Both are user-controllable via DESIGN tab swatches; the icon picker also carries its per-icon accent forward to the key so the on-device glow matches the hue the user saw in the picker.
 
+## Recent N3 scrolling / test-lane notes
+- Long single-line N3 LCD titles auto-scroll when measured text width exceeds the display region. There is no user checkbox anymore; overflow detection is automatic in `ShouldScrollTitle`.
+- Smooth N3 title scrolling is image-frame based, not a device text primitive. `CreateScrollingTitleAnimation` builds editor/device frames; `App.StreamControllerAnimatedRefreshIntervalMs` is `80` ms so those frames are actually sent smoothly. Scroll step is `1.25f * scale`, capped at 128 moving frames.
+- Scroll loop wraparound draws a second copy of the title after the gap in `DrawScrollingTextOverlay`, avoiding the old blank pause when the first copy fully left the clipped text region.
+- v1.0.9.5 test builds include N3 page-2+ LCD binding fixes, font-size selection fixes, title text cursor/space fixes, clock display fixes, maximized-titlebar drag fix, Clear Icon button, and automatic long-title scrolling.
+- Side buttons and encoder presses now use high virtual ids (`10000+`) instead of colliding with page-2+ LCD ids (`106+`). Config migration in `AmpUp.Core/ConfigManager.cs` preserves old ambiguous bindings where possible.
+- `LoadStreamControllerSelection()` uses `_loading = true` during control population so selecting one key no longer writes the previous key's font size/action values into the new selection.
+- Live title saves no longer trim spaces, fixing cursor jumps when typing words followed by spaces.
+- `ClearSelectedStreamControllerIcon()` resets bitmap path, preset icon, accent/glow/icon color, dynamic glow color, and solid background defaults so "Clear Icon" does not leave the cyan/blue icon frame behind.
+
+## Test build lane
+- Manual installer builds still come from the separate checkout at `C:\Users\audio\Desktop\AmpUp`; always `git pull --ff-only` there before `build-installer.bat`.
+- Current test lane folder: `W:\wolfden\assets\ampup-test-builds`.
+- Stable latest installer URL: `https://plexwolf.duckdns.org/assets/ampup-test-builds/AmpUp-Test-Latest.exe`.
+- Latest uploaded test build in this memory pass: `AmpUp-Setup-1.0.9.5.exe` / `AmpUp-Test-Latest.exe`, built from commit `f54bd06` (`Smooth N3 scroll wraparound`) on 2026-06-08.
+- SHA256 for that uploaded installer: `fe1aa58a058094f9a2b3aa6215d6d555df86fc0b9f8c8d25a5d546fd8992a373`.
+- When updating the private test page, it is okay to update the hero summary/checksums, but do not change the "Test Flow" section unless Tyson explicitly asks.
+
 ## v1.0.0-beta additions
 ### Space Templates
 - New TEMPLATES section in the Buttons tab — pre-built `ButtonFolderConfig` layouts the user adds with one click. Unique-name collision handling (Media → Media (2)); auto-navigates into the new Space after Add

@@ -41,6 +41,8 @@ public sealed class StreamControllerEditorAnimation
     public required int[] FrameDelaysMs { get; init; }
 }
 
+internal readonly record struct HardwareMetricDisplay(string Label, string ValueText, bool IsAvailable);
+
 internal static class StreamControllerDisplayRenderer
 {
     private const int RenderCanvasSize = 126;
@@ -62,6 +64,9 @@ internal static class StreamControllerDisplayRenderer
     /// the app; called by the renderer on every compose of a SpotifyNowPlaying
     /// key so the overlay reflects the latest poll.</summary>
     public static Func<(string Title, string Subtitle)>? SpotifyNowPlayingTitleProvider { get; set; }
+
+    /// <summary>Live hardware metric resolver for HardwareMonitor keys.</summary>
+    public static Func<string, HardwareMetricDisplay>? HardwareMetricProvider { get; set; }
 
     public static BitmapSource CreatePreview(StreamControllerDisplayKeyConfig key)
     {
@@ -278,6 +283,7 @@ internal static class StreamControllerDisplayRenderer
             DynamicStateDimWhenActive = key.DynamicStateDimWhenActive,
             DynamicStateGlowColor = key.DynamicStateGlowColor,
             SpotifyAlbumArtLayout = key.SpotifyAlbumArtLayout,
+            HardwareMetricSource = key.HardwareMetricSource,
         };
 
         if (key.DisplayType == DisplayKeyType.Solid)
@@ -324,6 +330,21 @@ internal static class StreamControllerDisplayRenderer
             // device is only 60x60, so a forced large clock clips quickly.
             clone.TextPosition = DisplayTextPosition.Middle;
             if (clone.TextSize == 14) clone.TextSize = 16;
+            return clone;
+        }
+
+        if (key.DisplayType == DisplayKeyType.HardwareMonitor)
+        {
+            var metric = HardwareMetricProvider?.Invoke(key.HardwareMetricSource)
+                ?? new HardwareMetricDisplay("Hardware", "--", false);
+            clone.Title = $"{metric.ValueText}\n{metric.Label}";
+            clone.Subtitle = "";
+            clone.ImagePath = "";
+            clone.PresetIconKind = "";
+            clone.TextPosition = DisplayTextPosition.Middle;
+            if (clone.TextSize == 14) clone.TextSize = 20;
+            if (!metric.IsAvailable)
+                clone.Brightness = Math.Clamp((int)Math.Round(key.Brightness * 0.55), 0, 100);
             return clone;
         }
 
@@ -389,6 +410,22 @@ internal static class StreamControllerDisplayRenderer
             SpotifyAlbumArtLayout.SixFull => new[] { 0, 1, 2, 3, 4, 5 },
             _ => Array.Empty<int>(),
         };
+    }
+
+    public static bool HasDeviceAnimation(StreamControllerDisplayKeyConfig key)
+    {
+        var effectiveKey = ResolveEffectiveKey(key);
+        if (ShouldScrollTitle(effectiveKey, RenderCanvasSize))
+            return true;
+
+        string sourcePath = effectiveKey.ImagePath;
+        if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+        {
+            if (!TryResolveCustomPackImagePath(effectiveKey.PresetIconKind, out sourcePath))
+                return false;
+        }
+
+        return string.Equals(Path.GetExtension(sourcePath), ".gif", StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool CoversSpotifyAlbumArtSlot(StreamControllerDisplayKeyConfig key, int physicalSlot)
@@ -607,6 +644,7 @@ internal static class StreamControllerDisplayRenderer
         DynamicStateDimWhenActive = key.DynamicStateDimWhenActive,
         DynamicStateGlowColor = key.DynamicStateGlowColor ?? "",
         SpotifyAlbumArtLayout = key.SpotifyAlbumArtLayout,
+        HardwareMetricSource = key.HardwareMetricSource ?? "cpu_temp",
     };
 
     private static DrawingBitmap ComposeSpotifyAlbumArtTileBitmap(
