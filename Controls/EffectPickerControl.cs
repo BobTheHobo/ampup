@@ -356,7 +356,7 @@ namespace AmpUp.Controls
 
             if (_showGlobal)
             {
-                AddCategory(mainPanel, "GLOBAL SPAN", new[]
+                AddCategory(mainPanel, "SCENES", new[]
                 {
                     (LightEffect.Scanner,        "▬",   "Scanner",  false),
                     (LightEffect.MeteorRain,     "☄",   "Meteor",   false),

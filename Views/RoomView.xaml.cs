@@ -200,6 +200,7 @@ public partial class RoomView : UserControl
                 _roomColor2 = (Color)ColorConverter.ConvertFromString(config.Ambience.RoomColor2);
             _roomEffectSpeed = config.Ambience.RoomEffectSpeed > 0 ? config.Ambience.RoomEffectSpeed : 50;
             _roomTemperatureKelvin = Math.Clamp(config.Ambience.RoomTemperatureKelvin, 1500, 9000);
+            _roomColorsAuto = config.Ambience.RoomColorsAuto;
         }
         catch { }
 
@@ -900,9 +901,12 @@ public partial class RoomView : UserControl
         }
     }
 
-    // Tab index: 0=Favorites, 1=Static, 2=Animated, 3=Reactive, 4=Global Span, 5=Temperature
-    private int _effectCategory = 4; // default to Global Span
+    // Tab index: 0=Favorites, 1=Static, 2=Animated, 3=Reactive, 4=Scenes, 5=Temperature
+    private int _effectCategory = 4; // default to Scenes
     private const int TemperatureCategoryIndex = 5;
+
+    // COLORS auto mode — scenes use their own signature colors instead of the custom palette
+    private bool _roomColorsAuto;
 
     /// <summary>
     /// Map our room-tab index (0=Favorites, 1=Static...4=Global) to the EffectPickerControl's
@@ -944,6 +948,18 @@ public partial class RoomView : UserControl
 
     private static bool EffectIgnoresPalette(LightEffect e) => PaletteIgnoredEffects.Contains(e);
 
+    /// <summary>
+    /// Signature color pair for an effect — the same colors its preview tile renders with.
+    /// Used by the COLORS auto mode so each scene shows its designed look instead of the
+    /// user's custom palette.
+    /// </summary>
+    private static (Color C1, Color C2) GetEffectDefaultColors(LightEffect e)
+    {
+        var c1 = Controls.EffectPickerControl.EffectColors.TryGetValue(e, out var pc)
+            ? pc : ThemeManager.Accent;
+        return (c1, Controls.EffectPickerControl.GetCompanionColor(e, c1));
+    }
+
     private void BuildRoomEffectTab(StackPanel stack)
     {
         if (_config == null) return;
@@ -963,7 +979,7 @@ public partial class RoomView : UserControl
         var categoryTabBar = new StackPanel { Orientation = Orientation.Horizontal };
         // Tab index → visible-category index in EffectPickerControl:
         //   0 → 4 (favorites), 1 → 0 (static), 2 → 1 (anim), 3 → 2 (react), 4 → 3 (global)
-        var categoryNames = new[] { "FAVORITES", "STATIC", "ANIMATED", "REACTIVE", "GLOBAL SPAN", "TEMPERATURE" };
+        var categoryNames = new[] { "FAVORITES", "STATIC", "ANIMATED", "REACTIVE", "SCENES", "TEMPERATURE" };
         var categoryTabs = new Border[categoryNames.Length];
 
         var effectPicker = new Controls.EffectPickerControl(showGlobal: true)
@@ -1013,6 +1029,8 @@ public partial class RoomView : UserControl
         Border? paletteSection = null;
         PaletteEditorControl? paletteEditorRef = null;
         Border? singleColorSwatchRef = null;
+        Border? autoPillRef = null;
+        Action? refreshAutoPill = null;
 
         for (int ci = 0; ci < categoryNames.Length; ci++)
         {
@@ -1107,6 +1125,8 @@ public partial class RoomView : UserControl
             bool isSingle = effect == LightEffect.SingleColor;
             if (paletteEditorRef != null)
                 paletteEditorRef.Visibility = isSingle ? Visibility.Collapsed : Visibility.Visible;
+            if (autoPillRef != null)
+                autoPillRef.Visibility = isSingle ? Visibility.Collapsed : Visibility.Visible;
             if (singleColorSwatchRef != null)
             {
                 singleColorSwatchRef.Visibility = isSingle ? Visibility.Visible : Visibility.Collapsed;
@@ -1128,6 +1148,13 @@ public partial class RoomView : UserControl
         paletteEditor.PaletteChanged += palette =>
         {
             if (_loading) return;
+            // Touching the palette (stop edit or preset click) takes over from auto colors
+            if (_roomColorsAuto)
+            {
+                _roomColorsAuto = false;
+                if (_config != null) _config.Ambience.RoomColorsAuto = false;
+                refreshAutoPill?.Invoke();
+            }
             _roomPalette = palette;
             if (palette.Stops.Count >= 2)
             {
@@ -1166,17 +1193,69 @@ public partial class RoomView : UserControl
         singleColorSwatch.HorizontalAlignment = HorizontalAlignment.Left;
         singleColorSwatch.Visibility = Visibility.Collapsed;
 
+        // ── AUTO pill — scenes use their own signature colors, palette stays out of the way ──
+        var autoPillText = new TextBlock
+        {
+            Text = "✦ AUTO — EFFECT'S OWN COLORS",
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+        };
+        var autoPill = new Border
+        {
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(12, 5, 12, 5),
+            BorderThickness = new Thickness(1),
+            Cursor = Cursors.Hand,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 2, 0, 8),
+            Child = autoPillText,
+            ToolTip = "When on, each scene uses its designed colors (same as its preview tile). Edit the gradient or pick a preset below to use your own colors instead.",
+        };
+        refreshAutoPill = () =>
+        {
+            var ac = ThemeManager.Accent;
+            if (_roomColorsAuto)
+            {
+                autoPill.Background = new SolidColorBrush(Color.FromArgb(0x22, ac.R, ac.G, ac.B));
+                autoPill.BorderBrush = new SolidColorBrush(Color.FromArgb(0x66, ac.R, ac.G, ac.B));
+                autoPillText.Foreground = new SolidColorBrush(ac);
+                paletteEditor.Opacity = 0.45;
+            }
+            else
+            {
+                autoPill.SetResourceReference(Border.BackgroundProperty, "InputBgBrush");
+                autoPill.SetResourceReference(Border.BorderBrushProperty, "InputBorderBrush");
+                autoPillText.Foreground = new SolidColorBrush(Color.FromRgb(0xB0, 0xB0, 0xB0));
+                paletteEditor.Opacity = 1.0;
+            }
+        };
+        refreshAutoPill();
+        autoPill.MouseLeftButtonUp += (_, _) =>
+        {
+            _roomColorsAuto = !_roomColorsAuto;
+            if (_config != null)
+            {
+                _config.Ambience.RoomColorsAuto = _roomColorsAuto;
+                QueueSave();
+            }
+            refreshAutoPill?.Invoke();
+            if (_activePattern != null && _activePattern != "__sync__" && _activePattern != RoomTemperaturePatternId)
+                StartRoomPattern(_activePattern);
+        };
+
         // Publish refs so SelectionChanged can toggle them
         paletteEditorRef = paletteEditor;
         singleColorSwatchRef = singleColorSwatch;
+        autoPillRef = autoPill;
 
         // Set initial visibility based on currently-selected effect
         bool startSingle = _activePattern == null ||
             string.Equals(_activePattern, "SingleColor", StringComparison.OrdinalIgnoreCase);
         paletteEditor.Visibility = startSingle ? Visibility.Collapsed : Visibility.Visible;
         singleColorSwatch.Visibility = startSingle ? Visibility.Visible : Visibility.Collapsed;
+        autoPill.Visibility = startSingle ? Visibility.Collapsed : Visibility.Visible;
 
-        paletteSection = MakeSectionCard("COLORS", paletteEditor, singleColorSwatch);
+        paletteSection = MakeSectionCard("COLORS", autoPill, paletteEditor, singleColorSwatch);
         stack.Children.Add(paletteSection);
 
         // Hide palette section if the currently-selected effect ignores palette colors
@@ -5791,6 +5870,18 @@ public partial class RoomView : UserControl
         var color1 = c1 ?? _roomColor1;
         var color2 = c2 ?? _roomColor2;
 
+        // AUTO color mode: the scene uses its own signature colors (the same pair its
+        // preview tile renders with) instead of the user's custom palette. Explicitly
+        // passed colors (SingleColor, toggles) still win.
+        bool autoColors = false;
+        if (_roomColorsAuto && c1 == null && c2 == null
+            && Enum.TryParse<LightEffect>(patternId, true, out var autoFx)
+            && autoFx != LightEffect.SingleColor)
+        {
+            autoColors = true;
+            (color1, color2) = GetEffectDefaultColors(autoFx);
+        }
+
         // Persist the active room effect so it resumes on next launch
         if (!corsairOnly && _config != null)
         {
@@ -5838,7 +5929,7 @@ public partial class RoomView : UserControl
                 R = color1.R, G = color1.G, B = color1.B,
                 R2 = color2.R, G2 = color2.G, B2 = color2.B,
                 EffectSpeed = _roomEffectSpeed,
-                PaletteName = effect == LightEffect.SingleColor ? "" : _roomPalette.Name,
+                PaletteName = (effect == LightEffect.SingleColor || autoColors) ? "" : _roomPalette.Name,
             };
             _roomRgb.UpdateGlobalConfig(gl);
         }
