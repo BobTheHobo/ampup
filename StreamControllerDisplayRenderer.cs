@@ -284,6 +284,10 @@ internal static class StreamControllerDisplayRenderer
             DynamicStateGlowColor = key.DynamicStateGlowColor,
             SpotifyAlbumArtLayout = key.SpotifyAlbumArtLayout,
             HardwareMetricSource = key.HardwareMetricSource,
+            HardwareMetricLabel = key.HardwareMetricLabel,
+            HardwareMetricLabelSize = key.HardwareMetricLabelSize,
+            HardwareMetricLabelColor = key.HardwareMetricLabelColor,
+            HardwareMetricLayout = key.HardwareMetricLayout,
         };
 
         if (key.DisplayType == DisplayKeyType.Solid)
