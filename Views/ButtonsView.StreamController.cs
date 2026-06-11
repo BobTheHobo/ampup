@@ -786,7 +786,7 @@ public partial class ButtonsView
         {
             FontSize = 10,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(2, -6, 0, 10),
+            Margin = new Thickness(2, 5, 0, 10),
             Foreground = FindBrush("TextDimBrush"),
         };
         _scHardwarePanel.Children.Add(_scHardwareSourceHint);
