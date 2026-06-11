@@ -1283,8 +1283,10 @@ internal static class StreamControllerDisplayRenderer
             const float gaugeStart = 135f;
             const float gaugeSweep = 270f;
 
+            // Track must stay clearly dimmer than the fill or a near-empty gauge
+            // reads as full (the ring itself looks like the filled part).
             var accent = ParseColor(key.TextColor, DrawingColor.White);
-            using (var trackPen = new DrawingPen(DrawingColor.FromArgb(55, 255, 255, 255), stroke)
+            using (var trackPen = new DrawingPen(DrawingColor.FromArgb(26, 255, 255, 255), stroke)
             {
                 StartCap = System.Drawing.Drawing2D.LineCap.Round,
                 EndCap = System.Drawing.Drawing2D.LineCap.Round,
@@ -1305,7 +1307,7 @@ internal static class StreamControllerDisplayRenderer
                 graphics.DrawArc(fillPen, gx, gy, diameter, diameter, gaugeStart, sweep);
             }
 
-            float inset = stroke + pad;
+            float inset = stroke + 1f * scale;
             graphics.DrawString(value, valueFont, valueBrush,
                 new DrawingRectangleF(gx + inset, gy, diameter - inset * 2f, diameter), format);
 
