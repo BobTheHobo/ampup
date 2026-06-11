@@ -49,6 +49,8 @@ public partial class ButtonsView
     private StackPanel? _scHardwarePanel;
     private ListPicker? _scHardwareMetricPicker;
     private TextBlock? _scHardwareMetricHeaderLabel;
+    private TextBlock? _scHardwareSourceHint;
+    private bool _scFanSourcesLoading;
     private TextBlock? _scHardwareCustomLabelLabel;
     private TextBlock? _scHardwareLayoutLabel;
     private TextBlock? _scHardwareSizeHeaderLabel;
@@ -765,6 +767,7 @@ public partial class ButtonsView
         };
         foreach (var (source, label) in HardwareMonitorService.Sources)
             _scHardwareMetricPicker.AddItem(label, source);
+        PopulateFanMetricSources();
         _scHardwareMetricPicker.SelectionChanged += (_, _) =>
         {
             if (_loading || _config == null) return;
@@ -772,9 +775,21 @@ public partial class ButtonsView
             if (key != null && _scHardwareMetricPicker.SelectedTag is string source)
                 key.HardwareMetricSource = source;
             UpdateEditorPreviewOnly();
+            UpdateHardwareSourceHint();
             QueueSave();
         };
         _scHardwarePanel.Children.Add(_scHardwareMetricPicker);
+
+        // Live "which sensor / which app" hint so users can tell where a reading
+        // comes from — and why it's empty (LHM needs admin; HWiNFO needs to run).
+        _scHardwareSourceHint = new TextBlock
+        {
+            FontSize = 10,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(2, -6, 0, 10),
+            Foreground = FindBrush("TextDimBrush"),
+        };
+        _scHardwarePanel.Children.Add(_scHardwareSourceHint);
 
         _scHardwareCustomLabelLabel = MakeEditorLabel("DISPLAY LABEL");
         _scHardwarePanel.Children.Add(_scHardwareCustomLabelLabel);
@@ -803,6 +818,7 @@ public partial class ButtonsView
         _scHardwareLayoutPicker.AddSegment("Value Only", HardwareMetricLayout.ValueOnly);
         _scHardwareLayoutPicker.AddSegment("Label Only", HardwareMetricLayout.LabelOnly);
         _scHardwareLayoutPicker.AddSegment("Side", HardwareMetricLayout.SideBySide);
+        _scHardwareLayoutPicker.AddSegment("Gauge", HardwareMetricLayout.Gauge);
         _scHardwareLayoutPicker.SelectionChanged += (_, _) =>
         {
             if (_loading || _config == null) return;
@@ -2577,16 +2593,8 @@ public partial class ButtonsView
             if (_scHardwareMetricPicker != null)
             {
                 string src = string.IsNullOrWhiteSpace(key.HardwareMetricSource) ? "cpu_temp" : key.HardwareMetricSource;
-                int idx = 0;
-                for (int i = 0; i < HardwareMonitorService.Sources.Length; i++)
-                {
-                    if (HardwareMonitorService.Sources[i].Source == src)
-                    {
-                        idx = i;
-                        break;
-                    }
-                }
-                _scHardwareMetricPicker.SelectedIndex = idx;
+                _scHardwareMetricPicker.SelectedIndex = Math.Max(0, FindMetricSourceIndex(src));
+                UpdateHardwareSourceHint();
             }
             if (_scHardwareLabelBox != null)
                 _scHardwareLabelBox.Text = key.HardwareMetricLabel ?? "";
@@ -2598,6 +2606,7 @@ public partial class ButtonsView
                     HardwareMetricLayout.ValueOnly => 2,
                     HardwareMetricLayout.LabelOnly => 3,
                     HardwareMetricLayout.SideBySide => 4,
+                    HardwareMetricLayout.Gauge => 5,
                     _ => 0,
                 };
             }
@@ -3049,6 +3058,51 @@ public partial class ButtonsView
         return key;
     }
 
+    /// <summary>
+    /// Appends one HARDWARE METRIC entry per detected fan (LHM + HWiNFO) so the
+    /// user can pin a key to a specific fan instead of the "Fan Speed" auto pick.
+    /// Runs in the background (the first enumeration opens LibreHardwareMonitor)
+    /// and re-selects the saved fan source once the items exist. One-shot.
+    /// </summary>
+    private void PopulateFanMetricSources()
+    {
+        var picker = _scHardwareMetricPicker;
+        if (picker == null || _scFanSourcesLoading || App.HardwareMonitor == null) return;
+        _scFanSourcesLoading = true;
+
+        Task.Run(() =>
+        {
+            var fans = App.HardwareMonitor?.GetFanSources() ?? Array.Empty<(string, string)>();
+            if (fans.Length == 0) return;
+            Dispatcher.BeginInvoke(() =>
+            {
+                var existing = new HashSet<string>();
+                for (int i = 0; i < picker.ItemCount; i++)
+                    if (picker.GetTagAt(i) is string tag) existing.Add(tag);
+                foreach (var (source, label) in fans)
+                    if (existing.Add(source)) picker.AddItem(label, source);
+
+                // The current key may reference a fan source that only now exists
+                var key = GetSelectedDisplayKeyConfig();
+                if (key?.HardwareMetricSource is string src
+                    && src.StartsWith("fan:", StringComparison.Ordinal))
+                {
+                    int idx = FindMetricSourceIndex(src);
+                    if (idx >= 0) picker.SelectedIndex = idx;
+                }
+            });
+        });
+    }
+
+    /// <summary>Index of a metric source in the picker by tag, or -1.</summary>
+    private int FindMetricSourceIndex(string source)
+    {
+        if (_scHardwareMetricPicker == null) return -1;
+        for (int i = 0; i < _scHardwareMetricPicker.ItemCount; i++)
+            if (_scHardwareMetricPicker.GetTagAt(i) as string == source) return i;
+        return -1;
+    }
+
     private HardwareMetricLayout GetSelectedHardwareMetricLayout()
     {
         return _scHardwareLayoutPicker?.SelectedIndex switch
@@ -3057,6 +3111,7 @@ public partial class ButtonsView
             2 => HardwareMetricLayout.ValueOnly,
             3 => HardwareMetricLayout.LabelOnly,
             4 => HardwareMetricLayout.SideBySide,
+            5 => HardwareMetricLayout.Gauge,
             _ => HardwareMetricLayout.ValueAboveLabel,
         };
     }

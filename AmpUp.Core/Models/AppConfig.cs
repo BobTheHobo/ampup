@@ -505,6 +505,7 @@ public enum HardwareMetricLayout
     ValueOnly,
     LabelOnly,
     SideBySide,
+    Gauge,
 }
 
 public enum HardwareMode

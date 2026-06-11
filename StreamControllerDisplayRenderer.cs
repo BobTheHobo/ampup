@@ -41,7 +41,7 @@ public sealed class StreamControllerEditorAnimation
     public required int[] FrameDelaysMs { get; init; }
 }
 
-internal readonly record struct HardwareMetricDisplay(string Label, string ValueText, bool IsAvailable);
+internal readonly record struct HardwareMetricDisplay(string Label, string ValueText, bool IsAvailable, float GaugeFraction = -1f);
 
 internal static class StreamControllerDisplayRenderer
 {
@@ -1271,6 +1271,52 @@ internal static class StreamControllerDisplayRenderer
         var layout = key.HardwareMetricLayout;
         bool showValue = layout != HardwareMetricLayout.LabelOnly;
         bool showLabel = layout != HardwareMetricLayout.ValueOnly && !string.IsNullOrWhiteSpace(label);
+
+        if (layout == HardwareMetricLayout.Gauge)
+        {
+            // 270° arc gauge opening at the bottom — value centered in the ring,
+            // label tucked into the bottom gap.
+            float stroke = Math.Max(3f, 5f * scale);
+            float diameter = Math.Min(width, height) - stroke - pad * 2f;
+            float gx = (width - diameter) * 0.5f;
+            float gy = (height - diameter) * 0.5f;
+            const float gaugeStart = 135f;
+            const float gaugeSweep = 270f;
+
+            var accent = ParseColor(key.TextColor, DrawingColor.White);
+            using (var trackPen = new DrawingPen(DrawingColor.FromArgb(55, 255, 255, 255), stroke)
+            {
+                StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                EndCap = System.Drawing.Drawing2D.LineCap.Round,
+            })
+            {
+                graphics.DrawArc(trackPen, gx, gy, diameter, diameter, gaugeStart, gaugeSweep);
+            }
+
+            float fraction = metric.IsAvailable ? metric.GaugeFraction : -1f;
+            if (fraction >= 0f)
+            {
+                using var fillPen = new DrawingPen(accent, stroke)
+                {
+                    StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                    EndCap = System.Drawing.Drawing2D.LineCap.Round,
+                };
+                float sweep = Math.Max(4f, gaugeSweep * Math.Clamp(fraction, 0f, 1f));
+                graphics.DrawArc(fillPen, gx, gy, diameter, diameter, gaugeStart, sweep);
+            }
+
+            float inset = stroke + pad;
+            graphics.DrawString(value, valueFont, valueBrush,
+                new DrawingRectangleF(gx + inset, gy, diameter - inset * 2f, diameter), format);
+
+            if (!string.IsNullOrWhiteSpace(label))
+            {
+                float gaugeLabelH = graphics.MeasureString("CPU", labelFont).Height;
+                graphics.DrawString(label, labelFont, labelBrush,
+                    new DrawingRectangleF(0, height - gaugeLabelH - 1f * scale, width, gaugeLabelH), format);
+            }
+            return;
+        }
         float valueH = showValue ? graphics.MeasureString("88°", valueFont).Height : 0;
         float labelH = showLabel ? graphics.MeasureString("CPU", labelFont).Height : 0;
         float totalH = layout == HardwareMetricLayout.SideBySide

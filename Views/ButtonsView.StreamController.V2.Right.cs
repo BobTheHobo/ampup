@@ -875,16 +875,8 @@ public partial class ButtonsView
             if (_scHardwareMetricPicker != null)
             {
                 string src = string.IsNullOrWhiteSpace(key.HardwareMetricSource) ? "cpu_temp" : key.HardwareMetricSource;
-                int metricIdx = 0;
-                for (int i = 0; i < HardwareMonitorService.Sources.Length; i++)
-                {
-                    if (HardwareMonitorService.Sources[i].Source == src)
-                    {
-                        metricIdx = i;
-                        break;
-                    }
-                }
-                _scHardwareMetricPicker.SelectedIndex = metricIdx;
+                _scHardwareMetricPicker.SelectedIndex = Math.Max(0, FindMetricSourceIndex(src));
+                UpdateHardwareSourceHint();
             }
             if (_scHardwareLabelBox != null)
                 _scHardwareLabelBox.Text = key.HardwareMetricLabel ?? "";
@@ -896,6 +888,7 @@ public partial class ButtonsView
                     HardwareMetricLayout.ValueOnly => 2,
                     HardwareMetricLayout.LabelOnly => 3,
                     HardwareMetricLayout.SideBySide => 4,
+                    HardwareMetricLayout.Gauge => 5,
                     _ => 0,
                 };
             }
@@ -1016,15 +1009,57 @@ public partial class ButtonsView
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Refreshes the live sensor hint under the HARDWARE METRIC picker — current
+    /// reading, the sensor it came from, and which app provided it. The read runs
+    /// on a background thread because the first call opens LibreHardwareMonitor.
+    /// </summary>
+    private void UpdateHardwareSourceHint()
+    {
+        var hint = _scHardwareSourceHint;
+        if (hint == null) return;
+        string source = _scHardwareMetricPicker?.SelectedTag as string ?? "cpu_temp";
+
+        hint.Text = "Reading sensor…";
+        hint.Foreground = FindBrush("TextDimBrush");
+        Task.Run(() =>
+        {
+            HardwareMetricReading? reading = null;
+            try { reading = App.HardwareMonitor?.GetReading(source); } catch { }
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (!ReferenceEquals(_scHardwareSourceHint, hint)) return;
+                if (reading == null)
+                {
+                    hint.Text = "";
+                    return;
+                }
+                if (reading.IsAvailable)
+                {
+                    string detail = string.IsNullOrWhiteSpace(reading.Detail) ? "" : $"{reading.Detail} · ";
+                    hint.Text = $"{reading.ValueText} — {detail}via {reading.Provider}";
+                    hint.Foreground = FindBrush("TextDimBrush");
+                }
+                else
+                {
+                    hint.Text = "No sensor found. Run Amp Up as administrator for full sensor access, or start HWiNFO with Shared Memory Support enabled.";
+                    hint.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xB8, 0x00));
+                }
+            });
+        });
+    }
+
     private void ArrangeHardwareMetricEditor(bool isHardwareMonitor)
     {
         if (_scHardwarePanel == null) return;
 
         if (isHardwareMonitor)
         {
+            PopulateFanMetricSources(); // retry if the monitor wasn't up at view construction
             _scHardwarePanel.Children.Clear();
             AddHardwareEditorElement(_scHardwareMetricHeaderLabel);
-            AddHardwareEditorElement(_scHardwareMetricPicker, bottomMargin: 10);
+            AddHardwareEditorElement(_scHardwareMetricPicker, bottomMargin: 4);
+            AddHardwareEditorElement(_scHardwareSourceHint, bottomMargin: 10);
             AddHardwareEditorElement(_scHardwareCustomLabelLabel);
             AddHardwareEditorElement(_scHardwareLabelBox, bottomMargin: 10);
             AddHardwareEditorElement(_scHardwareLayoutLabel);
