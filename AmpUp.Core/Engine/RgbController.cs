@@ -1810,26 +1810,30 @@ public class RgbController : IDisposable
     /// App-aware position blend. Running + unmuted uses color1->color2 by knob
     /// position by default; each status can override the rendered effect.
     /// </summary>
-    private void EffectProgramStatus(int k, LightConfig light, float pos)
+    private void EffectProgramStatus(int k, LightConfig light, float rawPos)
     {
         var state = GetProgramState(k, defaultRunning: false, defaultMuted: true);
         if (!state.Running)
         {
-            ApplyProgramStatusEffect(k, light, light.ProgramStatusNotRunningEffect, pos, light.R4, light.G4, light.B4);
+            ApplyProgramStatusEffect(k, light, light.ProgramStatusNotRunningEffect, rawPos, light.R4, light.G4, light.B4);
             return;
         }
 
         if (state.Muted)
         {
-            ApplyProgramStatusEffect(k, light, light.ProgramStatusMutedEffect, pos, light.R3, light.G3, light.B3);
+            ApplyProgramStatusEffect(k, light, light.ProgramStatusMutedEffect, rawPos, light.R3, light.G3, light.B3);
             return;
         }
 
-        ApplyProgramStatusEffect(k, light, light.ProgramStatusUnmutedEffect, pos, light.R, light.G, light.B);
+        ApplyProgramStatusEffect(k, light, light.ProgramStatusUnmutedEffect, rawPos, light.R, light.G, light.B);
     }
 
-    private void ApplyProgramStatusEffect(int k, LightConfig source, LightEffect effect, float pos, int primaryR, int primaryG, int primaryB)
+    private void ApplyProgramStatusEffect(int k, LightConfig source, LightEffect effect, float rawPos, int primaryR, int primaryG, int primaryB)
     {
+        // Match ApplyEffect's position conventions exactly, so a sub-effect renders
+        // identically to picking the same effect directly: blend/solid effects get the
+        // dead-zone-remapped position, fill-style effects get the raw position.
+        float pos = rawPos < 0.15f ? 0f : (rawPos - 0.15f) / 0.85f;
         if (effect is LightEffect.ProgramStatus or LightEffect.ProgramMute or LightEffect.AppGroupMute
             or LightEffect.MicStatus or LightEffect.DeviceMute or LightEffect.DeviceSelect
             or LightEffect.DevicePositionFill or LightEffect.AudioReactive or LightEffect.AudioPositionBlend)
@@ -1861,16 +1865,16 @@ public class RgbController : IDisposable
                 EffectColorBlend(k, light, pos);
                 break;
             case LightEffect.PositionFill:
-                EffectPositionFill(k, light, pos);
+                EffectPositionFill(k, light, rawPos);
                 break;
             case LightEffect.PositionBlend:
-                EffectPositionBlend(k, light, pos);
+                EffectPositionBlend(k, light, rawPos);
                 break;
             case LightEffect.CycleFill:
-                EffectCycleFill(k, light, pos);
+                EffectCycleFill(k, light, rawPos);
                 break;
             case LightEffect.RainbowFill:
-                EffectRainbowFill(k, light, pos);
+                EffectRainbowFill(k, light, rawPos);
                 break;
             case LightEffect.GradientFill:
                 EffectGradientFill(k, light);
