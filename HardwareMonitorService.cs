@@ -49,13 +49,15 @@ internal sealed class HardwareMonitorService : IDisposable
         ("fan_speed", "Fan Speed"),
     };
 
-    public HardwareMetricReading GetReading(string source)
+    /// <param name="gaugeMax">User-set gauge full-scale in the metric's native unit; 0 = auto range.</param>
+    public HardwareMetricReading GetReading(string source, float gaugeMax = 0f)
     {
         if (string.IsNullOrWhiteSpace(source))
             source = "cpu_temp";
 
         lock (_lock)
         {
+            _gaugeMaxOverride = gaugeMax;
             try
             {
                 EnsureOpen();
@@ -243,8 +245,14 @@ internal sealed class HardwareMonitorService : IDisposable
     /// metrics map directly; the rest use sensible full-scale ranges (or a real
     /// used/total ratio for memory). Returns -1 when no fraction makes sense.
     /// </summary>
+    /// <summary>Per-call gauge full-scale override from the key config (0 = auto). Set under _lock.</summary>
+    private float _gaugeMaxOverride;
+
     private float ComputeGaugeFraction(string source, float value)
     {
+        if (_gaugeMaxOverride > 0f)
+            return Math.Clamp(value / _gaugeMaxOverride, 0f, 1f);
+
         if (source.StartsWith("fan:", StringComparison.Ordinal))
             return Math.Clamp(value / 2200f, 0f, 1f);
 

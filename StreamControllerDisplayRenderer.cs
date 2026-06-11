@@ -65,8 +65,9 @@ internal static class StreamControllerDisplayRenderer
     /// key so the overlay reflects the latest poll.</summary>
     public static Func<(string Title, string Subtitle)>? SpotifyNowPlayingTitleProvider { get; set; }
 
-    /// <summary>Live hardware metric resolver for HardwareMonitor keys.</summary>
-    public static Func<string, HardwareMetricDisplay>? HardwareMetricProvider { get; set; }
+    /// <summary>Live hardware metric resolver for HardwareMonitor keys.
+    /// Args: metric source id, gauge full-scale override (0 = auto).</summary>
+    public static Func<string, float, HardwareMetricDisplay>? HardwareMetricProvider { get; set; }
 
     public static BitmapSource CreatePreview(StreamControllerDisplayKeyConfig key)
     {
@@ -339,7 +340,7 @@ internal static class StreamControllerDisplayRenderer
 
         if (key.DisplayType == DisplayKeyType.HardwareMonitor)
         {
-            var metric = HardwareMetricProvider?.Invoke(key.HardwareMetricSource)
+            var metric = HardwareMetricProvider?.Invoke(key.HardwareMetricSource, key.HardwareGaugeMax)
                 ?? new HardwareMetricDisplay("Hardware", "--", false);
             clone.Title = "";
             clone.Subtitle = "";
@@ -1241,7 +1242,7 @@ internal static class StreamControllerDisplayRenderer
         int width,
         int height)
     {
-        var metric = HardwareMetricProvider?.Invoke(key.HardwareMetricSource)
+        var metric = HardwareMetricProvider?.Invoke(key.HardwareMetricSource, key.HardwareGaugeMax)
             ?? new HardwareMetricDisplay("Hardware", "--", false);
 
         string value = metric.ValueText?.Trim() ?? "--";
@@ -1298,7 +1299,15 @@ internal static class StreamControllerDisplayRenderer
             float fraction = metric.IsAvailable ? metric.GaugeFraction : -1f;
             if (fraction >= 0f)
             {
-                using var fillPen = new DrawingPen(accent, stroke)
+                // Optional traffic-light fill: green under 50%, yellow to 80%, red above
+                var fillColor = accent;
+                if (key.HardwareGaugeColorByValue)
+                {
+                    fillColor = fraction < 0.5f ? DrawingColor.FromArgb(0x00, 0xE6, 0x76)
+                        : fraction < 0.8f ? DrawingColor.FromArgb(0xFF, 0xB8, 0x00)
+                        : DrawingColor.FromArgb(0xFF, 0x44, 0x44);
+                }
+                using var fillPen = new DrawingPen(fillColor, stroke)
                 {
                     StartCap = System.Drawing.Drawing2D.LineCap.Round,
                     EndCap = System.Drawing.Drawing2D.LineCap.Round,

@@ -892,6 +892,12 @@ public partial class ButtonsView
                     _ => 0,
                 };
             }
+            if (_scGaugeMaxBox != null)
+                _scGaugeMaxBox.Text = key.HardwareGaugeMax > 0f
+                    ? key.HardwareGaugeMax.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "";
+            if (_scGaugeColorCheck != null)
+                _scGaugeColorCheck.IsChecked = key.HardwareGaugeColorByValue;
+            UpdateGaugeMaxUnitLabel(string.IsNullOrWhiteSpace(key.HardwareMetricSource) ? "cpu_temp" : key.HardwareMetricSource);
             if (_scHardwareLabelSizeSlider != null)
                 _scHardwareLabelSizeSlider.Value = Math.Clamp(key.HardwareMetricLabelSize <= 0 ? 10 : key.HardwareMetricLabelSize, 6, 24);
             if (_scHardwareLabelSizeLabel != null)
@@ -1064,6 +1070,9 @@ public partial class ButtonsView
             AddHardwareEditorElement(_scHardwareLabelBox, bottomMargin: 10);
             AddHardwareEditorElement(_scHardwareLayoutLabel);
             AddHardwareEditorElement(_scHardwareLayoutPicker, bottomMargin: 12);
+            AddHardwareEditorElement(_scGaugeMaxLabel);
+            AddHardwareEditorElement(_scGaugeMaxBox, bottomMargin: 10);
+            AddHardwareEditorElement(_scGaugeColorCheck, bottomMargin: 12);
             AddHardwareEditorElement(_scHardwareSizeHeaderLabel);
             AddHardwareEditorElement(_scTextSizeLabel, bottomMargin: 4);
             AddHardwareEditorElement(_scTextSizeSlider, bottomMargin: 8);

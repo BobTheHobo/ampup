@@ -465,6 +465,10 @@ public class StreamControllerDisplayKeyConfig
     public string HardwareMetricLabelColor { get; set; } = "#FFFFFF";
     [JsonConverter(typeof(StringEnumConverter))]
     public HardwareMetricLayout HardwareMetricLayout { get; set; } = HardwareMetricLayout.ValueAboveLabel;
+    /// <summary>Gauge full-scale value in the metric's native unit (°C, %, MHz, W, GB, RPM). 0 = built-in auto range.</summary>
+    public float HardwareGaugeMax { get; set; } = 0f;
+    /// <summary>Gauge fill color follows fullness: green &lt;50%, yellow 50-80%, red &gt;80%.</summary>
+    public bool HardwareGaugeColorByValue { get; set; } = false;
 }
 
 public enum DisplayKeyType

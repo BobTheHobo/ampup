@@ -51,6 +51,9 @@ public partial class ButtonsView
     private TextBlock? _scHardwareMetricHeaderLabel;
     private TextBlock? _scHardwareSourceHint;
     private bool _scFanSourcesLoading;
+    private TextBlock? _scGaugeMaxLabel;
+    private TextBox? _scGaugeMaxBox;
+    private CheckBox? _scGaugeColorCheck;
     private TextBlock? _scHardwareCustomLabelLabel;
     private TextBlock? _scHardwareLayoutLabel;
     private TextBlock? _scHardwareSizeHeaderLabel;
@@ -776,6 +779,7 @@ public partial class ButtonsView
                 key.HardwareMetricSource = source;
             UpdateEditorPreviewOnly();
             UpdateHardwareSourceHint();
+            UpdateGaugeMaxUnitLabel(_scHardwareMetricPicker.SelectedTag as string ?? "cpu_temp");
             QueueSave();
         };
         _scHardwarePanel.Children.Add(_scHardwareMetricPicker);
@@ -819,6 +823,38 @@ public partial class ButtonsView
         _scHardwareLayoutPicker.AddSegment("Label Only", HardwareMetricLayout.LabelOnly);
         _scHardwareLayoutPicker.AddSegment("Side", HardwareMetricLayout.SideBySide);
         _scHardwareLayoutPicker.AddSegment("Gauge", HardwareMetricLayout.Gauge);
+
+        // Gauge options — full-scale override + traffic-light coloring (Gauge layout only)
+        _scGaugeMaxLabel = MakeEditorLabel("GAUGE MAX — EMPTY = AUTO");
+        _scGaugeMaxBox = MakeEditorTextBox("Auto");
+        _scGaugeMaxBox.Margin = new Thickness(0, 0, 0, 10);
+        _scGaugeMaxBox.TextChanged += (_, _) =>
+        {
+            if (_loading || _config == null) return;
+            var key = GetSelectedDisplayKeyConfig();
+            if (key == null) return;
+            key.HardwareGaugeMax = ParseGaugeMax(_scGaugeMaxBox.Text, key.HardwareMetricSource);
+            UpdateEditorPreviewOnly();
+            QueueSave();
+        };
+        _scGaugeColorCheck = new CheckBox
+        {
+            Content = "Color by value (green → yellow → red)",
+            FontSize = 11,
+            Foreground = FindBrush("TextPrimaryBrush"),
+            Margin = new Thickness(0, 0, 0, 10),
+        };
+        void OnGaugeColorToggled()
+        {
+            if (_loading || _config == null) return;
+            var key = GetSelectedDisplayKeyConfig();
+            if (key == null) return;
+            key.HardwareGaugeColorByValue = _scGaugeColorCheck?.IsChecked == true;
+            UpdateEditorPreviewOnly();
+            QueueSave();
+        }
+        _scGaugeColorCheck.Checked += (_, _) => OnGaugeColorToggled();
+        _scGaugeColorCheck.Unchecked += (_, _) => OnGaugeColorToggled();
         _scHardwareLayoutPicker.SelectionChanged += (_, _) =>
         {
             if (_loading || _config == null) return;
@@ -830,6 +866,9 @@ public partial class ButtonsView
             QueueSave();
         };
         _scHardwarePanel.Children.Add(_scHardwareLayoutPicker);
+        _scHardwarePanel.Children.Add(_scGaugeMaxLabel);
+        _scHardwarePanel.Children.Add(_scGaugeMaxBox);
+        _scHardwarePanel.Children.Add(_scGaugeColorCheck);
 
         _scHardwareSizeHeaderLabel = MakeEditorLabel("SIZE");
         _scHardwarePanel.Children.Add(_scHardwareSizeHeaderLabel);
@@ -2610,6 +2649,12 @@ public partial class ButtonsView
                     _ => 0,
                 };
             }
+            if (_scGaugeMaxBox != null)
+                _scGaugeMaxBox.Text = key.HardwareGaugeMax > 0f
+                    ? key.HardwareGaugeMax.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "";
+            if (_scGaugeColorCheck != null)
+                _scGaugeColorCheck.IsChecked = key.HardwareGaugeColorByValue;
+            UpdateGaugeMaxUnitLabel(string.IsNullOrWhiteSpace(key.HardwareMetricSource) ? "cpu_temp" : key.HardwareMetricSource);
             if (_scHardwareLabelSizeSlider != null)
                 _scHardwareLabelSizeSlider.Value = Math.Clamp(key.HardwareMetricLabelSize <= 0 ? 10 : key.HardwareMetricLabelSize, 6, 24);
             if (_scHardwareLabelSizeLabel != null)
@@ -3092,6 +3137,41 @@ public partial class ButtonsView
                 }
             });
         });
+    }
+
+    /// <summary>
+    /// Parses the gauge full-scale box. Empty/invalid = 0 (auto). For clock
+    /// metrics, small numbers are treated as GHz ("4.8" → 4800 MHz) since
+    /// that's how people think about clock speeds.
+    /// </summary>
+    private static float ParseGaugeMax(string text, string source)
+    {
+        text = (text ?? "").Trim().Replace(',', '.');
+        if (!float.TryParse(text, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out float v) || v <= 0f)
+            return 0f;
+        if (v < 100f && (source == "cpu_clock" || source == "gpu_clock"))
+            return v * 1000f;
+        return v;
+    }
+
+    /// <summary>Shows the metric's native unit on the GAUGE MAX label.</summary>
+    private void UpdateGaugeMaxUnitLabel(string source)
+    {
+        if (_scGaugeMaxLabel == null) return;
+        string unit = source.StartsWith("fan:", StringComparison.Ordinal) ? "RPM" : source switch
+        {
+            "cpu_temp" or "gpu_temp" => "°C",
+            "cpu_load" or "gpu_load" or "memory_load" or "vram_load" => "%",
+            "cpu_clock" or "gpu_clock" => "MHZ OR GHZ",
+            "cpu_power" or "gpu_power" => "W",
+            "memory_used" or "vram_used" => "GB",
+            "fan_speed" => "RPM",
+            _ => "",
+        };
+        _scGaugeMaxLabel.Text = string.IsNullOrEmpty(unit)
+            ? "GAUGE MAX — EMPTY = AUTO"
+            : $"GAUGE MAX ({unit}) — EMPTY = AUTO";
     }
 
     /// <summary>Index of a metric source in the picker by tag, or -1.</summary>

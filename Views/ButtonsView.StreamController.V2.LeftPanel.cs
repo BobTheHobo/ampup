@@ -1527,8 +1527,8 @@ public partial class ButtonsView
             }
             if (visualKey.DisplayType == DisplayKeyType.HardwareMonitor)
             {
-                var metricInfo = StreamControllerDisplayRenderer.HardwareMetricProvider?.Invoke(visualKey.HardwareMetricSource);
-                hardwareStateHash = $"{visualKey.HardwareMetricSource}|{visualKey.HardwareMetricLabel}|{visualKey.HardwareMetricLabelSize}|{visualKey.HardwareMetricLabelColor}|{visualKey.HardwareMetricLayout}|{metricInfo?.Label}|{metricInfo?.ValueText}|{metricInfo?.IsAvailable}";
+                var metricInfo = StreamControllerDisplayRenderer.HardwareMetricProvider?.Invoke(visualKey.HardwareMetricSource, visualKey.HardwareGaugeMax);
+                hardwareStateHash = $"{visualKey.HardwareMetricSource}|{visualKey.HardwareMetricLabel}|{visualKey.HardwareMetricLabelSize}|{visualKey.HardwareMetricLabelColor}|{visualKey.HardwareMetricLayout}|{visualKey.HardwareGaugeMax}|{visualKey.HardwareGaugeColorByValue}|{metricInfo?.Label}|{metricInfo?.ValueText}|{metricInfo?.IsAvailable}|{(int)((metricInfo?.GaugeFraction ?? 0f) * 100)}";
             }
 
             // Compose a hash from fields the tile actually renders — skip

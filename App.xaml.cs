@@ -299,9 +299,9 @@ public partial class App : Application
         };
 
         _hardwareMonitor = new HardwareMonitorService();
-        StreamControllerDisplayRenderer.HardwareMetricProvider = source =>
+        StreamControllerDisplayRenderer.HardwareMetricProvider = (source, gaugeMax) =>
         {
-            var reading = _hardwareMonitor.GetReading(source);
+            var reading = _hardwareMonitor.GetReading(source, gaugeMax);
             return new HardwareMetricDisplay(reading.Label, reading.ValueText, reading.IsAvailable, reading.GaugeFraction);
         };
 
@@ -3363,14 +3363,17 @@ public partial class App : Application
                   .Append(key.HardwareMetricLabel).Append('|')
                   .Append(key.HardwareMetricLabelSize).Append('|')
                   .Append(key.HardwareMetricLabelColor).Append('|')
-                  .Append(key.HardwareMetricLayout);
+                  .Append(key.HardwareMetricLayout).Append('|')
+                  .Append(key.HardwareGaugeMax).Append('|')
+                  .Append(key.HardwareGaugeColorByValue);
                 try
                 {
-                    var metric = StreamControllerDisplayRenderer.HardwareMetricProvider?.Invoke(key.HardwareMetricSource);
+                    var metric = StreamControllerDisplayRenderer.HardwareMetricProvider?.Invoke(key.HardwareMetricSource, key.HardwareGaugeMax);
                     if (metric.HasValue)
                         sb.Append('|').Append(metric.Value.Label).Append('|')
                           .Append(metric.Value.ValueText).Append('|')
-                          .Append(metric.Value.IsAvailable);
+                          .Append(metric.Value.IsAvailable).Append('|')
+                          .Append((int)(Math.Max(0f, metric.Value.GaugeFraction) * 100));
                 }
                 catch { sb.Append("|hw-err"); }
                 break;
@@ -3434,7 +3437,9 @@ public partial class App : Application
           .Append(key.HardwareMetricLabel).Append('|')
           .Append(key.HardwareMetricLabelSize).Append('|')
           .Append(key.HardwareMetricLabelColor).Append('|')
-          .Append(key.HardwareMetricLayout);
+          .Append(key.HardwareMetricLayout).Append('|')
+          .Append(key.HardwareGaugeMax).Append('|')
+          .Append(key.HardwareGaugeColorByValue);
         return sb.ToString();
     }
 
