@@ -289,6 +289,8 @@ internal static class StreamControllerDisplayRenderer
             HardwareMetricLabelSize = key.HardwareMetricLabelSize,
             HardwareMetricLabelColor = key.HardwareMetricLabelColor,
             HardwareMetricLayout = key.HardwareMetricLayout,
+            HardwareGaugeMax = key.HardwareGaugeMax,
+            HardwareGaugeColorByValue = key.HardwareGaugeColorByValue,
         };
 
         if (key.DisplayType == DisplayKeyType.Solid)
