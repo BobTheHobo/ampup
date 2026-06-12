@@ -294,6 +294,18 @@ public class LightConfig
     public LightEffect ProgramStatusMutedEffect { get; set; } = LightEffect.SingleColor;
     [JsonConverter(typeof(StringEnumConverter))]
     public LightEffect ProgramStatusNotRunningEffect { get; set; } = LightEffect.SingleColor;
+    // Per-state effects for the two-state mute reactives (MicStatus, DeviceMute,
+    // ProgramMute, AppGroupMute). null = classic solid state color.
+    // Unmuted state renders with R/G/B (secondary R3), muted with R2/G2/B2 (secondary R4).
+    [JsonConverter(typeof(StringEnumConverter))]
+    public LightEffect? StatusUnmutedEffect { get; set; }
+    [JsonConverter(typeof(StringEnumConverter))]
+    public LightEffect? StatusMutedEffect { get; set; }
+    // Temporary effect played on this knob's LEDs while the knob is being turned
+    // or its button is pressed. null = disabled.
+    [JsonConverter(typeof(StringEnumConverter))]
+    public LightEffect? ActivityEffect { get; set; }
+    public float ActivityDurationSec { get; set; } = 1.0f;
     public int EffectSpeed { get; set; } = 50;
     public int Brightness { get; set; } = 100; // per-knob brightness 0-100
     [JsonConverter(typeof(StringEnumConverter))]

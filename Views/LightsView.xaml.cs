@@ -51,6 +51,14 @@ public partial class LightsView : UserControl
     private readonly ActionPicker[] _programStatusUnmutedPickers = new ActionPicker[5];
     private readonly ActionPicker[] _programStatusMutedPickers = new ActionPicker[5];
     private readonly ActionPicker[] _programStatusNotRunningPickers = new ActionPicker[5];
+    // Per-state effects for two-state mute reactives (Mic / Device Mute / App Mute / Group)
+    private readonly StackPanel[] _muteStatusEffectPanels = new StackPanel[5];
+    private readonly ActionPicker[] _muteStatusUnmutedPickers = new ActionPicker[5];
+    private readonly ActionPicker[] _muteStatusMutedPickers = new ActionPicker[5];
+    // Activity flash — temporary effect while the knob/button is in use
+    private readonly ActionPicker[] _activityPickers = new ActionPicker[5];
+    private readonly StyledSlider[] _activityDurationSliders = new StyledSlider[5];
+    private readonly TextBlock[] _activityDurationLabels = new TextBlock[5];
 
 
     // Global knob effect previews
@@ -311,6 +319,20 @@ public partial class LightsView : UserControl
             _programStatusUnmutedPickers[i]?.Select(light.ProgramStatusUnmutedEffect.ToString());
             _programStatusMutedPickers[i]?.Select(light.ProgramStatusMutedEffect.ToString());
             _programStatusNotRunningPickers[i]?.Select(light.ProgramStatusNotRunningEffect.ToString());
+
+            // Per-state mute effects (null = classic solid → shown as "Solid")
+            _muteStatusUnmutedPickers[i]?.Select((light.StatusUnmutedEffect ?? LightEffect.SingleColor).ToString());
+            _muteStatusMutedPickers[i]?.Select((light.StatusMutedEffect ?? LightEffect.SingleColor).ToString());
+
+            // Activity flash
+            _activityPickers[i]?.Select(light.ActivityEffect?.ToString() ?? "none");
+            if (_activityDurationSliders[i] != null)
+            {
+                double dur = Math.Clamp(light.ActivityDurationSec <= 0f ? 1.0 : light.ActivityDurationSec, 0.25, 5.0);
+                _activityDurationSliders[i].Value = dur;
+                if (_activityDurationLabels[i] != null)
+                    _activityDurationLabels[i].Text = $"DURATION: {dur:0.00}s";
+            }
 
             // Populate DeviceSelect device pickers, then update visibility (which may re-populate),
             // then restore colors/selections after the final populate.
@@ -1841,6 +1863,67 @@ public partial class LightsView : UserControl
             _programStatusEffectPanels[idx] = statusEffectContainer;
             panel.Children.Add(statusEffectContainer);
 
+            // Per-state effects for the two-state mute reactives (Mic / Device
+            // Mute / App Mute / Group). "Solid" = the classic constant state color.
+            var muteStatusContainer = new StackPanel { Visibility = Visibility.Collapsed };
+            muteStatusContainer.Children.Add(MakeLabel("STATE EFFECTS"));
+            var stateUnmutedPicker = MakeProgramStatusEffectPicker("Effect shown while unmuted. Solid = the classic constant color. Two-color effects use the UNMUTED + UNMUTED 2 colors.");
+            stateUnmutedPicker.Select(LightEffect.SingleColor.ToString());
+            stateUnmutedPicker.SelectionChanged += (_, _) =>
+            {
+                if (!_loading) UpdateVisibility(idx, _effectPickers[idx].SelectedEffect);
+            };
+            muteStatusContainer.Children.Add(MakeStatusEffectRow("UNMUTED", stateUnmutedPicker));
+            _muteStatusUnmutedPickers[idx] = stateUnmutedPicker;
+
+            var stateMutedPicker = MakeProgramStatusEffectPicker("Effect shown while muted. Solid = the classic constant color. Two-color effects use the MUTED + MUTED 2 colors.");
+            stateMutedPicker.Select(LightEffect.SingleColor.ToString());
+            stateMutedPicker.SelectionChanged += (_, _) =>
+            {
+                if (!_loading) UpdateVisibility(idx, _effectPickers[idx].SelectedEffect);
+            };
+            muteStatusContainer.Children.Add(MakeStatusEffectRow("MUTED", stateMutedPicker));
+            _muteStatusMutedPickers[idx] = stateMutedPicker;
+
+            _muteStatusEffectPanels[idx] = muteStatusContainer;
+            panel.Children.Add(muteStatusContainer);
+
+            // Activity flash — temporary effect while this knob is turned or its
+            // button is pressed; reverts to the normal effect when the timer runs out.
+            var activityContainer = new StackPanel();
+            activityContainer.Children.Add(MakeLabel("ACTIVITY FLASH"));
+            var activityPicker = MakeProgramStatusEffectPicker(
+                "Temporary effect played while this knob is being turned or its button pressed. None = disabled.",
+                includeNone: true);
+            activityPicker.Select("none");
+            activityContainer.Children.Add(MakeStatusEffectRow("ON INPUT", activityPicker));
+            _activityPickers[idx] = activityPicker;
+
+            var activityDurationLabel = MakeLabel("DURATION: 1.0s");
+            activityDurationLabel.Margin = new Thickness(0, 2, 0, 2);
+            _activityDurationLabels[idx] = activityDurationLabel;
+            activityContainer.Children.Add(activityDurationLabel);
+            var activityDurationSlider = new StyledSlider
+            {
+                Minimum = 0.25,
+                Maximum = 5,
+                Step = 0.25,
+                Value = 1.0,
+                ShowLabel = false,
+                AccentColor = ThemeManager.Accent,
+                Margin = new Thickness(0, 0, 0, 10),
+                ToolTip = "How long the activity flash plays after the last input",
+            };
+            activityDurationSlider.ValueChanged += (_, _) =>
+            {
+                if (_activityDurationLabels[idx] != null)
+                    _activityDurationLabels[idx].Text = $"DURATION: {activityDurationSlider.Value:0.00}s";
+                if (!_loading) QueueSave();
+            };
+            _activityDurationSliders[idx] = activityDurationSlider;
+            activityContainer.Children.Add(activityDurationSlider);
+            panel.Children.Add(activityContainer);
+
             // DeviceSelect rows (hidden unless DeviceSelect effect)
             var deviceSelectContainer = new StackPanel { Visibility = Visibility.Collapsed };
             deviceSelectContainer.Children.Add(MakeLabel("DEVICE COLORS"));
@@ -2151,7 +2234,7 @@ public partial class LightsView : UserControl
         return MakeColorPill(label, Colors.Black, tooltip, () => OnPickColor(idx, slot));
     }
 
-    private ActionPicker MakeProgramStatusEffectPicker(string tooltip)
+    private ActionPicker MakeProgramStatusEffectPicker(string tooltip, bool includeNone = false)
     {
         var picker = new ActionPicker
         {
@@ -2160,6 +2243,8 @@ public partial class LightsView : UserControl
             ToolTip = tooltip,
         };
 
+        if (includeNone)
+            picker.AddItem("None", "none", "—", Color.FromRgb(0x88, 0x88, 0x88), "Disabled");
         picker.AddItem("Off", LightEffect.Off.ToString(), "0", Color.FromRgb(0x66, 0x66, 0x66), "Turn these LEDs off for this app state");
         picker.AddItem("Solid", LightEffect.SingleColor.ToString(), "●", Color.FromRgb(0x00, 0xE6, 0x76), "Use this state's color as a solid color");
         picker.AddItem("Blend", LightEffect.ColorBlend.ToString(), "◑", Color.FromRgb(0xFF, 0xAA, 0x33), "Blend this state's color into the secondary color by knob position");
@@ -2203,6 +2288,17 @@ public partial class LightsView : UserControl
         Grid.SetColumn(picker, 1);
         row.Children.Add(picker);
         return row;
+    }
+
+    /// <summary>
+    /// Relabels a color pill in place — used to swap PRIMARY/SECONDARY for
+    /// state-specific names (UNMUTED/MUTED) when a mute reactive is selected.
+    /// </summary>
+    private static void SetSwatchLabel(Border pill, string text, string? tooltip = null)
+    {
+        if (pill.Child is StackPanel row && row.Children.Count > 1 && row.Children[1] is TextBlock label)
+            label.Text = text;
+        if (tooltip != null) pill.ToolTip = tooltip;
     }
 
     private Border MakeColorPill(string label, Color initial, string tooltip, Action onClick)
@@ -2569,6 +2665,19 @@ public partial class LightsView : UserControl
         }
     }
 
+    /// <summary>Effects whose states can each render a configurable sub-effect.</summary>
+    private static bool IsMuteStatusEffect(LightEffect effect) =>
+        effect is LightEffect.MicStatus or LightEffect.DeviceMute
+            or LightEffect.ProgramMute or LightEffect.AppGroupMute;
+
+    /// <summary>True when the picked state sub-effect blends with a second color.</summary>
+    private static bool StateEffectNeedsColor2(ActionPicker? picker)
+    {
+        if (picker == null) return false;
+        return Enum.TryParse<LightEffect>(picker.SelectedValue, out var fx)
+            && EffectsNeedingColor2.Contains(fx);
+    }
+
     private void UpdateVisibility(int idx, LightEffect effect)
     {
         bool noColors = EffectsNoColors.Contains(effect);
@@ -2578,17 +2687,42 @@ public partial class LightsView : UserControl
         bool needsProgramName = EffectsNeedingProgramName.Contains(effect);
         bool needsDeviceSelect = EffectsNeedingDeviceSelect.Contains(effect);
         bool needsProgramStatusColors = effect == LightEffect.ProgramStatus;
+        bool isMuteStatus = IsMuteStatusEffect(effect);
+        bool muteUnmutedNeeds2 = isMuteStatus && StateEffectNeedsColor2(_muteStatusUnmutedPickers[idx]);
+        bool muteMutedNeeds2 = isMuteStatus && StateEffectNeedsColor2(_muteStatusMutedPickers[idx]);
 
         // Hide entire color section for pure rainbow/HSV effects
         if (_colorSections[idx] != null)
             _colorSections[idx].Visibility = noColors ? Visibility.Collapsed : Visibility.Visible;
         _color2Panels[idx].Visibility = (!noColors && needsColor2) ? Visibility.Visible : Visibility.Collapsed;
-        _color3Panels[idx].Visibility = (!noColors && needsProgramStatusColors) ? Visibility.Visible : Visibility.Collapsed;
-        _color4Panels[idx].Visibility = (!noColors && needsProgramStatusColors) ? Visibility.Visible : Visibility.Collapsed;
+        _color3Panels[idx].Visibility = (!noColors && (needsProgramStatusColors || muteUnmutedNeeds2)) ? Visibility.Visible : Visibility.Collapsed;
+        _color4Panels[idx].Visibility = (!noColors && (needsProgramStatusColors || muteMutedNeeds2)) ? Visibility.Visible : Visibility.Collapsed;
         _speedPanels[idx].Visibility = Visibility.Visible; // always show (brightness is always relevant)
         _reactiveModePanels[idx].Visibility = isReactive ? Visibility.Visible : Visibility.Collapsed;
         _programNamePanels[idx].Visibility = needsProgramName ? Visibility.Visible : Visibility.Collapsed;
         _programStatusEffectPanels[idx].Visibility = needsProgramStatusColors ? Visibility.Visible : Visibility.Collapsed;
+        _muteStatusEffectPanels[idx].Visibility = isMuteStatus ? Visibility.Visible : Visibility.Collapsed;
+
+        // Pill labels follow what the colors mean for the selected effect
+        if (isMuteStatus)
+        {
+            SetSwatchLabel(_color1Swatches[idx], "UNMUTED", "Color while unmuted (primary for the unmuted state effect)");
+            SetSwatchLabel(_color2Swatches[idx], "MUTED", "Color while muted (primary for the muted state effect)");
+            SetSwatchLabel(_color3Swatches[idx], "UNMUTED 2", "Second color for the unmuted state effect");
+            SetSwatchLabel(_color4Swatches[idx], "MUTED 2", "Second color for the muted state effect");
+        }
+        else if (needsProgramStatusColors)
+        {
+            SetSwatchLabel(_color1Swatches[idx], "PRIMARY", "Primary LED color");
+            SetSwatchLabel(_color2Swatches[idx], "SECONDARY", "Secondary color (accent/contrast for animated effects)");
+            SetSwatchLabel(_color3Swatches[idx], "MUTED", "ProgramStatus color while the watched app is muted");
+            SetSwatchLabel(_color4Swatches[idx], "NOT RUNNING", "ProgramStatus color while the watched app process is not running");
+        }
+        else
+        {
+            SetSwatchLabel(_color1Swatches[idx], "PRIMARY", "Primary LED color");
+            SetSwatchLabel(_color2Swatches[idx], "SECONDARY", "Secondary color (accent/contrast for animated effects)");
+        }
 
         if (_deviceSelectPanels[idx] != null)
         {
@@ -2666,6 +2800,10 @@ public partial class LightsView : UserControl
                 light.ProgramStatusUnmutedEffect = copy.ProgramStatusUnmutedEffect;
                 light.ProgramStatusMutedEffect = copy.ProgramStatusMutedEffect;
                 light.ProgramStatusNotRunningEffect = copy.ProgramStatusNotRunningEffect;
+                light.StatusUnmutedEffect = copy.StatusUnmutedEffect;
+                light.StatusMutedEffect = copy.StatusMutedEffect;
+                light.ActivityEffect = copy.ActivityEffect;
+                light.ActivityDurationSec = copy.ActivityDurationSec;
                 light.DeviceColors = copy.DeviceColors != null
                     ? new List<DeviceColorEntry>(copy.DeviceColors.Select(dc => new DeviceColorEntry { DeviceId = dc.DeviceId, R = dc.R, G = dc.G, B = dc.B }))
                     : new List<DeviceColorEntry>();
@@ -2689,6 +2827,11 @@ public partial class LightsView : UserControl
                 _programStatusUnmutedPickers[idx]?.Select(light.ProgramStatusUnmutedEffect.ToString());
                 _programStatusMutedPickers[idx]?.Select(light.ProgramStatusMutedEffect.ToString());
                 _programStatusNotRunningPickers[idx]?.Select(light.ProgramStatusNotRunningEffect.ToString());
+                _muteStatusUnmutedPickers[idx]?.Select((light.StatusUnmutedEffect ?? LightEffect.SingleColor).ToString());
+                _muteStatusMutedPickers[idx]?.Select((light.StatusMutedEffect ?? LightEffect.SingleColor).ToString());
+                _activityPickers[idx]?.Select(light.ActivityEffect?.ToString() ?? "none");
+                if (_activityDurationSliders[idx] != null)
+                    _activityDurationSliders[idx].Value = Math.Clamp(light.ActivityDurationSec <= 0f ? 1.0 : light.ActivityDurationSec, 0.25, 5.0);
                 PopulateDeviceSelectPickers(idx);
                 LoadDeviceSelectColors(idx, light);
                 UpdateVisibility(idx, light.Effect);
@@ -2713,6 +2856,10 @@ public partial class LightsView : UserControl
                 light.ProgramStatusUnmutedEffect = LightEffect.PositionBlend;
                 light.ProgramStatusMutedEffect = LightEffect.SingleColor;
                 light.ProgramStatusNotRunningEffect = LightEffect.SingleColor;
+                light.StatusUnmutedEffect = null;
+                light.StatusMutedEffect = null;
+                light.ActivityEffect = null;
+                light.ActivityDurationSec = 1.0f;
                 light.DeviceColors = new List<DeviceColorEntry>();
 
                 _loading = true;
@@ -2732,6 +2879,11 @@ public partial class LightsView : UserControl
                 _programStatusUnmutedPickers[idx]?.Select(LightEffect.PositionBlend.ToString());
                 _programStatusMutedPickers[idx]?.Select(LightEffect.SingleColor.ToString());
                 _programStatusNotRunningPickers[idx]?.Select(LightEffect.SingleColor.ToString());
+                _muteStatusUnmutedPickers[idx]?.Select(LightEffect.SingleColor.ToString());
+                _muteStatusMutedPickers[idx]?.Select(LightEffect.SingleColor.ToString());
+                _activityPickers[idx]?.Select("none");
+                if (_activityDurationSliders[idx] != null)
+                    _activityDurationSliders[idx].Value = 1.0;
                 UpdateVisibility(idx, LightEffect.SingleColor);
                 _loading = false;
 
@@ -2854,6 +3006,21 @@ public partial class LightsView : UserControl
                 light.ProgramStatusMutedEffect = mutedEffect;
             if (_programStatusNotRunningPickers[i] != null && Enum.TryParse<LightEffect>(_programStatusNotRunningPickers[i].SelectedValue, out var notRunningEffect))
                 light.ProgramStatusNotRunningEffect = notRunningEffect;
+
+            // Per-state mute effects — "Solid" stores null (classic constant state color)
+            if (_muteStatusUnmutedPickers[i] != null)
+                light.StatusUnmutedEffect = Enum.TryParse<LightEffect>(_muteStatusUnmutedPickers[i].SelectedValue, out var stateUnmuted)
+                    && stateUnmuted != LightEffect.SingleColor ? stateUnmuted : null;
+            if (_muteStatusMutedPickers[i] != null)
+                light.StatusMutedEffect = Enum.TryParse<LightEffect>(_muteStatusMutedPickers[i].SelectedValue, out var stateMuted)
+                    && stateMuted != LightEffect.SingleColor ? stateMuted : null;
+
+            // Activity flash — "none" stores null (disabled)
+            if (_activityPickers[i] != null)
+                light.ActivityEffect = Enum.TryParse<LightEffect>(_activityPickers[i].SelectedValue, out var activityFx)
+                    ? activityFx : null;
+            if (_activityDurationSliders[i] != null)
+                light.ActivityDurationSec = (float)_activityDurationSliders[i].Value;
 
             // Save DeviceSelect mappings only for effects that use device colors
             // and the pickers are initialized, otherwise preserve existing config

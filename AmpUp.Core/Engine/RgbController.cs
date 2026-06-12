@@ -792,6 +792,32 @@ public class RgbController : IDisposable
         }
     }
 
+    // Activity flash: UTC tick of the last knob-turn / button-press per knob.
+    // While inside the configured window, the knob renders its ActivityEffect
+    // instead of the normal effect, then falls back automatically.
+    private readonly long[] _activityTriggeredUtc = new long[5];
+
+    /// <summary>
+    /// Marks a knob as "in use" (knob turned or its button pressed) so the
+    /// optional activity flash effect plays for its configured duration.
+    /// Safe to call from any thread.
+    /// </summary>
+    public void NotifyKnobActivity(int knobIdx)
+    {
+        if (knobIdx < 0 || knobIdx > 4) return;
+        System.Threading.Interlocked.Exchange(ref _activityTriggeredUtc[knobIdx], DateTime.UtcNow.Ticks);
+    }
+
+    /// <summary>True while the knob's activity-flash window is open.</summary>
+    private bool IsActivityWindowOpen(int k, LightConfig light)
+    {
+        if (light.ActivityEffect is not LightEffect fx || fx == LightEffect.Off) return false;
+        long triggered = System.Threading.Interlocked.Read(ref _activityTriggeredUtc[k]);
+        if (triggered == 0) return false;
+        double durationSec = Math.Clamp(light.ActivityDurationSec <= 0f ? 1.0 : light.ActivityDurationSec, 0.25, 10.0);
+        return (DateTime.UtcNow - new DateTime(triggered, DateTimeKind.Utc)).TotalSeconds < durationSec;
+    }
+
     /// <summary>
     /// Apply the configured effect for a single knob.
     /// </summary>
@@ -800,6 +826,13 @@ public class RgbController : IDisposable
         float rawPos = _knobPositions[k];
         // Remap: below 15% = off, 15-100% → 0-100% (hardware LED dead zone)
         float pos = rawPos < 0.15f ? 0f : (rawPos - 0.15f) / 0.85f;
+
+        // Activity flash override — temporary effect while the knob/button is in use
+        if (IsActivityWindowOpen(k, light))
+        {
+            ApplyProgramStatusEffect(k, light, light.ActivityEffect!.Value, rawPos, light.R, light.G, light.B);
+            return;
+        }
 
         switch (light.Effect)
         {
@@ -844,11 +877,11 @@ public class RgbController : IDisposable
                 break;
 
             case LightEffect.MicStatus:
-                EffectMicStatus(k, light);
+                EffectMicStatus(k, light, rawPos);
                 break;
 
             case LightEffect.DeviceMute:
-                EffectDeviceMute(k, light);
+                EffectDeviceMute(k, light, rawPos);
                 break;
 
             case LightEffect.AudioReactive:
@@ -910,7 +943,7 @@ public class RgbController : IDisposable
                 break;
 
             case LightEffect.ProgramMute:
-                EffectProgramMute(k, light);
+                EffectProgramMute(k, light, rawPos);
                 break;
 
             case LightEffect.ProgramStatus:
@@ -918,7 +951,7 @@ public class RgbController : IDisposable
                 break;
 
             case LightEffect.AppGroupMute:
-                EffectAppGroupMute(k, light);
+                EffectAppGroupMute(k, light, rawPos);
                 break;
 
             case LightEffect.DeviceSelect:
@@ -1140,24 +1173,41 @@ public class RgbController : IDisposable
     /// <summary>
     /// Mic status: unmuted = solid color1, muted = solid color2.
     /// </summary>
-    private void EffectMicStatus(int k, LightConfig light)
+    private void EffectMicStatus(int k, LightConfig light, float rawPos)
+        => ApplyTwoStateStatus(k, light, _micMuted, rawPos);
+
+    /// <summary>
+    /// Shared renderer for the two-state mute reactives (Mic, DeviceMute,
+    /// ProgramMute, AppGroupMute). Each state can render a configurable
+    /// sub-effect; null keeps the classic constant solid state color.
+    /// Unmuted: primary = color1, secondary = color3.
+    /// Muted:   primary = color2, secondary = color4.
+    /// </summary>
+    private void ApplyTwoStateStatus(int k, LightConfig light, bool muted, float rawPos)
     {
-        if (_micMuted)
-            SetColor(k, light.R2, light.G2, light.B2);
+        if (muted)
+        {
+            if (light.StatusMutedEffect is LightEffect mutedFx)
+                ApplyProgramStatusEffect(k, light, mutedFx, rawPos,
+                    light.R2, light.G2, light.B2, light.R4, light.G4, light.B4);
+            else
+                SetColor(k, light.R2, light.G2, light.B2);
+        }
         else
-            SetColor(k, light.R, light.G, light.B);
+        {
+            if (light.StatusUnmutedEffect is LightEffect unmutedFx)
+                ApplyProgramStatusEffect(k, light, unmutedFx, rawPos,
+                    light.R, light.G, light.B, light.R3, light.G3, light.B3);
+            else
+                SetColor(k, light.R, light.G, light.B);
+        }
     }
 
     /// <summary>
     /// Master device mute: unmuted = solid color1, muted = solid color2.
     /// </summary>
-    private void EffectDeviceMute(int k, LightConfig light)
-    {
-        if (_masterMuted)
-            SetColor(k, light.R2, light.G2, light.B2);
-        else
-            SetColor(k, light.R, light.G, light.B);
-    }
+    private void EffectDeviceMute(int k, LightConfig light, float rawPos)
+        => ApplyTwoStateStatus(k, light, _masterMuted, rawPos);
 
     /// <summary>
     /// Slow blink for muted state. Smooth sine transition between 30% and 100% brightness
@@ -1797,13 +1847,10 @@ public class RgbController : IDisposable
     /// <summary>
     /// Show color1 when unmuted and color2 when muted or not running.
     /// </summary>
-    private void EffectProgramMute(int k, LightConfig light)
+    private void EffectProgramMute(int k, LightConfig light, float rawPos)
     {
         var state = GetProgramState(k, defaultRunning: true, defaultMuted: true);
-        if (!state.Running || state.Muted)
-            SetColor(k, light.R2, light.G2, light.B2);
-        else
-            SetColor(k, light.R, light.G, light.B);
+        ApplyTwoStateStatus(k, light, !state.Running || state.Muted, rawPos);
     }
 
     /// <summary>
@@ -1828,7 +1875,14 @@ public class RgbController : IDisposable
         ApplyProgramStatusEffect(k, light, light.ProgramStatusUnmutedEffect, rawPos, light.R, light.G, light.B);
     }
 
-    private void ApplyProgramStatusEffect(int k, LightConfig source, LightEffect effect, float rawPos, int primaryR, int primaryG, int primaryB)
+    /// <summary>
+    /// Renders one state of a status effect using a sub-effect + that state's primary
+    /// color. Secondary defaults to the light's color2 (App Status behavior); the
+    /// two-state mute reactives pass an explicit per-state secondary instead.
+    /// </summary>
+    private void ApplyProgramStatusEffect(int k, LightConfig source, LightEffect effect, float rawPos,
+        int primaryR, int primaryG, int primaryB,
+        int secondaryR = -1, int secondaryG = -1, int secondaryB = -1)
     {
         // Match ApplyEffect's position conventions exactly, so a sub-effect renders
         // identically to picking the same effect directly: blend/solid effects get the
@@ -1847,9 +1901,9 @@ public class RgbController : IDisposable
             R = primaryR,
             G = primaryG,
             B = primaryB,
-            R2 = source.R2,
-            G2 = source.G2,
-            B2 = source.B2,
+            R2 = secondaryR >= 0 ? secondaryR : source.R2,
+            G2 = secondaryG >= 0 ? secondaryG : source.G2,
+            B2 = secondaryB >= 0 ? secondaryB : source.B2,
             EffectSpeed = source.EffectSpeed,
             Brightness = source.Brightness,
             ReactiveMode = source.ReactiveMode,
@@ -1939,17 +1993,20 @@ public class RgbController : IDisposable
     /// <summary>
     /// Show color1 at full brightness when any app unmuted, dim color1 at MuteBrightness% when all muted. (Issue #9)
     /// </summary>
-    private void EffectAppGroupMute(int k, LightConfig light)
+    private void EffectAppGroupMute(int k, LightConfig light, float rawPos)
     {
         bool allMuted;
         lock (_stateLock) allMuted = _appGroupMuteStates.GetValueOrDefault(k, false); // default to unmuted
-        if (allMuted)
+
+        // Classic muted behavior (no muted sub-effect configured): dim color1.
+        if (allMuted && light.StatusMutedEffect == null)
         {
             float scale = _muteBrightnessPct / 100f;
             SetColor(k, (int)(light.R * scale), (int)(light.G * scale), (int)(light.B * scale));
+            return;
         }
-        else
-            SetColor(k, light.R, light.G, light.B);
+
+        ApplyTwoStateStatus(k, light, allMuted, rawPos);
     }
 
     /// <summary>

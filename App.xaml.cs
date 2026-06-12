@@ -1569,6 +1569,10 @@ public partial class App : Application
                 return; // don't also adjust audio volume while wheel is open
             }
             _lastKnobRaw[e.Idx] = e.Value;
+
+            // Activity flash — real knob turns only, not startup/connect batches
+            if (!e.IsBatch)
+                _rgb.NotifyKnobActivity(e.Idx);
         }
 
         var knob = _config.Knobs.FirstOrDefault(k => k.Idx == e.Idx);
@@ -2067,6 +2071,9 @@ public partial class App : Application
             return;
         if ((DateTime.UtcNow - _connectedAt).TotalMilliseconds < 2000)
             return;
+
+        if (e.IsDown && e.Idx >= 0 && e.Idx < 5)
+            _rgb?.NotifyKnobActivity(e.Idx); // activity flash on button press
 
         if (e.IsDown)
             _buttons.HandleDown(e.Idx, _config);
