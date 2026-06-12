@@ -48,15 +48,15 @@ public partial class LightsView : UserControl
     private readonly StackPanel[] _programNamePanels = new StackPanel[5];
     private readonly Border[] _programAppChips = new Border[5];
     private readonly StackPanel[] _programStatusEffectPanels = new StackPanel[5];
-    private readonly ActionPicker[] _programStatusUnmutedPickers = new ActionPicker[5];
-    private readonly ActionPicker[] _programStatusMutedPickers = new ActionPicker[5];
-    private readonly ActionPicker[] _programStatusNotRunningPickers = new ActionPicker[5];
+    private readonly EffectGridPicker[] _programStatusUnmutedPickers = new EffectGridPicker[5];
+    private readonly EffectGridPicker[] _programStatusMutedPickers = new EffectGridPicker[5];
+    private readonly EffectGridPicker[] _programStatusNotRunningPickers = new EffectGridPicker[5];
     // Per-state effects for two-state mute reactives (Mic / Device Mute / App Mute / Group)
     private readonly StackPanel[] _muteStatusEffectPanels = new StackPanel[5];
-    private readonly ActionPicker[] _muteStatusUnmutedPickers = new ActionPicker[5];
-    private readonly ActionPicker[] _muteStatusMutedPickers = new ActionPicker[5];
+    private readonly EffectGridPicker[] _muteStatusUnmutedPickers = new EffectGridPicker[5];
+    private readonly EffectGridPicker[] _muteStatusMutedPickers = new EffectGridPicker[5];
     // Activity flash — temporary effect while the knob/button is in use
-    private readonly ActionPicker[] _activityPickers = new ActionPicker[5];
+    private readonly EffectGridPicker[] _activityPickers = new EffectGridPicker[5];
     private readonly StyledSlider[] _activityDurationSliders = new StyledSlider[5];
     private readonly TextBlock[] _activityDurationLabels = new TextBlock[5];
 
@@ -2234,9 +2234,9 @@ public partial class LightsView : UserControl
         return MakeColorPill(label, Colors.Black, tooltip, () => OnPickColor(idx, slot));
     }
 
-    private ActionPicker MakeProgramStatusEffectPicker(string tooltip, bool includeNone = false)
+    private EffectGridPicker MakeProgramStatusEffectPicker(string tooltip, bool includeNone = false)
     {
-        var picker = new ActionPicker
+        var picker = new EffectGridPicker
         {
             Margin = new Thickness(0, 0, 0, 8),
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -2274,7 +2274,7 @@ public partial class LightsView : UserControl
         return picker;
     }
 
-    private FrameworkElement MakeStatusEffectRow(string label, ActionPicker picker)
+    private FrameworkElement MakeStatusEffectRow(string label, FrameworkElement picker)
     {
         var row = new Grid { Margin = new Thickness(0, 0, 0, 2) };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(94) });
@@ -2671,7 +2671,7 @@ public partial class LightsView : UserControl
             or LightEffect.ProgramMute or LightEffect.AppGroupMute;
 
     /// <summary>True when the picked state sub-effect blends with a second color.</summary>
-    private static bool StateEffectNeedsColor2(ActionPicker? picker)
+    private static bool StateEffectNeedsColor2(EffectGridPicker? picker)
     {
         if (picker == null) return false;
         return Enum.TryParse<LightEffect>(picker.SelectedValue, out var fx)
