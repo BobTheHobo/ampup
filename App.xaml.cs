@@ -51,7 +51,6 @@ public partial class App : Application
     private AmbienceSync? _ambienceSync;
     private DreamSyncController? _dreamSync;
     private CorsairSync? _corsairSync;
-    private RazerChromaBroadcast? _razerChroma;
     private SignalRgbBridgeService? _signalRgbBridge;
     private LgMonitorSync? _lgMonitor;
     private N3Controller? _n3;
@@ -255,21 +254,6 @@ public partial class App : Application
             if (mode != "static" && mode != "dreamview")
                 _corsairSync.SyncColors(frame);
         };
-        // Razer Chroma Broadcast mirror — receives the current Chroma effect
-        // (5 ChromaLink zones) and feeds it into the screen-sync channel so it
-        // lights the 5 knobs and (via OnFrameReady) the room lights. The frame
-        // arrives on Razer's broadcast thread; SetScreenSyncColors just stores
-        // it and the 20 FPS render loop picks it up.
-        _razerChroma = new RazerChromaBroadcast();
-        _razerChroma.OnFrame += frame =>
-        {
-            var razer = _config.Ambience.Razer;
-            if (!razer.Enabled || !razer.SyncToTurnUp) return;
-            // Screen Sync owns the channel when it's actively driving the knobs.
-            if (_config.Ambience.ScreenSync.Enabled && _config.Ambience.ScreenSync.SyncToTurnUp) return;
-            _rgb.SetScreenSyncColors(frame);
-        };
-
         // Corsair SDK init moved to InitializeHardwareDeferred — it can
         // block for hundreds of ms hunting for the iCUE service.
         // Corsair / LG / N3 hardware probes all do blocking HID enumeration
@@ -1447,12 +1431,9 @@ public partial class App : Application
         ConfigureGameModeTimer();
         _ambienceSync?.UpdateConfig(_config.Ambience);
         _dreamSync?.UpdateConfig(_config.Ambience.ScreenSync, _config.Ambience);
-        // Clear Turn Up screen sync override when nothing is feeding that channel
-        // (screen sync, room mixer, or the Razer Chroma mirror).
-        bool razerFeeding = _config.Ambience.Razer.Enabled && _config.Ambience.Razer.SyncToTurnUp;
+        // Clear Turn Up screen sync override when neither screen sync nor room mixer is active
         if ((!_config.Ambience.ScreenSync.Enabled || !_config.Ambience.ScreenSync.SyncToTurnUp)
-            && !_config.Ambience.SyncRoomToTurnUp
-            && !razerFeeding)
+            && !_config.Ambience.SyncRoomToTurnUp)
             _rgb.SetScreenSyncColors(null);
         if (_corsairSync != null)
         {
@@ -1460,13 +1441,6 @@ public partial class App : Application
                 _corsairSync.Start();
             else
                 _corsairSync.Stop();
-        }
-        if (_razerChroma != null)
-        {
-            if (_config.Ambience.Razer.Enabled && !_razerChroma.IsConnected)
-                _ = Task.Run(() => _razerChroma.TryStart());
-            else if (!_config.Ambience.Razer.Enabled && _razerChroma.IsConnected)
-                _razerChroma.Stop();
         }
         _signalRgbBridge?.UpdateConfig(_config.SignalRgb);
         if (!_config.SignalRgb.Enabled)
@@ -2641,23 +2615,6 @@ public partial class App : Application
             {
                 try { _dreamSync?.Start(); }
                 catch (Exception ex) { Logger.Log($"DreamSync start failed: {ex.Message}"); }
-            });
-        }
-
-        // Razer Chroma Broadcast — loads the Razer DLL + registers for events.
-        // Background thread because LoadLibrary + signature validation can stall.
-        if (_config.Ambience.Razer.Enabled)
-        {
-            _ = Task.Run(() =>
-            {
-                try
-                {
-                    bool ok = _razerChroma?.TryStart() == true;
-                    Logger.Log(ok
-                        ? "Razer Chroma Broadcast: listening"
-                        : $"Razer Chroma Broadcast unavailable: {_razerChroma?.LastError}");
-                }
-                catch (Exception ex) { Logger.Log($"RazerChroma start failed: {ex.Message}"); }
             });
         }
     }
@@ -5302,7 +5259,6 @@ public partial class App : Application
         _ambienceSync?.Dispose();
         _dreamSync?.Dispose();
         _corsairSync?.Dispose();
-        _razerChroma?.Dispose();
         _lgMonitor?.Dispose();
         _n3?.Dispose();
         _spotify?.Dispose();
