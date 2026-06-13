@@ -677,6 +677,19 @@ public class AmbienceConfig
     public bool RoomColorsAuto { get; set; } = true; // scenes use their own signature colors instead of the custom palette
     public int RoomTemperatureKelvin { get; set; } = 3500;
     public int RoomEffectSpeed { get; set; } = 50;
+    public RazerChromaConfig Razer { get; set; } = new();
+}
+
+/// <summary>
+/// Razer Chroma Broadcast "mirror" integration — AmpUp receives the current
+/// Chroma effect (5 ChromaLink zones) and mirrors it onto the Turn Up knobs
+/// and/or room lights. Requires the Razer Chroma runtime installed + running.
+/// </summary>
+public class RazerChromaConfig
+{
+    public bool Enabled { get; set; } = false;
+    public bool SyncToTurnUp { get; set; } = true;  // mirror onto the 5 Turn Up knobs
+    public bool SyncToRoom { get; set; } = false;   // mirror onto Govee/Corsair room lights
 }
 
 public class GoveeDeviceConfig

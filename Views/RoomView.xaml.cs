@@ -2135,6 +2135,43 @@ public partial class RoomView : UserControl
         };
 
         stack.Children.Add(MakeSectionCard("AMP UP HARDWARE", turnUpCheck, mixerCheck));
+
+        // ── Razer Chroma (Broadcast mirror) ──
+        var razer = _config.Ambience.Razer;
+        var razerEnableCheck = new CheckBox
+        {
+            Content = "Enable Razer Chroma mirror",
+            IsChecked = razer.Enabled,
+            Foreground = FindBrush("TextPrimaryBrush"), FontSize = 12,
+            Margin = new Thickness(0, 4, 0, 4),
+            ToolTip = "Mirror your Razer keyboard/device's current Chroma effect onto AmpUp's lights",
+        };
+        razerEnableCheck.Checked += (_, _) => { if (!_loading && _config != null) { _config.Ambience.Razer.Enabled = true; QueueSave(); } };
+        razerEnableCheck.Unchecked += (_, _) => { if (!_loading && _config != null) { _config.Ambience.Razer.Enabled = false; QueueSave(); } };
+
+        var razerKnobsCheck = new CheckBox
+        {
+            Content = "Mirror to Turn Up knobs",
+            IsChecked = razer.SyncToTurnUp,
+            Foreground = FindBrush("TextPrimaryBrush"), FontSize = 12,
+            Margin = new Thickness(0, 4, 0, 4),
+            ToolTip = "Map the 5 Razer ChromaLink zones onto the 5 Turn Up knobs",
+        };
+        razerKnobsCheck.Checked += (_, _) => { if (!_loading && _config != null) { _config.Ambience.Razer.SyncToTurnUp = true; QueueSave(); } };
+        razerKnobsCheck.Unchecked += (_, _) => { if (!_loading && _config != null) { _config.Ambience.Razer.SyncToTurnUp = false; QueueSave(); } };
+
+        var razerHelp = new TextBlock
+        {
+            Text = "Requires the Razer Chroma App (or Synapse + Chroma Connect) installed and running. "
+                 + "AmpUp receives whatever effect Razer is showing — it does not control the Razer device. "
+                 + "Note: pending Razer app approval, mirroring may not receive colors yet.",
+            FontSize = 10,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = FindBrush("TextSecBrush"),
+            Margin = new Thickness(0, 4, 0, 0),
+        };
+
+        stack.Children.Add(MakeSectionCard("RAZER CHROMA", razerEnableCheck, razerKnobsCheck, razerHelp));
     }
 
     // ── OLD LAYOUT TAB (dead code — kept for reference) ──
