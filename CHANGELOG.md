@@ -13,7 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.1] - 2026-06-18
 
 ### Added
-- Added public Discord RPC authorization flow, token refresh handling, and persistent Discord auth across profile switches.
+- Added Discord RPC authorization flow, token refresh handling, and persistent Discord auth across profile switches. Discord actions are currently tester-gated: users must DM Tyson on Discord so he can add them as a friend/tester until official Discord support is available.
 - Added direct Discord RPC actions for mute, deafen, explicit voice states, leave voice, and noise suppression.
 - Added settings backup and restore.
 - Added N3 hardware monitoring tiles for CPU, GPU, RAM, VRAM, temperatures, usage, and fan metrics.
@@ -29,7 +29,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Improved hot-path performance across engines, UI, and I/O.
 
 ### Fixed
-- Fixed Discord RPC redirect and PKCE verifier handling for public authorization.
+- Fixed Discord RPC redirect and PKCE verifier handling for tester authorization.
 - Fixed App Status sub-effects ignoring the knob dead zone.
 - Fixed N3 editor bugs around title scrolling, maximize button bubbling, and clearing icon styling.
 - Improved hardware monitoring with VRAM fixes, HWiNFO fallbacks, and fan picker refinements.

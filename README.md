@@ -128,7 +128,7 @@ SignalRGB actions are available for Turn Up buttons and N3 keys, including apply
 
 ### 1.1 Highlights
 
-- Discord RPC actions now support public authorization, token refresh, persistent auth across profile switches, and direct mute/deafen/voice controls.
+- Discord RPC actions now support tester-gated authorization, token refresh, persistent auth across profile switches, and direct mute/deafen/voice controls. Because official Discord approval is not available yet, users need to DM Tyson on Discord so he can add them as a friend/tester before they can use these actions.
 - Settings backup and restore make it easier to protect or move a tuned setup.
 - N3 stream-controller tiles gained scrolling titles, cleaner icon clearing, hardware metric displays, gauge styling, and more polished metric options.
 - Lighting gained state-specific App Status effects, automatic effect colors, a renamed Scenes category, 15 room-bright ambient effects, and a compact state-effect chip grid.
@@ -170,7 +170,7 @@ Amp Up is a .NET 8 WPF application using WPF-UI, NAudio, Newtonsoft.Json, System
 
 | Version | Highlights |
 |-|-|
-| **v1.1** | Discord public RPC/actions, settings backup/restore, N3 scrolling titles and hardware metric gauges, room-bright scenes, automatic effect colors, state-specific App Status effects, and performance optimizations. |
+| **v1.1** | Discord tester-gated RPC/actions, settings backup/restore, N3 scrolling titles and hardware metric gauges, room-bright scenes, automatic effect colors, state-specific App Status effects, and performance optimizations. Discord actions require DMing Tyson so he can add users as friend/testers until official Discord support is available. |
 | **v1.0.9.8** | Hardware monitoring improvements including VRAM fixes, HWiNFO fallbacks, gauge max overrides, color-by-value, and compact state-effect chips. |
 | **v1.0.9.7** | Automatic effect colors, Scenes naming, 15 room-bright ambient LED effects, and an App Status dead-zone fix. |
 | **v1.0.9.5** | App Status lighting now supports separate effects for unmuted, muted, and not-running states, including Off. |
