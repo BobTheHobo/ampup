@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.9.5-00BFEF" alt="Version" />
+  <img src="https://img.shields.io/badge/version-1.1-00BFEF" alt="Version" />
   <img src="https://img.shields.io/badge/Windows%2010%2F11-0078D6?logo=windows&logoColor=white" alt="Windows" />
   <img src="https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white" alt=".NET 8" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
@@ -26,7 +26,7 @@ The 1.0 beta also adds native support for the **TreasLin / VSDinside N3** stream
 
 ## Install
 
-1. Download **`AmpUp-Setup-1.0.9.5.exe`** from [Releases](https://github.com/audioslayer/ampup/releases).
+1. Download **`AmpUp-Setup-1.1.exe`** from [Releases](https://github.com/audioslayer/ampup/releases).
 2. Run the installer.
 3. Launch Amp Up, then connect your Turn Up mixer or N3 controller.
 
@@ -85,7 +85,10 @@ SignalRGB actions are available for Turn Up buttons and N3 keys, including apply
 - Spaces and pages for organizing actions.
 - Side buttons and encoder presses as first-class controls.
 - Encoder rotation actions for page/space cycling and knob-style assignments.
+- Hardware monitoring tiles for CPU, GPU, RAM, VRAM, temperature, usage, and fan metrics.
+- Gauge displays with max overrides, color-by-value, label overrides, and dimmed tracks for low values.
 - Native display rendering for device JPEGs plus crisp in-app previews.
+- Smooth auto-scrolling for long titles and wraparound text on both previews and device displays.
 - Device sleep/wake controls and disconnect visibility.
 
 ### Lights
@@ -94,6 +97,8 @@ SignalRGB actions are available for Turn Up buttons and N3 keys, including apply
 - Per-knob and global lighting modes.
 - Premium palettes, gradient editor, brightness, speed, gamma calibration, and hardware hover preview.
 - Audio-reactive, mute-aware, device-aware, position-fill, rainbow, fire, comet, plasma, heartbeat, scanner, meteor, matrix, aurora, and more.
+- 15 room-bright ambient scenes plus automatic color recommendations for effect presets.
+- App Status lighting can use separate effects for unmuted, muted, not-running, and activity-flash states.
 - **Dev+Pos** mode combines active output-device colors with knob position fill.
 
 ### Room Lighting
@@ -120,6 +125,14 @@ SignalRGB actions are available for Turn Up buttons and N3 keys, including apply
 - More resilient Govee, Corsair, SignalRGB, Home Assistant, audio-session, OSD, and N3 disconnect handling.
 - Start with Windows is enabled by default for new installs and can be changed in Settings.
 - Manual installer packaging and GitHub release notes are ready for beta distribution.
+
+### 1.1 Highlights
+
+- Discord RPC actions now support public authorization, token refresh, persistent auth across profile switches, and direct mute/deafen/voice controls.
+- Settings backup and restore make it easier to protect or move a tuned setup.
+- N3 stream-controller tiles gained scrolling titles, cleaner icon clearing, hardware metric displays, gauge styling, and more polished metric options.
+- Lighting gained state-specific App Status effects, automatic effect colors, a renamed Scenes category, 15 room-bright ambient effects, and a compact state-effect chip grid.
+- Performance work reduced hot-path overhead across engines, UI, and I/O.
 
 ## Build From Source
 
@@ -157,6 +170,9 @@ Amp Up is a .NET 8 WPF application using WPF-UI, NAudio, Newtonsoft.Json, System
 
 | Version | Highlights |
 |-|-|
+| **v1.1** | Discord public RPC/actions, settings backup/restore, N3 scrolling titles and hardware metric gauges, room-bright scenes, automatic effect colors, state-specific App Status effects, and performance optimizations. |
+| **v1.0.9.8** | Hardware monitoring improvements including VRAM fixes, HWiNFO fallbacks, gauge max overrides, color-by-value, and compact state-effect chips. |
+| **v1.0.9.7** | Automatic effect colors, Scenes naming, 15 room-bright ambient LED effects, and an App Status dead-zone fix. |
 | **v1.0.9.5** | App Status lighting now supports separate effects for unmuted, muted, and not-running states, including Off. |
 | **v1.0.9.3** | Direct Discord RPC button actions for mute/deafen, explicit voice state controls, leave voice, and noise suppression. |
 | **v1.0.9.2** | SignalRGB bridge/actions/profile sync, expanded N3 integration actions, Home Assistant action fixes, Room Temperature mode, warmer Govee temperature presets, and RGBIC segment reliability fixes. |

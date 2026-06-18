@@ -10,6 +10,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.1] - 2026-06-18
+
+### Added
+- Added public Discord RPC authorization flow, token refresh handling, and persistent Discord auth across profile switches.
+- Added direct Discord RPC actions for mute, deafen, explicit voice states, leave voice, and noise suppression.
+- Added settings backup and restore.
+- Added N3 hardware monitoring tiles for CPU, GPU, RAM, VRAM, temperatures, usage, and fan metrics.
+- Added gauge display options for N3 hardware metrics, including max overrides, color-by-value, label overrides, and dimmed tracks.
+- Added smooth N3 title auto-scrolling and wraparound behavior for long labels.
+- Added state-specific App Status lighting effects for unmuted, muted, not-running, and activity-flash states.
+- Added automatic effect colors and 15 room-bright ambient LED effects.
+
+### Changed
+- Renamed Global Span lighting to Scenes.
+- Replaced the state-effect dropdown with a compact effect chip grid.
+- Reworked and polished N3 hardware metric editor layout and options.
+- Improved hot-path performance across engines, UI, and I/O.
+
+### Fixed
+- Fixed Discord RPC redirect and PKCE verifier handling for public authorization.
+- Fixed App Status sub-effects ignoring the knob dead zone.
+- Fixed N3 editor bugs around title scrolling, maximize button bubbling, and clearing icon styling.
+- Improved hardware monitoring with VRAM fixes, HWiNFO fallbacks, and fan picker refinements.
+
+---
+
 ## [1.0.9.5] - 2026-06-09
 
 ### Added
