@@ -13,7 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.1] - 2026-06-18
 
 ### Added
-- Added Discord RPC authorization flow, token refresh handling, and persistent Discord auth across profile switches. Discord actions are currently tester-gated: users must DM Tyson on Discord so he can add them as a friend/tester until official Discord support is available.
+- Added Discord RPC authorization flow, token refresh handling, and persistent Discord auth across profile switches. Discord actions are currently tester-gated: users must DM audio on Discord so they can be added as a friend/tester until official Discord support is available.
 - Added direct Discord RPC actions for mute, deafen, explicit voice states, leave voice, and noise suppression.
 - Added settings backup and restore.
 - Added N3 hardware monitoring tiles for CPU, GPU, RAM, VRAM, temperatures, usage, and fan metrics.

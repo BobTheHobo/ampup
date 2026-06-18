@@ -139,7 +139,7 @@ SignalRGB actions are available for Turn Up buttons and N3 keys, including apply
 
 ### 🚀 1.1 Highlights
 
-- Discord RPC actions now support tester-gated authorization, token refresh, persistent auth across profile switches, and direct mute/deafen/voice controls. Because official Discord approval is not available yet, users need to DM Tyson on Discord so he can add them as a friend/tester before they can use these actions.
+- Discord RPC actions now support tester-gated authorization, token refresh, persistent auth across profile switches, and direct mute/deafen/voice controls. Because official Discord approval is not available yet, users need to DM audio on Discord so they can be added as a friend/tester before using these actions.
 - Settings backup and restore make it easier to protect or move a tuned setup.
 - N3 stream-controller tiles gained scrolling titles, cleaner icon clearing, hardware metric displays, gauge styling, and more polished metric options.
 - Lighting gained state-specific App Status effects, automatic effect colors, a renamed Scenes category, 15 room-bright ambient effects, and a compact state-effect chip grid.
@@ -176,7 +176,7 @@ Amp Up is a .NET 8 WPF application using WPF-UI, NAudio, Newtonsoft.Json, System
 
 | Version | Highlights |
 |-|-|
-| **v1.1** | Discord tester-gated RPC/actions, settings backup/restore, N3 scrolling titles and hardware metric gauges, room-bright scenes, automatic effect colors, state-specific App Status effects, and performance optimizations. Discord actions require DMing Tyson so he can add users as friend/testers until official Discord support is available. |
+| **v1.1** | Discord tester-gated RPC/actions, settings backup/restore, N3 scrolling titles and hardware metric gauges, room-bright scenes, automatic effect colors, state-specific App Status effects, and performance optimizations. Discord actions require DMing audio so users can be added as friend/testers until official Discord support is available. |
 | **v1.0.9.8** | Hardware monitoring improvements including VRAM fixes, HWiNFO fallbacks, gauge max overrides, color-by-value, and compact state-effect chips. |
 | **v1.0.9.7** | Automatic effect colors, Scenes naming, 15 room-bright ambient LED effects, and an App Status dead-zone fix. |
 | **v1.0.9.5** | App Status lighting now supports separate effects for unmuted, muted, and not-running states, including Off. |
@@ -204,6 +204,6 @@ MIT. See [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  Built by <a href="https://github.com/audioslayer">Tyson Wolf</a><br/>
+  Built by <a href="https://github.com/audioslayer">audio</a><br/>
   <a href="https://www.buymeacoffee.com/audioslayer">Buy me a coffee</a>
 </p>
