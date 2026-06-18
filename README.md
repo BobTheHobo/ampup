@@ -171,11 +171,6 @@ Amp Up is a .NET 8 WPF application using WPF-UI, NAudio, Newtonsoft.Json, System
 - [x] TreasLin / VSDinside N3 native beta support
 - [x] Tray mixer and release-ready Windows installer
 - [x] Retire unsupported macOS alpha port
-- [ ] Broader N3 field testing
-- [ ] Multiple Turn Up units
-- [ ] More stream-controller plugin-style actions
-- [ ] Razer Chroma sync
-- [ ] Mobile companion app
 
 ## 📝 Changelog Highlights
 
