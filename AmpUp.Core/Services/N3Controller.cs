@@ -498,7 +498,7 @@ public sealed class N3Controller : IDisposable
             catch (Exception ex)
             {
                 if (parseKnownProtocol && !_disposed && !ct.IsCancellationRequested)
-                    HandleReadLoopDisconnected(channelName, ex);
+                    HandleIoDisconnected($"read loop on {channelName}", ex);
                 else
                     Logger.Log($"N3: read loop stopped on {channelName} - {ex.Message}");
                 break;
@@ -506,9 +506,9 @@ public sealed class N3Controller : IDisposable
         }
     }
 
-    private void HandleReadLoopDisconnected(string channelName, Exception ex)
+    private void HandleIoDisconnected(string operation, Exception ex)
     {
-        Logger.Log($"N3: read loop stopped on {channelName} - {ex.Message}");
+        Logger.Log($"N3: {operation} failed/stopped - {ex.Message}");
         if (Interlocked.Exchange(ref _disconnectNotified, 1) != 0)
             return;
 
@@ -660,25 +660,33 @@ public sealed class N3Controller : IDisposable
     {
         int reportLength = Math.Max(OutputReportLength, DefaultPacketSize + 1);
         int payloadLength = Math.Max(1, reportLength - 1);
-
-        // Hold the write lock across the entire chunk loop so an image frame
-        // is written contiguously — other writers can't interleave mid-frame.
-        lock (_streamLock)
+        try
         {
-            var stream = _stream;
-            if (stream == null) return;
 
-            var report = EnsureWriteBuffer(reportLength);
-            int offset = 0;
-
-            while (offset < imageData.Length)
+            // Hold the write lock across the entire chunk loop so an image frame
+            // is written contiguously — other writers can't interleave mid-frame.
+            lock (_streamLock)
             {
-                int chunkLength = Math.Min(payloadLength, imageData.Length - offset);
-                Array.Clear(report, 0, reportLength);
-                imageData.Slice(offset, chunkLength).CopyTo(report.AsSpan(1, chunkLength));
-                stream.Write(report, 0, reportLength);
-                offset += chunkLength;
+                var stream = _stream;
+                if (stream == null) return;
+
+                var report = EnsureWriteBuffer(reportLength);
+                int offset = 0;
+
+                while (offset < imageData.Length)
+                {
+                    int chunkLength = Math.Min(payloadLength, imageData.Length - offset);
+                    Array.Clear(report, 0, reportLength);
+                    imageData.Slice(offset, chunkLength).CopyTo(report.AsSpan(1, chunkLength));
+                    stream.Write(report, 0, reportLength);
+                    offset += chunkLength;
+                }
             }
+        }
+        catch (Exception ex) when (!_disposed)
+        {
+            HandleIoDisconnected("display image write", ex);
+            throw;
         }
     }
 
@@ -686,15 +694,23 @@ public sealed class N3Controller : IDisposable
     {
         int reportLength = Math.Max(OutputReportLength, DefaultPacketSize + 1);
 
-        lock (_streamLock)
+        try
         {
-            var stream = _stream;
-            if (stream == null) return;
+            lock (_streamLock)
+            {
+                var stream = _stream;
+                if (stream == null) return;
 
-            var report = EnsureWriteBuffer(reportLength);
-            Array.Clear(report, 0, reportLength);
-            Array.Copy(payload, report, Math.Min(payload.Length, reportLength));
-            stream.Write(report, 0, reportLength);
+                var report = EnsureWriteBuffer(reportLength);
+                Array.Clear(report, 0, reportLength);
+                Array.Copy(payload, report, Math.Min(payload.Length, reportLength));
+                stream.Write(report, 0, reportLength);
+            }
+        }
+        catch (Exception ex) when (!_disposed)
+        {
+            HandleIoDisconnected("extended report write", ex);
+            throw;
         }
     }
 

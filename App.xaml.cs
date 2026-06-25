@@ -801,6 +801,7 @@ public partial class App : Application
                 try { _resumeRecoveryCts?.Cancel(); } catch { }
                 _resumeSettling = false;
                 _resumeSettlingUntilUtc = DateTime.MinValue;
+                _rgb?.SetOutput(null, null);
                 _ambienceSync?.SetSyncSuspended(true);
                 _dreamSync?.SetSuspended(true);
                 Dispatcher.BeginInvoke(() =>
@@ -839,6 +840,7 @@ public partial class App : Application
 
         _ambienceSync?.SetSyncSuspended(true);
         _dreamSync?.SetSuspended(true);
+        _rgb?.SetOutput(null, null);
         try { _mutePollingTimer?.Change(Timeout.Infinite, Timeout.Infinite); } catch { }
         try { _autoSwitchTimer?.Change(Timeout.Infinite, Timeout.Infinite); } catch { }
         try { _gameModeTimer?.Change(Timeout.Infinite, Timeout.Infinite); } catch { }
@@ -902,23 +904,51 @@ public partial class App : Application
 
     private void TryRecoverN3AfterResume()
     {
-        if (_n3 == null || !_isN3Connected) return;
+        if (_n3 == null || _config == null) return;
+        if (!_config.N3.Enabled || _config.HardwareMode == HardwareMode.TurnUpOnly) return;
+        if (Interlocked.Exchange(ref _n3ReconnectInFlight, 1) != 0) return;
 
-        try
+        _ = Task.Run(() =>
         {
-            _n3.Wake();
-            _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
-            ResetN3SlotSignatureCache();
-            Dispatcher.BeginInvoke(() =>
+            try
             {
-                try { SyncStreamControllerDisplays(); }
-                catch (Exception ex) { Logger.Log($"N3 resume display sync failed: {ex.Message}"); }
-            });
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"N3 resume wake failed: {ex.Message}");
-        }
+                Logger.Log("N3: forcing HID reconnect after system resume");
+                HandleN3ConnectionChanged(false, _n3DeviceName);
+
+                if (!_n3.TryConnect())
+                {
+                    Logger.Log("N3: resume reconnect did not find the device");
+                    return;
+                }
+
+                _isN3Connected = true;
+                _n3DeviceName = _n3.DeviceName;
+                _n3AsleepFromIdle = false;
+                _forceN3Sleep = false;
+                _n3.SetBrightness((byte)Math.Clamp(_config.N3.DisplayBrightness, 0, 100));
+                ResetN3SlotSignatureCache();
+
+                Dispatcher.BeginInvoke(() =>
+                {
+                    try
+                    {
+                        _mainWindow?.SetN3ConnectionStatus(true, _n3DeviceName);
+                        UpdateAggregateTrayStatus();
+                        SyncStreamControllerDisplays();
+                    }
+                    catch (Exception ex) { Logger.Log($"N3 resume display sync failed: {ex.Message}"); }
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"N3 resume reconnect failed: {ex.Message}");
+                HandleN3ConnectionChanged(false, _n3DeviceName);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _n3ReconnectInFlight, 0);
+            }
+        });
     }
 
     private void TryReconnectTurnUpAfterResume()
@@ -927,21 +957,7 @@ public partial class App : Application
 
         try
         {
-            bool shouldReconnect = !_isConnected;
-            if (_isConnected)
-            {
-                var lastRead = _serial.LastReadUtc;
-                shouldReconnect = lastRead == DateTime.MinValue
-                    || (DateTime.UtcNow - lastRead).TotalMilliseconds > ResumeSerialIdleMs;
-            }
-
-            if (!shouldReconnect)
-            {
-                Logger.Log("Turn Up resume reconnect skipped; serial traffic is healthy.");
-                return;
-            }
-
-            _serial.RequestReconnect("system resume stale serial");
+            _serial.RequestReconnect("system resume serial refresh");
         }
         catch (Exception ex)
         {
