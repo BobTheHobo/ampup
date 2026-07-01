@@ -1176,7 +1176,7 @@ public partial class ButtonsView : UserControl
             case "vm_mute_strip":
                 label.Text = "STRIP INDEX";
                 SetPlaceholderText("0");
-                if (box != null) box.ToolTip = "VoiceMeeter strip index (0-4)";
+                if (box != null) box.ToolTip = "VoiceMeeter strip index (0-4 hardware inputs, 5-7 virtual inputs on Potato)";
                 browseBtn.Visibility = Visibility.Collapsed;
                 pickBtn.Visibility = Visibility.Collapsed;
                 break;

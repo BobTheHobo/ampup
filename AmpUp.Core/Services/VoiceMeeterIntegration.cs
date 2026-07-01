@@ -92,14 +92,40 @@ public class VoiceMeeterIntegration : IDisposable
 
     private static string? GetInstallDir()
     {
-        try
+        // VoiceMeeter's installer is 32-bit, so on a 64-bit process its uninstall
+        // registry entry lives under the redirected Wow6432Node view. Reading the
+        // default (64-bit) view from a 64-bit process silently returns null here.
+        const string subKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\VB:Voicemeeter {17359A74-1236-5467}";
+        foreach (var view in new[] { Microsoft.Win32.RegistryView.Registry32, Microsoft.Win32.RegistryView.Registry64 })
         {
-            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\VB:Voicemeeter {17359A74-1236-5467}");
-            return key?.GetValue("UninstallString")?.ToString() is string path
-                ? System.IO.Path.GetDirectoryName(path) : null;
+            try
+            {
+                using var baseKey = Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, view);
+                using var key = baseKey.OpenSubKey(subKey);
+                if (key?.GetValue("UninstallString")?.ToString() is string raw && !string.IsNullOrWhiteSpace(raw))
+                {
+                    // UninstallString is often quoted, e.g. "C:\...\uninstall.exe"
+                    var path = raw.Trim().Trim('"');
+                    var dir = System.IO.Path.GetDirectoryName(path);
+                    if (!string.IsNullOrEmpty(dir) && System.IO.Directory.Exists(dir))
+                        return dir;
+                }
+            }
+            catch { /* try next view */ }
         }
-        catch { return null; }
+
+        // Last-resort fallback: VoiceMeeter's default install locations.
+        foreach (var candidate in new[]
+        {
+            @"C:\Program Files (x86)\VB\Voicemeeter",
+            @"C:\Program Files\VB\Voicemeeter",
+        })
+        {
+            if (System.IO.Directory.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
     }
 
     public bool Connect()

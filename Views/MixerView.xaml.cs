@@ -1130,8 +1130,12 @@ public partial class MixerView : UserControl
             if (vmEnabled)
             {
                 var clrVM = Color.FromRgb(0xFF, 0x8F, 0x00);
+                // Hardware input strips (indices 0-4)
                 for (int s = 0; s <= 4; s++)
                     picker.AddItem("VoiceMeeter", $"vm_strip:{s}", "♪", clrVM, $"Strip {s + 1}");
+                // Virtual input strips (indices 5-7 — Voicemeeter VAIO / AUX / VAIO3 on Potato)
+                for (int s = 5; s <= 7; s++)
+                    picker.AddItem("VoiceMeeter", $"vm_strip:{s}", "♪", clrVM, $"Virtual Input {s - 4}");
                 for (int b = 0; b <= 2; b++)
                     picker.AddItem("VoiceMeeter", $"vm_bus:{b}", "▶", clrVM, $"Bus {b + 1}");
             }

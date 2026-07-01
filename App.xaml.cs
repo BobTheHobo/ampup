@@ -101,6 +101,7 @@ public partial class App : Application
     private long _lastHardwareActivityTick = Environment.TickCount64;
     private long _lastTurnUpRgbWriteErrorTick;
     private DateTime _lastN3ReconnectAttemptUtc = DateTime.MinValue;
+    private int _n3ConsecutiveMisses;
     private int _n3ReconnectInFlight;
     private volatile bool _n3InitialProbeComplete;
     private volatile bool _resumeSettling;
@@ -2797,17 +2798,38 @@ public partial class App : Application
         if (!_config.N3.Enabled || _config.HardwareMode == HardwareMode.TurnUpOnly) return;
 
         var now = DateTime.UtcNow;
-        if ((now - _lastN3ReconnectAttemptUtc).TotalSeconds < 5) return;
+        // Back off the longer we go without ever finding a device: quick retries
+        // for the first ~30s (in case it's still enumerating after boot/wake),
+        // then widen out to every 2 minutes so Auto mode doesn't spam the HID
+        // bus or the log file forever on machines that simply don't have an N3.
+        double intervalSeconds = _n3ConsecutiveMisses switch
+        {
+            <= 5 => 5,
+            <= 10 => 30,
+            _ => 120,
+        };
+        if ((now - _lastN3ReconnectAttemptUtc).TotalSeconds < intervalSeconds) return;
         if (Interlocked.Exchange(ref _n3ReconnectInFlight, 1) != 0) return;
         _lastN3ReconnectAttemptUtc = now;
+
+        // Only log the routine miss on the first few tries and then periodically
+        // afterward, so the log file reflects "still not connected" without a
+        // line every 5 seconds indefinitely.
+        bool shouldLog = _n3ConsecutiveMisses < 3 || _n3ConsecutiveMisses % 10 == 0;
 
         _ = Task.Run(() =>
         {
             try
             {
-                Logger.Log("N3: reconnect attempt after disconnected state");
-                if (!_n3.TryConnect()) return;
+                if (shouldLog)
+                    Logger.Log($"N3: reconnect attempt after disconnected state (miss #{_n3ConsecutiveMisses + 1})");
+                if (!_n3.TryConnect(logIfMissing: shouldLog))
+                {
+                    _n3ConsecutiveMisses++;
+                    return;
+                }
 
+                _n3ConsecutiveMisses = 0;
                 _isN3Connected = true;
                 _n3DeviceName = _n3.DeviceName;
                 _n3AsleepFromIdle = false;
@@ -2831,6 +2853,7 @@ public partial class App : Application
             }
             catch (Exception ex)
             {
+                _n3ConsecutiveMisses++;
                 Logger.Log($"N3 reconnect attempt failed: {ex.Message}");
             }
             finally
